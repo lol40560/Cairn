@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@plugin "tailwindcss-animate";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@theme {
+  --color-bg-0: #1A1D21;
+  --color-bg-1: #22262B;
+  --color-bg-2: #2A2F35;
+  --color-bg-3: #363B42;
+  --color-primary-dim: #B85F28;
+  --color-primary-glow: #F09A5F;
+  --color-peer-1: #5B7C99;
+  --color-peer-2: #6A9955;
+  --color-peer-3: #B5764D;
+  --color-peer-4: #8B6F9E;
+  --color-peer-5: #7C9E8F;
+  --color-ai: #7B8FA1;
+  --color-success: #6A9955;
+  --color-warning: #D9A23C;
+  --color-danger: #C95A4A;
+  --color-text-0: #E6E8EA;
+  --color-text-1: #9BA1A9;
+  --color-text-2: #6B7280;
+}
+
+:root {
+  /* 背景层级 */
+  --bg-0: #1A1D21;
+  --bg-1: #22262B;
+  --bg-2: #2A2F35;
+  --bg-3: #363B42;
+
+  /* 主色：铁锈橙 */
+  --primary: #E07B39;
+  --primary-dim: #B85F28;
+  --primary-glow: #F09A5F;
+
+  /* 队友色 */
+  --peer-1: #5B7C99;
+  --peer-2: #6A9955;
+  --peer-3: #B5764D;
+  --peer-4: #8B6F9E;
+  --peer-5: #7C9E8F;
+
+  /* AI 变更色 */
+  --ai: #7B8FA1;
+
+  /* 状态色 */
+  --success: #6A9955;
+  --warning: #D9A23C;
+  --danger: #C95A4A;
+
+  /* 文字层级 */
+  --text-0: #E6E8EA;
+  --text-1: #9BA1A9;
+  --text-2: #6B7280;
+
+  /* 边框 */
+  --border: #363B42;
+  --border-strong: #4A5058;
+
+  /* shadcn 兼容映射 */
+  --background: var(--bg-0);
+  --foreground: var(--text-0);
+  --card: var(--bg-1);
+  --card-foreground: var(--text-0);
+  --popover: var(--bg-2);
+  --popover-foreground: var(--text-0);
+  --primary-foreground: #1A1D21;
+  --secondary: var(--bg-2);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--bg-2);
+  --muted-foreground: var(--text-1);
+  --accent: var(--bg-3);
+  --accent-foreground: var(--text-0);
+  --destructive: var(--danger);
+  --destructive-foreground: #1A1D21;
+  --input: var(--border);
+  --ring: var(--primary);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

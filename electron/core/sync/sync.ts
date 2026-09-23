@@ -1,0 +1,202 @@
+import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+
+import { applyPatch } from 'diff'
+
+import type { Oplog } from '../oplog'
+import { Discovery } from './discovery'
+import type { PeerInfo, SyncMessage } from './protocol'
+import { Transport } from './transport'
+
+export interface SyncOptions {
+  roomCode: string
+  oplog: Oplog
+}
+
+export interface SyncHooks {
+  applyRemoteChange(relativePath: string, content: string): Promise<void>
+  readFile(relativePath: string): Promise<string>
+  writeFile(relativePath: string, content: string): Promise<void>
+}
+
+interface SyncDependencies {
+  discovery?: Discovery
+  peerId?: string
+  transport?: Transport
+}
+
+export class Sync extends EventEmitter {
+  private readonly discovery: Discovery
+  private readonly peerId: string
+  private readonly peers = new Map<string, PeerInfo>()
+  private readonly transport: Transport
+  private started = false
+
+  constructor(
+    private readonly options: SyncOptions,
+    dependencies: SyncDependencies = {},
+    private readonly hooks?: SyncHooks,
+  ) {
+    super()
+    this.peerId = dependencies.peerId ?? randomUUID()
+    this.discovery = dependencies.discovery ?? new Discovery()
+    this.transport = dependencies.transport ?? new Transport(this.peerId)
+  }
+
+  async start(): Promise<void> {
+    if (this.started) {
+      return
+    }
+
+    this.bindEvents()
+    this.transport.setRoomCode(this.options.roomCode)
+    try {
+      const port = await this.transport.listen()
+      this.discovery.publish({ peerId: this.peerId, port, roomCode: this.options.roomCode })
+      this.started = true
+      this.discovery.startBrowse(this.options.roomCode, this.peerId)
+    } catch (error) {
+      this.started = false
+      this.unbindEvents()
+      this.discovery.stopPublish()
+      this.discovery.stopBrowse()
+      this.discovery.destroy()
+      this.peers.clear()
+      await this.transport.close().catch((closeError: unknown) => this.emitError(closeError))
+      throw error
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (!this.started) {
+      return
+    }
+
+    this.started = false
+    this.unbindEvents()
+    this.discovery.stopPublish()
+    this.discovery.stopBrowse()
+    this.discovery.destroy()
+    this.peers.clear()
+    try {
+      await this.transport.close()
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
+  listPeers(): PeerInfo[] {
+    return [...this.peers.values()].sort((left, right) => left.peerId.localeCompare(right.peerId))
+  }
+
+  announceLocalOp(op: import('../oplog').Op): void {
+    if (this.started) {
+      this.transport.broadcast({ hash: op.hash, type: 'have' })
+    }
+  }
+
+  private bindEvents(): void {
+    this.discovery.on('peer', this.handlePeer)
+    this.discovery.on('peerLeft', this.handlePeerLeft)
+    this.discovery.on('error', this.handleError)
+    this.transport.on('connect', this.handleConnect)
+    this.transport.on('message', this.handleMessage)
+    this.transport.on('error', this.handleError)
+  }
+
+  private unbindEvents(): void {
+    this.discovery.off('peer', this.handlePeer)
+    this.discovery.off('peerLeft', this.handlePeerLeft)
+    this.discovery.off('error', this.handleError)
+    this.transport.off('connect', this.handleConnect)
+    this.transport.off('message', this.handleMessage)
+    this.transport.off('error', this.handleError)
+  }
+
+  private readonly handlePeer = (info: PeerInfo): void => {
+    if (!this.started) {
+      return
+    }
+    const wasKnown = this.peers.has(info.peerId)
+    this.peers.set(info.peerId, info)
+    if (!wasKnown) {
+      this.emit('peerJoined', info)
+      void this.transport.connect(info.host, info.port).catch((error: unknown) => this.emitError(error))
+    }
+  }
+
+  private readonly handlePeerLeft = (peerId: string): void => {
+    if (!this.peers.delete(peerId)) {
+      return
+    }
+    this.emit('peerLeft', peerId)
+  }
+
+  private readonly handleConnect = (peerId: string): void => {
+    this.emit('connected', peerId)
+    for (const hash of this.options.oplog.listAllHashes()) {
+      this.transport.send(peerId, { hash, type: 'have' })
+    }
+  }
+
+  private readonly handleMessage = (peerId: string, message: SyncMessage): void => {
+    if (message.type === 'have') {
+      if (!this.options.oplog.hasOp(message.hash)) {
+        this.transport.send(peerId, { hash: message.hash, type: 'want' })
+      }
+      return
+    }
+
+    if (message.type === 'want') {
+      const op = this.options.oplog.getOp(message.hash)
+      if (op) {
+        this.transport.send(peerId, { op, type: 'data' })
+      }
+      return
+    }
+
+    if (message.type === 'data') {
+      void this.receiveRemoteOp(message.op)
+    }
+  }
+
+  private async receiveRemoteOp(op: import('../oplog').Op): Promise<void> {
+    if (this.options.oplog.hasOp(op.hash)) {
+      return
+    }
+
+    try {
+      const remoteOp = this.options.oplog.putOp({ ...op, source: 'remote' })
+      if (this.hooks) {
+        await this.applyRemoteOp(remoteOp)
+      }
+      this.emit('remoteOp', remoteOp)
+    } catch (error) {
+      this.emitError(error)
+    }
+  }
+
+  private async applyRemoteOp(op: import('../oplog').Op): Promise<void> {
+    if (op.source !== 'remote' || !this.hooks) {
+      return
+    }
+
+    const localContent = await this.hooks.readFile(op.filePath)
+    const nextContent = applyPatch(localContent, op.diff)
+    if (nextContent === false) {
+      this.emit('conflict', op, localContent)
+      return
+    }
+
+    await this.hooks.applyRemoteChange(op.filePath, nextContent)
+    await this.hooks.writeFile(op.filePath, nextContent)
+  }
+
+  private readonly handleError = (error: Error): void => {
+    this.emit('error', error)
+  }
+
+  private emitError(error: unknown): void {
+    this.emit('error', error instanceof Error ? error : new Error(String(error)))
+  }
+}

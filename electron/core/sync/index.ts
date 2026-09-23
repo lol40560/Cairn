@@ -1,0 +1,6 @@
+export { Discovery } from './discovery'
+export { decodeMessages, encodeMessage } from './protocol'
+export type { PeerInfo, SyncMessage } from './protocol'
+export { Sync } from './sync'
+export type { SyncOptions } from './sync'
+export { Transport } from './transport'
