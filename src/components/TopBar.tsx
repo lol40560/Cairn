@@ -1,5 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Logo } from '@/components/Logo'
 import { useTranslation } from '@/i18n'
 import type { WatchStatus } from '@/store/appStore'
 import { useAppStore } from '@/store/appStore'
@@ -33,15 +34,18 @@ export function TopBar({
   const setLocale = useAppStore((state) => state.setLocale)
 
   return (
-    <header className="flex h-12 shrink-0 items-center border-b border-border bg-bg-0 px-4">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-12 shrink-0 items-center border-b border-border bg-bg-0 px-6">
+      <div className="flex min-w-0 items-center gap-2">
+      <Logo size={20} className="shrink-0" />
+      <div className="flex min-w-0 items-center gap-4">
       <Button className="transition-colors hover:bg-bg-2" variant="outline" onClick={() => void onSelectFolder()}>{t('selectFolder')}</Button>
       <div className="max-w-md truncate font-mono text-xs text-text-2" title={folder}>
         {folder}
       </div>
       </div>
+      </div>
       <div className="flex-1" />
-      <div className="flex items-center gap-3"><span className="inline-flex items-center gap-2 text-xs text-text-2">{status === 'watching' && <span className="size-2 rounded-full bg-primary" />}{t(statusKeys[status])}</span><span className="h-4 w-px bg-border" />
+      <div className="flex items-center gap-5"><span className="inline-flex items-center gap-2 text-xs text-text-2">{status === 'watching' && <span className="size-2 rounded-full bg-primary" />}{t(statusKeys[status])}</span>
       <Button className="transition-colors hover:bg-bg-2" size="sm" variant="ghost" onClick={onToggleRoom}>
         {t('room')}
       </Button>

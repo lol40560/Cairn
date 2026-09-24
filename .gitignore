@@ -6,3 +6,4 @@ coverage/
 .DS_Store
 .vibeswarm/
 release/
+build/icon.iconset/

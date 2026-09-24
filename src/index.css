@@ -25,6 +25,8 @@
 }
 
 @theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Consolas, monospace;
   --color-bg-0: #1A1D21;
   --color-bg-1: #22262B;
   --color-bg-2: #2A2F35;
@@ -114,6 +116,6 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-sans text-foreground;
   }
 }
