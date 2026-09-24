@@ -17,6 +17,7 @@ function createOp(index: number) {
 afterEach(() => {
   useAppStore.setState({
     folder: '',
+    activeView: 'activity',
     locale: 'en',
     ops: [],
     peers: [],
@@ -83,5 +84,13 @@ describe('appStore', () => {
 
     expect(useAppStore.getState().roomCode).toBe('ABCDEF')
     expect(useAppStore.getState().peers).toEqual(peers)
+  })
+
+  it('切换工作区视图', () => {
+    useAppStore.getState().setActiveView('room')
+    expect(useAppStore.getState().activeView).toBe('room')
+
+    useAppStore.getState().setActiveView('conflicts')
+    expect(useAppStore.getState().activeView).toBe('conflicts')
   })
 })

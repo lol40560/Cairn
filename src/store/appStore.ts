@@ -5,9 +5,11 @@ import type { Op } from '../types/cairn'
 import type { PeerInfo } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
+export type ActiveView = 'activity' | 'room' | 'conflicts'
 
 export interface AppState {
   folder: string
+  activeView: ActiveView
   locale: Locale
   status: WatchStatus
   ops: Op[]
@@ -16,6 +18,7 @@ export interface AppState {
   conflicts: Array<{ op: Op; localContent: string; timestamp: number }>
   githubConfigured: boolean
   setFolder(folder: string): void
+  setActiveView(view: ActiveView): void
   setLocale(locale: Locale): void
   setStatus(status: WatchStatus): void
   setRoomCode(code: string): void
@@ -30,6 +33,7 @@ export interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   folder: '',
+  activeView: 'activity',
   locale: detectLocale(),
   status: 'idle',
   ops: [],
@@ -38,6 +42,7 @@ export const useAppStore = create<AppState>((set) => ({
   conflicts: [],
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
+  setActiveView: (activeView) => set({ activeView }),
   setLocale: (locale) => {
     persistLocale(locale)
     set({ locale })
