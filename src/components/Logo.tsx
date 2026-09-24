@@ -1,2 +1,30 @@
-interface LogoProps { size?: number; className?: string }
-export function Logo({ size = 20, className }: LogoProps) { return <svg aria-hidden="true" className={className} width={size} height={size} viewBox="0 0 1024 1024" fill="none"><path d="M390 390 320 560M634 390 704 560" stroke="#B85F28" strokeWidth="20" strokeLinecap="round" opacity=".7"/><path d="m320 680 135 90M704 680 569 770" stroke="#4A5058" strokeWidth="20" strokeLinecap="round" opacity=".6"/><circle cx="512" cy="260" r="110" fill="#E07B39"/><circle cx="240" cy="620" r="80" fill="#5B7C99"/><circle cx="784" cy="620" r="80" fill="#6A9955"/><circle cx="512" cy="800" r="70" fill="#8B6F9E"/></svg> }
+interface LogoProps {
+  size?: number
+  className?: string
+}
+
+export function Logo({ size = 20, className }: LogoProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height={size}
+      viewBox="0 0 24 24"
+      width={size}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 5.25L5.5 18H18.5L12 5.25Z"
+        stroke="#5B7C99"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.45"
+      />
+      <circle cx="12" cy="5.25" r="1.2" fill="#5B7C99" />
+      <circle cx="5.5" cy="18" r="1.2" fill="#5B7C99" />
+      <circle cx="18.5" cy="18" r="1.2" fill="#5B7C99" />
+      <circle cx="12" cy="13.1" r="1.35" fill="#E07B39" />
+    </svg>
+  )
+}
