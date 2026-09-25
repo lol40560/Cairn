@@ -49,8 +49,8 @@ export function ActivityView({ emptyMessage, ops, onChangeFolder }: ActivityView
   return (
     <section className="view active">
       <div className="view-header">
-        <h1 className="view-title">Activity</h1>
-        <span className="view-count">{ops.length} changes · {fileCount} files</span>
+        <h1 className="view-title">{t('activityTitle')}</h1>
+        <span className="view-count">{t('activitySummary').replace('{changes}', String(ops.length)).replace('{files}', String(fileCount))}</span>
         <span className="view-spacer" />
         <button
           aria-pressed={remoteOnly}
@@ -59,18 +59,18 @@ export function ActivityView({ emptyMessage, ops, onChangeFolder }: ActivityView
           onClick={() => setRemoteOnly((value) => !value)}
         >
           <SlidersHorizontal size={14} strokeWidth={1.8} />
-          {remoteOnly ? 'Remote' : 'Filter'}
+          {remoteOnly ? t('remote') : t('filter')}
         </button>
         <button className="view-action" type="button" onClick={() => void onChangeFolder()}>
           <FolderOpen size={14} strokeWidth={1.8} />
-          Change folder
+          {t('changeFolder')}
         </button>
       </div>
 
       {visibleOps.length === 0 ? (
         <div className="empty">
           <p className="empty-title">{emptyMessage ?? t('emptyState')}</p>
-          {remoteOnly && <p className="empty-desc">No remote changes in this workspace.</p>}
+          {remoteOnly && <p className="empty-desc">{t('remoteChangesEmpty')}</p>}
         </div>
       ) : (
         <div className="op-list">

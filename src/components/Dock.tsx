@@ -11,9 +11,9 @@ interface DockProps {
 }
 
 const viewItems = [
-  { icon: Activity, label: 'Activity', view: 'activity' },
-  { icon: UsersRound, label: 'Room', view: 'room' },
-  { icon: TriangleAlert, label: 'Conflicts', view: 'conflicts' },
+  { icon: Activity, labelKey: 'activity', view: 'activity' },
+  { icon: UsersRound, labelKey: 'room', view: 'room' },
+  { icon: TriangleAlert, labelKey: 'conflicts', view: 'conflicts' },
 ] as const
 
 export function Dock({ activeView, conflictCount, onOpenSettings, onViewChange }: DockProps) {
@@ -21,8 +21,11 @@ export function Dock({ activeView, conflictCount, onOpenSettings, onViewChange }
 
   return (
     <div className="dock-anchor">
-      <nav aria-label="Workspace navigation" className="dock">
-        {viewItems.map(({ icon: Icon, label, view }) => (
+      <nav aria-label={t('workspaceNavigation')} className="dock">
+        {viewItems.map(({ icon: Icon, labelKey, view }) => {
+          const label = t(labelKey)
+
+          return (
           <button
             key={view}
             aria-current={activeView === view ? 'page' : undefined}
@@ -36,7 +39,8 @@ export function Dock({ activeView, conflictCount, onOpenSettings, onViewChange }
             <span className="dock-label">{label}</span>
             {view === 'conflicts' && conflictCount > 0 && <span className="dock-badge" />}
           </button>
-        ))}
+          )
+        })}
         <span aria-hidden="true" className="dock-separator" />
         <button aria-label={t('settings')} className="dock-item" title={t('settings')} type="button" onClick={onOpenSettings}>
           <span className="dock-icon"><Settings size={16} strokeWidth={1.8} /></span>

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import {
@@ -67,7 +66,7 @@ export function ExportPRDialog({
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-bg-0/80"
+      className="modal-backdrop"
       role="dialog"
       aria-modal="true"
       onClick={(event) => {
@@ -81,35 +80,45 @@ export function ExportPRDialog({
         }
       }}
     >
-      <section className="w-96 space-y-3 rounded-md bg-popover p-4 shadow">
-        <p>{t('exportPR')}</p>
-        <input
-          ref={inputRef}
-          className="w-full border bg-popover p-2"
-          value={title}
-          aria-label={t('prTitle')}
-          onChange={(event) => setTitle(event.target.value)}
-        />
-        {error && (
-          <div className="space-y-1 text-sm text-danger">
-            <p>{error.message}</p>
-            {error.hint && <p>{error.hint}</p>}
-            <Button variant="ghost" onClick={() => void navigator.clipboard.writeText(error.raw)}>
-              {t('errorCopyRaw')}
-            </Button>
-            {error.category === 'config' && (
-              <Button variant="ghost" onClick={onOpenSettings}>
-                {t('errorOpenSettings')}
-              </Button>
-            )}
-          </div>
-        )}
-        <Button variant="outline" disabled={submitting || title.trim() === ''} onClick={() => void submit()}>
-          {submitting ? t('creating') : t('create')}
-        </Button>
-        <Button variant="ghost" disabled={submitting} onClick={onClose}>
-          {t('cancel')}
-        </Button>
+      <section className="modal modal-compact" aria-labelledby="export-pr-dialog-title">
+        <header className="modal-header">
+          <h2 id="export-pr-dialog-title" className="modal-title">{t('exportPRTitle')}</h2>
+          <button aria-label={t('exportPRCancel')} className="btn btn-ghost modal-close" type="button" onClick={onClose}>×</button>
+        </header>
+        <div className="modal-body">
+          <label className="field">
+            <span className="field-label">{t('exportPRLabel')}</span>
+            <input
+              ref={inputRef}
+              className="input"
+              value={title}
+              aria-label={t('exportPRLabel')}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+          {error && (
+            <div className="modal-error">
+              <p>{error.message}</p>
+              {error.hint && <p>{error.hint}</p>}
+              <button className="btn btn-ghost" type="button" onClick={() => void navigator.clipboard.writeText(error.raw)}>
+                {t('errorCopyRaw')}
+              </button>
+              {error.category === 'config' && (
+                <button className="btn btn-ghost" type="button" onClick={onOpenSettings}>
+                  {t('errorOpenSettings')}
+                </button>
+              )}
+            </div>
+          )}
+          <footer className="modal-actions">
+            <button className="btn btn-primary" disabled={submitting || title.trim() === ''} type="button" onClick={() => void submit()}>
+              {submitting ? t('exportPRCreating') : t('exportPRCreate')}
+            </button>
+            <button className="btn btn-ghost" disabled={submitting} type="button" onClick={onClose}>
+              {t('exportPRCancel')}
+            </button>
+          </footer>
+        </div>
       </section>
     </div>
   )
