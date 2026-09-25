@@ -35,8 +35,10 @@ export function App() {
   const setFolder = useAppStore((state) => state.setFolder)
   const setGithubConfigured = useAppStore((state) => state.setGithubConfigured)
   const setPeers = useAppStore((state) => state.setPeers)
+  const setRoomCode = useAppStore((state) => state.setRoomCode)
   const setStatus = useAppStore((state) => state.setStatus)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
   const [toast, setToast] = useState<NormalizedError | null>(null)
 
   useEffect(() => {
@@ -60,7 +62,11 @@ export function App() {
               setStatus(savedStatus)
             }
           },
-          setUnavailable: () => undefined,
+          setUnavailable: (value) => {
+            if (!disposed) {
+              setLastFolderUnavailable(value)
+            }
+          },
         })
       } catch (error) {
         console.error('[cairn] 无法恢复上次会话', error)
@@ -113,12 +119,40 @@ export function App() {
     }
   }, [addConflict, prependOp, replaceOps, setFolder, setGithubConfigured, setPeers, setStatus, t])
 
+  const handleSelectFolder = async (): Promise<void> => {
+    try {
+      const selectedFolder = getIpcData(await window.cairn.selectFolder())
+      if (selectedFolder === '') {
+        return
+      }
+
+      getIpcData(await window.cairn.stopWatching())
+      setPeers([])
+      setRoomCode('')
+      getIpcData(await window.cairn.startWatching(selectedFolder))
+      setFolder(selectedFolder)
+      setStatus('watching')
+      setLastFolderUnavailable(false)
+      replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
+    } catch (error) {
+      setStatus('stopped')
+      console.error('[cairn] 无法开始监控', error)
+      setToast(normalizeError(error, t))
+    }
+  }
+
   return (
     <main aria-label="Cairn" className="app">
       <section className="shell">
         <TopBar folder={folder} opCount={ops.length} roomCode={roomCode} status={status} />
         <div className="content">
-          {activeView === 'activity' && <ActivityView />}
+          {activeView === 'activity' && (
+            <ActivityView
+              emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}
+              ops={ops}
+              onChangeFolder={handleSelectFolder}
+            />
+          )}
           {activeView === 'room' && <RoomView />}
           {activeView === 'conflicts' && <ConflictsView />}
         </div>

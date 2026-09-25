@@ -273,6 +273,36 @@
   flex: 1;
 }
 
+.view-action {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  padding: 0 14px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.view-action:hover,
+.view-action.is-active {
+  border-color: var(--line);
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+
+.view-action-ghost {
+  border-color: transparent;
+}
+
 .empty {
   padding: 60px 12px;
 }
@@ -288,6 +318,79 @@
   color: var(--text-2);
   font-size: 13px;
   line-height: 1.7;
+}
+
+.op-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.op-row {
+  display: grid;
+  grid-template-columns: 8px 88px minmax(0, 1fr) 90px;
+  align-items: center;
+  gap: 16px;
+  border-radius: var(--r-md);
+  cursor: default;
+  padding: 14px 16px;
+  transition: background 0.12s;
+}
+
+.op-row:hover {
+  background: var(--bg-2);
+}
+
+.op-dot {
+  width: 6px;
+  height: 6px;
+  justify-self: center;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.op-dot.remote {
+  background: var(--peer-1);
+}
+
+.op-time,
+.op-stats {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.op-time {
+  color: var(--text-2);
+}
+
+.op-file {
+  min-width: 0;
+}
+
+.op-file-name {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.op-file-meta {
+  color: var(--text-2);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.op-stats {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--text-2);
+}
+
+.op-del {
+  color: var(--red);
 }
 
 .dock-anchor {

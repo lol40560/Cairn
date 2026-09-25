@@ -21,10 +21,15 @@ function formatRelativeTime(timestamp: number, t: TranslateFn): string {
   const elapsed = Math.max(0, Date.now() - timestamp)
   const minutes = Math.floor(elapsed / 60_000)
   if (minutes < 1) return t('justNow')
-  if (minutes < 60) return t('minutesAgo').replace('{n}', String(minutes))
+  if (minutes < 60) {
+    return minutes === 1 ? t('minuteAgo') : t('minutesAgo').replace('{n}', String(minutes))
+  }
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t('hoursAgo').replace('{n}', String(hours))
-  return t('daysAgo').replace('{n}', String(Math.floor(hours / 24)))
+  if (hours < 24) {
+    return hours === 1 ? t('hourAgo') : t('hoursAgo').replace('{n}', String(hours))
+  }
+  const days = Math.floor(hours / 24)
+  return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
 }
 
 function getRecentOps(ops: Op[]): Op[] {
