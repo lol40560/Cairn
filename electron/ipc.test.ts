@@ -392,6 +392,7 @@ describe('IPC bridge', () => {
     await expect(main.selectFolder()).resolves.toBe(root)
     expect(mocks.watchers).toHaveLength(0)
     expect([...mocks.handlers.keys()].sort()).toEqual([
+      'cairn:cancelDownload',
       'cairn:checkFolder',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
@@ -411,6 +412,7 @@ describe('IPC bridge', () => {
       'cairn:listSeeders',
       'cairn:resetGithubConfig',
       'cairn:saveGithubConfig',
+      'cairn:selectDownloadFolder',
       'cairn:selectFolder',
       'cairn:startSharing',
       'cairn:startWatching',
@@ -418,6 +420,33 @@ describe('IPC bridge', () => {
       'cairn:stopWatching',
       'cairn:updateSettings',
     ])
+  })
+
+  it('取消下载在没有活动 downloader 时静默返回', async () => {
+    const main = await loadMain()
+    main.registerIpcHandlers()
+    const handler = mocks.handlers.get('cairn:cancelDownload')
+
+    await expect(handler?.({})).resolves.toEqual({ data: undefined, ok: true })
+  })
+
+  it('选择下载目录不污染上次项目会话', async () => {
+    const main = await loadMain()
+    const dataRoot = await createDirectory()
+    const selectedRoot = await createDirectory()
+    mocks.app.getPath.mockReturnValue(dataRoot)
+    await main.writeLastSession({ folder: '/existing-project', watching: true, updatedAt: 1 })
+    main.registerIpcHandlers()
+    const handler = mocks.handlers.get('cairn:selectDownloadFolder')
+
+    mocks.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    await expect(handler?.({})).resolves.toEqual({ data: '', ok: true })
+    mocks.dialog.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [selectedRoot] })
+    await expect(handler?.({})).resolves.toEqual({ data: selectedRoot, ok: true })
+    expect(await main.readLastSession()).toEqual({ folder: '/existing-project', watching: true, updatedAt: 1 })
+    expect(mocks.dialog.showOpenDialog).toHaveBeenLastCalledWith({
+      properties: ['openDirectory', 'createDirectory'],
+    })
   })
 
   it('切换目录时先停止旧 watcher 并关闭旧 oplog', async () => {
@@ -533,6 +562,7 @@ describe('IPC bridge', () => {
     const exposed = mocks.contextBridge.exposeInMainWorld.mock.calls[0]
     expect(exposed?.[0]).toBe('cairn')
     expect(Object.keys(exposed?.[1] as object).sort()).toEqual([
+      'cancelDownload',
       'checkFolder',
       'clearGithubConfig',
       'clearLastSession',
@@ -556,6 +586,7 @@ describe('IPC bridge', () => {
       'onPeers',
       'resetGithubConfig',
       'saveGithubConfig',
+      'selectDownloadFolder',
       'selectFolder',
       'startSharing',
       'startWatching',

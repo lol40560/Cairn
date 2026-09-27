@@ -62,6 +62,8 @@ const cairn = {
     invoke('cairn:downloadProject', input),
   listSeeders: (): Promise<IpcResult<SeederInfo[]>> => invoke('cairn:listSeeders'),
   getDefaultDownloadDir: (): Promise<IpcResult<string>> => invoke('cairn:getDefaultDownloadDir'),
+  cancelDownload: (): Promise<IpcResult<void>> => invoke('cairn:cancelDownload'),
+  selectDownloadFolder: (): Promise<IpcResult<string>> => invoke('cairn:selectDownloadFolder'),
   onDownloadProgress: (callback: (progress: DownloadProgress) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, progress: DownloadProgress): void => callback(progress)
     ipcRenderer.on('cairn:downloadProgress', listener)

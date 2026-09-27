@@ -103,6 +103,8 @@ export interface CairnApi {
   downloadProject(input: { snapshotId: string; targetDir: string }): Promise<IpcResult<DownloadResult>>
   listSeeders(): Promise<IpcResult<SeederInfo[]>>
   getDefaultDownloadDir(): Promise<IpcResult<string>>
+  cancelDownload(): Promise<IpcResult<void>>
+  selectDownloadFolder(): Promise<IpcResult<string>>
   onDownloadProgress(callback: (progress: DownloadProgress) => void): () => void
   checkFolder(folder: string): Promise<IpcResult<boolean>>
   getLastSession(): Promise<IpcResult<LastSession>>

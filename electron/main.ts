@@ -515,6 +515,19 @@ export async function getDefaultDownloadDir(): Promise<string> {
   return directory
 }
 
+/** 取消正在进行的项目下载；没有活动下载时保持幂等。 */
+export function cancelDownload(): void {
+  activeDownloader?.cancel()
+}
+
+/** 选择下载目标目录，不影响“上次项目文件夹”的会话数据。 */
+export async function selectDownloadFolder(): Promise<string> {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory'],
+  })
+  return result.canceled ? '' : (result.filePaths[0] ?? '')
+}
+
 /** 下载队友共享的项目快照，并将进度单向推送至渲染进程。 */
 export async function downloadProject(input: { snapshotId: string; targetDir: string }): Promise<DownloadResult> {
   if (!activeRoom) {
@@ -624,6 +637,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:downloadProject', wrapIpcHandler((input) => downloadProject(input)))
   ipcMain.handle('cairn:listSeeders', wrapIpcHandler(listSeeders))
   ipcMain.handle('cairn:getDefaultDownloadDir', wrapIpcHandler(getDefaultDownloadDir))
+  ipcMain.handle('cairn:cancelDownload', wrapIpcHandler(cancelDownload))
+  ipcMain.handle('cairn:selectDownloadFolder', wrapIpcHandler(selectDownloadFolder))
 }
 
 export function createWindow(): BrowserWindow {
