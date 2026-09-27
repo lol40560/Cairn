@@ -5,10 +5,10 @@ import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import Database from 'better-sqlite3'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
-import { wrapIpcHandler } from './core/errors'
+import { AppError, wrapIpcHandler } from './core/errors'
 import { exportProjectSnapshot } from './core/snapshot/export'
 import type { ExportSnapshotResult } from './core/snapshot/export'
 import { getCurrentDiscoveryStatus } from './core/sync/discovery'
@@ -366,6 +366,26 @@ export function copyToClipboard(text: string): void {
   clipboard.writeText(text)
 }
 
+/** 在系统文件管理器中打开目录，或定位到一个具体文件。 */
+export async function openInFileManager(targetPath: string): Promise<void> {
+  if (typeof targetPath !== 'string' || targetPath.length === 0) {
+    throw new AppError('路径不能为空', 'config')
+  }
+  if (!existsSync(targetPath)) {
+    throw new AppError(`路径不存在：${targetPath}`, 'notFound')
+  }
+
+  if (statSync(targetPath).isDirectory()) {
+    const error = await shell.openPath(targetPath)
+    if (error) {
+      throw new AppError(error, 'unknown')
+    }
+    return
+  }
+
+  shell.showItemInFolder(targetPath)
+}
+
 function generateRoomCode(): string {
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
   let roomCode = ''
@@ -686,6 +706,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
   ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
   ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
+  ipcMain.handle('cairn:openInFileManager', wrapIpcHandler((targetPath: string) => openInFileManager(targetPath)))
   ipcMain.handle('cairn:startSharing', wrapIpcHandler(startSharing))
   ipcMain.handle('cairn:stopSharing', wrapIpcHandler(stopSharing))
   ipcMain.handle('cairn:downloadProject', wrapIpcHandler((input) => downloadProject(input)))

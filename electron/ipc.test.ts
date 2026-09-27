@@ -111,6 +111,10 @@ const mocks = vi.hoisted(() => {
     clipboard: {
       writeText: vi.fn(),
     },
+    shell: {
+      openPath: vi.fn(async () => ''),
+      showItemInFolder: vi.fn(),
+    },
     safeStorage: {
       decryptString: vi.fn((value: Buffer) => value.toString('utf8')),
       encryptString: vi.fn((value: string) => Buffer.from(value, 'utf8')),
@@ -167,6 +171,7 @@ vi.mock('electron', () => ({
   ipcMain: mocks.ipcMain,
   ipcRenderer: mocks.ipcRenderer,
   safeStorage: mocks.safeStorage,
+  shell: mocks.shell,
 }))
 
 vi.mock('./core/oplog', () => ({
@@ -247,6 +252,9 @@ beforeEach(() => {
   mocks.ipcRenderer.on.mockClear()
   mocks.ipcRenderer.removeListener.mockClear()
   mocks.exportPR.mockClear()
+  mocks.shell.openPath.mockClear()
+  mocks.shell.openPath.mockResolvedValue('')
+  mocks.shell.showItemInFolder.mockClear()
   mocks.safeStorage.decryptString.mockImplementation((value: Buffer) => value.toString('utf8'))
   mocks.safeStorage.encryptString.mockImplementation((value: string) => Buffer.from(value, 'utf8'))
   mocks.safeStorage.isEncryptionAvailable.mockReturnValue(true)
@@ -415,6 +423,7 @@ describe('IPC bridge', () => {
       'cairn:listPeers',
       'cairn:listRecentOps',
       'cairn:listSeeders',
+      'cairn:openInFileManager',
       'cairn:resetGithubConfig',
       'cairn:saveGithubConfig',
       'cairn:selectDownloadFolder',
@@ -448,6 +457,20 @@ describe('IPC bridge', () => {
     await expect(handler?.({}, { host: '192.168.1.10', port: 49500 })).resolves.toEqual({ data: undefined, ok: true })
     expect(mocks.syncs[0]?.connectToAddress).toHaveBeenCalledWith('192.168.1.10', 49500)
     expect(main.getLocalEndpoint()).toMatchObject({ port: 49500 })
+  })
+
+  it('openInFileManager 会打开目录、定位文件并拒绝不存在的路径', async () => {
+    const main = await loadMain()
+    const directory = await createDirectory()
+    const file = join(directory, 'sample.ts')
+    await writeFile(file, 'export {}\n', 'utf8')
+
+    await expect(main.openInFileManager(directory)).resolves.toBeUndefined()
+    expect(mocks.shell.openPath).toHaveBeenCalledWith(directory)
+
+    await expect(main.openInFileManager(file)).resolves.toBeUndefined()
+    expect(mocks.shell.showItemInFolder).toHaveBeenCalledWith(file)
+    await expect(main.openInFileManager(join(directory, 'missing'))).rejects.toThrow('路径不存在')
   })
 
   it('选择下载目录不污染上次项目会话', async () => {
@@ -607,6 +630,7 @@ describe('IPC bridge', () => {
       'onDownloadProgress',
       'onOp',
       'onPeers',
+      'openInFileManager',
       'resetGithubConfig',
       'saveGithubConfig',
       'selectDownloadFolder',

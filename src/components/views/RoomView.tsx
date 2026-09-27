@@ -56,7 +56,6 @@ export function RoomView({
   const [copied, setCopied] = useState(false)
   const [exportingSnapshot, setExportingSnapshot] = useState(false)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
-  const [downloadConflicts, setDownloadConflicts] = useState<string[]>([])
   const canceledDownload = useRef(false)
   const directAddress = useAppStore((state) => state.directAddress)
   const localEndpoint = useAppStore((state) => state.localEndpoint)
@@ -65,13 +64,17 @@ export function RoomView({
   const downloadProgress = useAppStore((state) => state.downloadProgress)
   const downloadStatus = useAppStore((state) => state.downloadStatus)
   const downloadTargetDir = useAppStore((state) => state.downloadTargetDir)
+  const lastConflictFiles = useAppStore((state) => state.lastConflictFiles)
+  const lastDownloadPath = useAppStore((state) => state.lastDownloadPath)
   const isSharing = useAppStore((state) => state.isSharing)
   const isHost = useAppStore((state) => state.isHost)
   const seeders = useAppStore((state) => state.seeders)
   const resetDownload = useAppStore((state) => state.resetDownload)
+  const clearLastDownloadResult = useAppStore((state) => state.clearLastDownloadResult)
   const setDownloadProgress = useAppStore((state) => state.setDownloadProgress)
   const setDownloadStatus = useAppStore((state) => state.setDownloadStatus)
   const setDownloadTargetDir = useAppStore((state) => state.setDownloadTargetDir)
+  const setLastDownloadResult = useAppStore((state) => state.setLastDownloadResult)
   const setIsSharing = useAppStore((state) => state.setIsSharing)
   const setDirectAddress = useAppStore((state) => state.setDirectAddress)
   const setIsHost = useAppStore((state) => state.setIsHost)
@@ -272,7 +275,7 @@ export function RoomView({
       }
 
       canceledDownload.current = false
-      setDownloadConflicts([])
+      clearLastDownloadResult()
       setDownloadProgress(undefined)
       setDownloadStatus('waiting-meta')
       const result = await window.cairn.downloadProject({ snapshotId: seeder.snapshotId, targetDir })
@@ -296,7 +299,7 @@ export function RoomView({
           .replace('{path}', result.data.targetDir),
         tone: 'success',
       })
-      setDownloadConflicts(result.data.conflictFiles)
+      setLastDownloadResult(result.data.targetDir, result.data.conflictFiles)
       resetDownload()
     } catch (error) {
       if (!canceledDownload.current) {
@@ -334,6 +337,21 @@ export function RoomView({
       }
     } catch (error) {
       console.error('[cairn] 无法选择下载目录', error)
+      setToast(normalizeError(error, t))
+    }
+  }
+
+  const handleOpenFolder = async (): Promise<void> => {
+    if (!lastDownloadPath) {
+      return
+    }
+    try {
+      const result = await window.cairn.openInFileManager(lastDownloadPath)
+      if (!result.ok) {
+        setToast(normalizeError(result.error, t))
+      }
+    } catch (error) {
+      console.error('[cairn] 无法打开下载目录', error)
       setToast(normalizeError(error, t))
     }
   }
@@ -490,12 +508,28 @@ export function RoomView({
                 {t('startSharing')}
               </button>
             )}
-            {downloadConflicts.length > 0 && (
-              <div className="download-conflicts">
-                <p>{t('downloadConflictsMsg').replace('{n}', String(downloadConflicts.length))}</p>
-                <ul>
-                  {downloadConflicts.map((filePath) => <li key={filePath}>{filePath}</li>)}
-                </ul>
+            {lastDownloadPath && (
+              <div className="download-result">
+                <div className="download-result-title">{t('downloadSuccess')}</div>
+                <div className="download-result-path-row">
+                  <span className="download-result-label">{t('savedTo')}</span>
+                  <button
+                    className="download-result-path"
+                    title={t('openInFinder')}
+                    type="button"
+                    onClick={() => void handleOpenFolder()}
+                  >
+                    {lastDownloadPath}
+                  </button>
+                </div>
+                {lastConflictFiles.length > 0 && (
+                  <div className="download-result-conflicts">
+                    {t('downloadConflictsMsg').replace('{n}', String(lastConflictFiles.length))}
+                  </div>
+                )}
+                <button className="btn btn-ghost" type="button" onClick={clearLastDownloadResult}>
+                  {t('dismiss')}
+                </button>
               </div>
             )}
           </div>

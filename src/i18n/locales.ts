@@ -114,6 +114,11 @@ export const zh = {
   roomCodeOrAddress: '房间码或 IP:端口',
   invalidRoomCodeOrAddress: '房间码或地址格式不正确',
   connectedTo: '已连接到 {address}',
+  downloadSuccess: '下载完成',
+  savedTo: '已保存到',
+  openInFinder: '点击打开文件夹',
+  dismiss: '忽略',
+  pathNotFound: '文件夹不存在',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -229,6 +234,11 @@ export const en: Record<keyof typeof zh, string> = {
   roomCodeOrAddress: 'Room code or IP:port',
   invalidRoomCodeOrAddress: 'Invalid room code or address',
   connectedTo: 'Connected to {address}',
+  downloadSuccess: 'Download complete',
+  savedTo: 'Saved to',
+  openInFinder: 'Click to open folder',
+  dismiss: 'Dismiss',
+  pathNotFound: 'Folder not found',
 }
 
 export type TranslationKey = keyof typeof zh

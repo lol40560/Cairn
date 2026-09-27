@@ -31,6 +31,8 @@ export interface AppState {
   downloadStatus: DownloadStatus
   downloadProgress: DownloadProgress | undefined
   downloadTargetDir: string
+  lastDownloadPath: string | undefined
+  lastConflictFiles: string[]
   conflicts: Array<{ op: Op; localContent: string; timestamp: number }>
   githubConfigured: boolean
   setFolder(folder: string): void
@@ -49,6 +51,8 @@ export interface AppState {
   setDownloadProgress(progress: DownloadProgress | undefined): void
   setDownloadTargetDir(directory: string): void
   resetDownload(): void
+  setLastDownloadResult(path: string, conflicts: string[]): void
+  clearLastDownloadResult(): void
   addConflict(conflict: { op: Op; localContent: string; timestamp: number }): void
   removeConflict(opHash: string): void
   clearConflicts(): void
@@ -74,6 +78,8 @@ export const useAppStore = create<AppState>((set) => ({
   downloadStatus: 'idle',
   downloadProgress: undefined,
   downloadTargetDir: '',
+  lastDownloadPath: undefined,
+  lastConflictFiles: [],
   conflicts: [],
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
@@ -95,6 +101,8 @@ export const useAppStore = create<AppState>((set) => ({
   setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
   setDownloadTargetDir: (downloadTargetDir) => set({ downloadTargetDir }),
   resetDownload: () => set({ downloadProgress: undefined, downloadStatus: 'idle' }),
+  setLastDownloadResult: (lastDownloadPath, lastConflictFiles) => set({ lastConflictFiles, lastDownloadPath }),
+  clearLastDownloadResult: () => set({ lastConflictFiles: [], lastDownloadPath: undefined }),
   addConflict: (conflict) => set((state) => ({ conflicts: [...state.conflicts, conflict] })),
   removeConflict: (opHash) => set((state) => ({ conflicts: state.conflicts.filter((conflict) => conflict.op.hash !== opHash) })),
   clearConflicts: () => set({ conflicts: [] }),

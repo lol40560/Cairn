@@ -63,6 +63,8 @@ const cairn = {
   exportPR: (options: { branch?: string; prBranch?: string; title: string; body?: string }): Promise<IpcResult<{ prUrl: string; prNumber: number }>> => invoke('cairn:exportPR', options),
   exportSnapshot: (): Promise<IpcResult<ExportSnapshotResult | { canceled: true }>> => invoke('cairn:exportSnapshot'),
   copyToClipboard: (text: string): Promise<IpcResult<void>> => invoke('cairn:copyToClipboard', text),
+  openInFileManager: (targetPath: string): Promise<IpcResult<void>> =>
+    invoke('cairn:openInFileManager', targetPath),
   startSharing: (): Promise<IpcResult<SeederInfo>> => invoke('cairn:startSharing'),
   stopSharing: (): Promise<IpcResult<void>> => invoke('cairn:stopSharing'),
   downloadProject: (input: { snapshotId: string; targetDir: string }): Promise<IpcResult<DownloadResult>> =>
