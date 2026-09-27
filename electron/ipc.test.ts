@@ -59,7 +59,9 @@ const mocks = vi.hoisted(() => {
     const sync = {
       announceLocalOp: vi.fn(),
       broadcast: vi.fn(),
+      connectToAddress: vi.fn(async () => undefined),
       getPeerId: vi.fn(() => 'local-peer'),
+      getLocalPort: vi.fn(() => 49500),
       listPeers: vi.fn<() => unknown[]>(() => []),
       listSeeders: vi.fn<() => unknown[]>(() => []),
       registerDownloader: vi.fn(),
@@ -396,6 +398,7 @@ describe('IPC bridge', () => {
       'cairn:checkFolder',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
+      'cairn:connectToAddress',
       'cairn:copyToClipboard',
       'cairn:createRoom',
       'cairn:downloadProject',
@@ -405,6 +408,7 @@ describe('IPC bridge', () => {
       'cairn:getDiscoveryStatus',
       'cairn:getGithubConfig',
       'cairn:getLastSession',
+      'cairn:getLocalEndpoint',
       'cairn:getSettings',
       'cairn:joinRoom',
       'cairn:leaveRoom',
@@ -429,6 +433,21 @@ describe('IPC bridge', () => {
     const handler = mocks.handlers.get('cairn:cancelDownload')
 
     await expect(handler?.({})).resolves.toEqual({ data: undefined, ok: true })
+  })
+
+  it('没有活动 sync 时直连端点为空，连接请求会转发给 sync', async () => {
+    const main = await loadMain()
+    expect(main.getLocalEndpoint()).toBeUndefined()
+
+    const projectRoot = await createDirectory()
+    await main.startWatching(projectRoot)
+    await main.createRoom()
+    main.registerIpcHandlers()
+    const handler = mocks.handlers.get('cairn:connectToAddress')
+
+    await expect(handler?.({}, { host: '192.168.1.10', port: 49500 })).resolves.toEqual({ data: undefined, ok: true })
+    expect(mocks.syncs[0]?.connectToAddress).toHaveBeenCalledWith('192.168.1.10', 49500)
+    expect(main.getLocalEndpoint()).toMatchObject({ port: 49500 })
   })
 
   it('选择下载目录不污染上次项目会话', async () => {
@@ -567,6 +586,7 @@ describe('IPC bridge', () => {
       'checkFolder',
       'clearGithubConfig',
       'clearLastSession',
+      'connectToAddress',
       'copyToClipboard',
       'createRoom',
       'downloadProject',
@@ -576,6 +596,7 @@ describe('IPC bridge', () => {
       'getDiscoveryStatus',
       'getGithubConfig',
       'getLastSession',
+      'getLocalEndpoint',
       'getSettings',
       'joinRoom',
       'leaveRoom',

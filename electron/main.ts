@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomInt } from 'node:crypto'
+import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import Database from 'better-sqlite3'
@@ -393,7 +394,7 @@ function projectFilePath(projectRoot: string, relativePath: string): string {
   return target
 }
 
-async function startRoom(roomCode: string): Promise<void> {
+async function startRoom(roomCode: string, discovery = true): Promise<void> {
   if (!activeProject) {
     throw new Error('请先选择并开始监控一个项目')
   }
@@ -432,7 +433,7 @@ async function startRoom(roomCode: string): Promise<void> {
 
   try {
     console.info(`[cairn:sync] sync.start called with roomCode ${roomCode}`)
-    await sync.start()
+    await sync.start({ discovery })
     activeRoom = { roomCode, sync }
     broadcastPeers()
   } catch (error) {
@@ -478,6 +479,41 @@ export async function leaveRoom(): Promise<void> {
 
 export function listPeers(): PeerInfo[] {
   return activeRoom?.sync.listPeers() ?? []
+}
+
+/** 返回可供局域网队友使用的本机 IPv4 与当前同步监听端口。 */
+export function getLocalEndpoint(): { host: string; port: number } | undefined {
+  const port = activeRoom?.sync.getLocalPort()
+  if (!port) {
+    return undefined
+  }
+
+  for (const [name, addresses] of Object.entries(networkInterfaces())) {
+    if (name === 'lo' || name.startsWith('utun')) {
+      continue
+    }
+    const address = addresses?.find((item) => item.family === 'IPv4' && !item.internal)
+    if (address) {
+      return { host: address.address, port }
+    }
+  }
+
+  return undefined
+}
+
+/** 在没有 mDNS 发现结果时，直接建立到队友端点的 TCP 连接。 */
+export async function connectToAddress(input: { host: string; port: number }): Promise<void> {
+  if (!activeProject) {
+    throw new Error('请先选择并开始监控一个项目')
+  }
+
+  if (!activeRoom) {
+    // 直连会话仅启动 TCP 传输，不发布或浏览 mDNS 服务。
+    await startRoom('DIRECT', false)
+  }
+
+  await activeRoom!.sync.connectToAddress(input.host, input.port)
+  broadcastPeers()
 }
 
 /** 暴露 mDNS 的只读诊断状态，便于定位发布或浏览失败。 */
@@ -635,6 +671,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
+  ipcMain.handle('cairn:getLocalEndpoint', wrapIpcHandler(getLocalEndpoint))
+  ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
   ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))

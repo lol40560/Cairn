@@ -674,6 +674,44 @@
   background: var(--bg-2);
 }
 
+.direct-connection {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.direct-connection-label {
+  font-size: 11px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.direct-connection-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.direct-connection-address {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-0);
+  padding: 8px 14px;
+  background: var(--bg-0);
+  border-radius: var(--r-md);
+  user-select: all;
+}
+
+.direct-connection-hint {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
 .peer-dot {
   width: 6px;
   height: 6px;

@@ -60,7 +60,9 @@ class MockDiscovery extends EventEmitter {
 
 class MockTransport extends EventEmitter {
   readonly broadcast = vi.fn()
-  readonly connect = vi.fn(async () => undefined)
+  readonly connect = vi.fn(async () => {
+    this.emit('connect', 'direct-peer')
+  })
   readonly send = vi.fn()
 
   async close(): Promise<void> {}
@@ -178,6 +180,36 @@ describe('transport', () => {
 })
 
 describe('Sync', () => {
+  it('直连地址会转发给 transport.connect 并等待 hello 连接', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+
+    await sync.start({ discovery: false })
+    await sync.connectToAddress('192.168.1.10', 49500)
+
+    expect(transport.connect).toHaveBeenCalledWith('192.168.1.10', 49500)
+    expect(sync.listPeers()).toEqual([
+      { host: '192.168.1.10', lastSeen: expect.any(Number), peerId: 'direct-peer', port: 49500 },
+    ])
+    await sync.stop()
+  })
+
+  it('直连地址拒绝空 host 与越界端口', async () => {
+    const { oplog } = await createTestOplog()
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: new MockTransport() as never },
+    )
+
+    await expect(sync.connectToAddress(' ', 49500)).rejects.toThrow('直连地址不能为空')
+    await expect(sync.connectToAddress('192.168.1.10', 0)).rejects.toThrow('直连端口必须在 1 到 65535 之间')
+    await expect(sync.connectToAddress('192.168.1.10', 65_536)).rejects.toThrow('直连端口必须在 1 到 65535 之间')
+  })
+
   it('路由快照消息并维护远端 seeder 列表', async () => {
     const { oplog } = await createTestOplog()
     const discovery = new MockDiscovery()

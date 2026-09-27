@@ -16,6 +16,11 @@ export interface PeerInfo {
   lastSeen: number
 }
 
+export interface LocalEndpoint {
+  host: string
+  port: number
+}
+
 export interface LastSession {
   folder: string
   watching: boolean
@@ -96,6 +101,8 @@ export interface CairnApi {
   joinRoom(roomCode: string): Promise<IpcResult<void>>
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
+  getLocalEndpoint(): Promise<IpcResult<LocalEndpoint | undefined>>
+  connectToAddress(input: LocalEndpoint): Promise<IpcResult<void>>
   getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
   onConflict(callback: (payload: { op: Op; localContent: string; source: 'remote' }) => void): () => void

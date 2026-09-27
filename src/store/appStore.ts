@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { Op, PeerInfo, SeederInfo } from '../types/cairn'
+import type { LocalEndpoint, Op, PeerInfo, SeederInfo } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
 export type ActiveView = 'activity' | 'room' | 'conflicts'
@@ -23,6 +23,8 @@ export interface AppState {
   roomCode: string
   peers: PeerInfo[]
   isHost: boolean
+  directAddress: string | undefined
+  localEndpoint: LocalEndpoint | undefined
   seeders: SeederInfo[]
   isSharing: boolean
   mySnapshotId: string | undefined
@@ -38,6 +40,8 @@ export interface AppState {
   setRoomCode(code: string): void
   setPeers(peers: PeerInfo[]): void
   setIsHost(isHost: boolean): void
+  setDirectAddress(address: string | undefined): void
+  setLocalEndpoint(endpoint: LocalEndpoint | undefined): void
   setSeeders(seeders: SeederInfo[]): void
   setIsSharing(isSharing: boolean): void
   setMySnapshotId(id: string | undefined): void
@@ -62,6 +66,8 @@ export const useAppStore = create<AppState>((set) => ({
   roomCode: '',
   peers: [],
   isHost: false,
+  directAddress: undefined,
+  localEndpoint: undefined,
   seeders: [],
   isSharing: false,
   mySnapshotId: undefined,
@@ -80,6 +86,8 @@ export const useAppStore = create<AppState>((set) => ({
   setRoomCode: (roomCode) => set({ roomCode }),
   setPeers: (peers) => set({ peers }),
   setIsHost: (isHost) => set({ isHost }),
+  setDirectAddress: (directAddress) => set({ directAddress }),
+  setLocalEndpoint: (localEndpoint) => set({ localEndpoint }),
   setSeeders: (seeders) => set({ seeders }),
   setIsSharing: (isSharing) => set({ isSharing }),
   setMySnapshotId: (mySnapshotId) => set({ mySnapshotId }),

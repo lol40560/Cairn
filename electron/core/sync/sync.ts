@@ -13,6 +13,10 @@ export interface SyncOptions {
   oplog: Oplog
 }
 
+export interface SyncStartOptions {
+  discovery?: boolean
+}
+
 export interface SyncHooks {
   applyRemoteChange(relativePath: string, content: string): Promise<void>
   readFile(relativePath: string): Promise<string>
@@ -45,6 +49,9 @@ export class Sync extends EventEmitter {
   private readonly transport: Transport
   private seeder?: SnapshotSeederHandler
   private downloader?: SnapshotDownloaderHandler
+  private localPort: number | undefined
+  private pendingDirectEndpoint: { host: string; port: number } | undefined
+  private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
   private started = false
 
   constructor(
@@ -58,20 +65,25 @@ export class Sync extends EventEmitter {
     this.transport = dependencies.transport ?? new Transport(this.peerId)
   }
 
-  async start(): Promise<void> {
+  async start(startOptions: SyncStartOptions = {}): Promise<void> {
     if (this.started) {
       return
     }
 
+    const discoveryEnabled = startOptions.discovery ?? true
     this.bindEvents()
     this.transport.setRoomCode(this.options.roomCode)
     try {
       const port = await this.transport.listen()
-      this.discovery.publish({ peerId: this.peerId, port, roomCode: this.options.roomCode })
+      this.localPort = port
       this.started = true
-      this.discovery.startBrowse(this.options.roomCode, this.peerId)
+      if (discoveryEnabled) {
+        this.discovery.publish({ peerId: this.peerId, port, roomCode: this.options.roomCode })
+        this.discovery.startBrowse(this.options.roomCode, this.peerId)
+      }
     } catch (error) {
       this.started = false
+      this.localPort = undefined
       this.unbindEvents()
       this.discovery.stopPublish()
       this.discovery.stopBrowse()
@@ -88,6 +100,12 @@ export class Sync extends EventEmitter {
     }
 
     this.started = false
+    this.localPort = undefined
+    this.pendingDirectEndpoint = undefined
+    for (const timer of this.directFallbackTimers) {
+      clearTimeout(timer)
+    }
+    this.directFallbackTimers.clear()
     this.unbindEvents()
     this.discovery.stopPublish()
     this.discovery.stopBrowse()
@@ -107,6 +125,46 @@ export class Sync extends EventEmitter {
 
   getPeerId(): string {
     return this.peerId
+  }
+
+  getLocalPort(): number | undefined {
+    return this.localPort
+  }
+
+  /** 绕过 mDNS 直接连到已知的 TCP 端点，并等待 hello 握手完成。 */
+  async connectToAddress(host: string, port: number): Promise<void> {
+    const normalizedHost = host.trim()
+    if (!normalizedHost) {
+      throw new Error('直连地址不能为空')
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new Error(`直连端口必须在 1 到 65535 之间：${port}`)
+    }
+    if (!this.started) {
+      throw new Error('同步服务尚未启动')
+    }
+
+    this.pendingDirectEndpoint = { host: normalizedHost, port }
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error(`连接 ${normalizedHost}:${port} 超时`))
+      }, 10_000)
+      const onConnected = (): void => {
+        cleanup()
+        resolve()
+      }
+      const cleanup = (): void => {
+        clearTimeout(timeout)
+        this.off('connected', onConnected)
+      }
+
+      this.once('connected', onConnected)
+      void this.transport.connect(normalizedHost, port).catch((error: unknown) => {
+        cleanup()
+        reject(error)
+      })
+    })
   }
 
   listSeeders(): SeederInfo[] {
@@ -187,6 +245,28 @@ export class Sync extends EventEmitter {
   }
 
   private readonly handleConnect = (peerId: string): void => {
+    const endpoint = this.pendingDirectEndpoint
+    this.pendingDirectEndpoint = undefined
+    if (!this.peers.has(peerId) && endpoint) {
+      this.peers.set(peerId, {
+        host: endpoint.host,
+        lastSeen: Date.now(),
+        peerId,
+        port: endpoint.port,
+      })
+      this.emit('peerJoined', this.peers.get(peerId))
+    } else if (!this.peers.has(peerId)) {
+      // mDNS 的 peer 事件可能稍晚于 hello；稍候再为纯直连的入站连接补占位信息。
+      const timer = setTimeout(() => {
+        this.directFallbackTimers.delete(timer)
+        if (this.started && !this.peers.has(peerId)) {
+          const info: PeerInfo = { host: 'direct', lastSeen: Date.now(), peerId, port: 0 }
+          this.peers.set(peerId, info)
+          this.emit('peerJoined', info)
+        }
+      }, 300)
+      this.directFallbackTimers.add(timer)
+    }
     this.emit('connected', peerId)
     for (const hash of this.options.oplog.listAllHashes()) {
       this.send(peerId, { hash, type: 'have' })

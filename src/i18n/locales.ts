@@ -109,6 +109,11 @@ export const zh = {
   downloadSuccessMsg: '已下载 {n} 个文件到 {path}',
   downloadConflictsMsg: '{n} 个文件冲突，已保存为 .cairn-remote',
   cancelDownload: '取消',
+  directConnection: '直接连接',
+  directConnectionHint: '当自动发现失败时，把这个地址分享给队友。',
+  roomCodeOrAddress: '房间码或 IP:端口',
+  invalidRoomCodeOrAddress: '房间码或地址格式不正确',
+  connectedTo: '已连接到 {address}',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -219,6 +224,11 @@ export const en: Record<keyof typeof zh, string> = {
   downloadSuccessMsg: 'Downloaded {n} files to {path}',
   downloadConflictsMsg: '{n} files conflicted and saved as .cairn-remote',
   cancelDownload: 'Cancel',
+  directConnection: 'Direct connection',
+  directConnectionHint: 'Share this address with peers when automatic discovery fails.',
+  roomCodeOrAddress: 'Room code or IP:port',
+  invalidRoomCodeOrAddress: 'Invalid room code or address',
+  connectedTo: 'Connected to {address}',
 }
 
 export type TranslationKey = keyof typeof zh

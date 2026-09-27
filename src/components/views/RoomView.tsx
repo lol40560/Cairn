@@ -58,7 +58,10 @@ export function RoomView({
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
   const [downloadConflicts, setDownloadConflicts] = useState<string[]>([])
   const canceledDownload = useRef(false)
-  const joined = roomCode !== ''
+  const directAddress = useAppStore((state) => state.directAddress)
+  const localEndpoint = useAppStore((state) => state.localEndpoint)
+  const joinedByRoomCode = roomCode !== ''
+  const joined = joinedByRoomCode || directAddress !== undefined
   const downloadProgress = useAppStore((state) => state.downloadProgress)
   const downloadStatus = useAppStore((state) => state.downloadStatus)
   const downloadTargetDir = useAppStore((state) => state.downloadTargetDir)
@@ -70,6 +73,9 @@ export function RoomView({
   const setDownloadStatus = useAppStore((state) => state.setDownloadStatus)
   const setDownloadTargetDir = useAppStore((state) => state.setDownloadTargetDir)
   const setIsSharing = useAppStore((state) => state.setIsSharing)
+  const setDirectAddress = useAppStore((state) => state.setDirectAddress)
+  const setIsHost = useAppStore((state) => state.setIsHost)
+  const setLocalEndpoint = useAppStore((state) => state.setLocalEndpoint)
   const setMySnapshotId = useAppStore((state) => state.setMySnapshotId)
   const setSeeders = useAppStore((state) => state.setSeeders)
   const dismissToast = useCallback(() => setToast(null), [])
@@ -84,7 +90,7 @@ export function RoomView({
   }, [copied])
 
   useEffect(() => {
-    if (!roomCode) {
+    if (!joined) {
       setSeeders([])
       setIsSharing(false)
       setMySnapshotId(undefined)
@@ -134,16 +140,83 @@ export function RoomView({
       window.clearInterval(pollTimer)
       unsubscribeProgress()
     }
-  }, [resetDownload, roomCode, setDownloadProgress, setDownloadStatus, setDownloadTargetDir, setIsSharing, setMySnapshotId, setSeeders])
+  }, [joined, resetDownload, setDownloadProgress, setDownloadStatus, setDownloadTargetDir, setIsSharing, setMySnapshotId, setSeeders])
+
+  useEffect(() => {
+    if (!joinedByRoomCode || !isHost) {
+      setLocalEndpoint(undefined)
+      return
+    }
+
+    let disposed = false
+    void window.cairn.getLocalEndpoint().then((result) => {
+      if (result.ok && !disposed) {
+        setLocalEndpoint(result.data)
+      }
+    }).catch((error) => console.error('[cairn] 无法读取本机直连地址', error))
+
+    return () => {
+      disposed = true
+    }
+  }, [isHost, joinedByRoomCode, setLocalEndpoint])
 
   const handleJoin = async (): Promise<void> => {
-    await onJoinRoom(joinCode.trim().toUpperCase())
-    setJoinCode('')
+    const value = joinCode.trim()
+    if (/^[A-Z0-9]{6}$/i.test(value)) {
+      await onJoinRoom(value.toUpperCase())
+      setJoinCode('')
+      return
+    }
+
+    const address = value.match(/^([\d.]+):(\d+)$/)
+    if (!address) {
+      setToast({ message: t('invalidRoomCodeOrAddress'), tone: 'error' })
+      return
+    }
+
+    const host = address[1]
+    const port = Number.parseInt(address[2]!, 10)
+    try {
+      const result = await window.cairn.connectToAddress({ host, port })
+      if (!result.ok) {
+        setToast(normalizeError(result.error, t))
+        return
+      }
+      setDirectAddress(`${host}:${port}`)
+      setIsHost(false)
+      setJoinCode('')
+    } catch (error) {
+      console.error('[cairn] 无法建立直接连接', error)
+      setToast(normalizeError(error, t))
+    }
   }
 
   const handleCopy = async (): Promise<void> => {
     await navigator.clipboard?.writeText(roomCode)
     setCopied(true)
+  }
+
+  const handleCopyEndpoint = async (): Promise<void> => {
+    if (!localEndpoint) {
+      return
+    }
+    const address = `${localEndpoint.host}:${localEndpoint.port}`
+    try {
+      await navigator.clipboard.writeText(address)
+    } catch {
+      const result = await window.cairn.copyToClipboard(address)
+      if (!result.ok) {
+        setToast(normalizeError(result.error, t))
+        return
+      }
+    }
+    setCopied(true)
+  }
+
+  const handleLeave = async (): Promise<void> => {
+    await onLeaveRoom()
+    setDirectAddress(undefined)
+    setLocalEndpoint(undefined)
   }
 
   const handleExportSnapshot = async (): Promise<void> => {
@@ -290,7 +363,7 @@ export function RoomView({
         <h1 className="view-title">{t('roomTitle')}</h1>
         <span className="view-spacer" />
         {joined && (
-          <button className="btn btn-ghost" type="button" onClick={() => void onLeaveRoom()}>
+          <button className="btn btn-ghost" type="button" onClick={() => void handleLeave()}>
             {t('leaveRoom')}
           </button>
         )}
@@ -316,8 +389,7 @@ export function RoomView({
             <input
               aria-label={t('roomCode')}
               className="input room-input"
-              maxLength={6}
-              placeholder={t('roomCode')}
+              placeholder={t('roomCodeOrAddress')}
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value)}
             />
@@ -329,14 +401,23 @@ export function RoomView({
       ) : (
         <>
           <div className="room-block">
-            <p className="room-label">{t('roomCode')}</p>
-            <div className="room-code-row">
-              <code className="room-code">{roomCode}</code>
-              <button className="btn" type="button" onClick={() => void handleCopy()}>
-                {copied ? t('copied') : t('copy')}
-              </button>
-            </div>
-            <p className="room-hint">{t('shareRoomHint')}</p>
+            {joinedByRoomCode ? (
+              <>
+                <p className="room-label">{t('roomCode')}</p>
+                <div className="room-code-row">
+                  <code className="room-code">{roomCode}</code>
+                  <button className="btn" type="button" onClick={() => void handleCopy()}>
+                    {copied ? t('copied') : t('copy')}
+                  </button>
+                </div>
+                <p className="room-hint">{t('shareRoomHint')}</p>
+              </>
+            ) : (
+              <>
+                <p className="room-label">{t('directConnection')}</p>
+                <p className="room-hint">{t('connectedTo').replace('{address}', directAddress ?? '')}</p>
+              </>
+            )}
           </div>
 
           <div className="room-block">
@@ -429,6 +510,20 @@ export function RoomView({
                 <span className="peer-meta">{peer.host}:{peer.port}</span>
               </div>
             ))}
+            {isHost && (
+              <div className="direct-connection">
+                <p className="direct-connection-label">{t('directConnection')}</p>
+                <div className="direct-connection-row">
+                  <code className="direct-connection-address">
+                    {localEndpoint ? `${localEndpoint.host}:${localEndpoint.port}` : '—'}
+                  </code>
+                  <button className="btn btn-ghost" disabled={!localEndpoint} type="button" onClick={() => void handleCopyEndpoint()}>
+                    {copied ? t('copied') : t('copy')}
+                  </button>
+                </div>
+                <p className="direct-connection-hint">{t('directConnectionHint')}</p>
+              </div>
+            )}
           </div>
         </>
       )}
