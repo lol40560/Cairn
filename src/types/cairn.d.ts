@@ -58,6 +58,13 @@ export interface DownloadResult {
   conflictFiles: string[]
 }
 
+export interface DiscoveryStatus {
+  published: boolean
+  browsing: boolean
+  publishedName: string | undefined
+  error: string | undefined
+}
+
 export type ErrorCategory =
   | 'config'
   | 'network'
@@ -89,6 +96,7 @@ export interface CairnApi {
   joinRoom(roomCode: string): Promise<IpcResult<void>>
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
+  getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
   onConflict(callback: (payload: { op: Op; localContent: string; source: 'remote' }) => void): () => void
   saveGithubConfig(config: { token?: string; owner: string; repo: string }): Promise<IpcResult<void>>

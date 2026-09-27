@@ -5,6 +5,7 @@ import type { PeerInfo, SeederInfo } from './core/sync/protocol'
 import type { IpcResult } from './core/errors'
 import type { ExportSnapshotResult } from './core/snapshot/export'
 import type { DownloadProgress, DownloadResult } from './core/sync/downloader'
+import type { DiscoveryStatus } from './core/sync/discovery'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -30,6 +31,8 @@ const cairn = {
     invoke('cairn:joinRoom', roomCode),
   leaveRoom: (): Promise<IpcResult<void>> => invoke('cairn:leaveRoom'),
   listPeers: (): Promise<IpcResult<PeerInfo[]>> => invoke('cairn:listPeers'),
+  getDiscoveryStatus: (): Promise<IpcResult<DiscoveryStatus>> =>
+    invoke('cairn:getDiscoveryStatus'),
   onPeers: (callback: (peers: PeerInfo[]) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, peers: PeerInfo[]): void => callback(peers)
     ipcRenderer.on('cairn:peers', listener)

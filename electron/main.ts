@@ -10,6 +10,8 @@ import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { wrapIpcHandler } from './core/errors'
 import { exportProjectSnapshot } from './core/snapshot/export'
 import type { ExportSnapshotResult } from './core/snapshot/export'
+import { getCurrentDiscoveryStatus } from './core/sync/discovery'
+import type { DiscoveryStatus } from './core/sync/discovery'
 
 import { createOplog } from './core/oplog'
 import type { Oplog, Op } from './core/oplog'
@@ -429,6 +431,7 @@ async function startRoom(roomCode: string): Promise<void> {
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
+    console.info(`[cairn:sync] sync.start called with roomCode ${roomCode}`)
     await sync.start()
     activeRoom = { roomCode, sync }
     broadcastPeers()
@@ -441,6 +444,7 @@ async function startRoom(roomCode: string): Promise<void> {
 export async function createRoom(): Promise<string> {
   await leaveRoom()
   const roomCode = generateRoomCode()
+  console.info(`[cairn:sync] createRoom requested roomCode ${roomCode}`)
   await startRoom(roomCode)
   return roomCode
 }
@@ -448,6 +452,7 @@ export async function createRoom(): Promise<string> {
 export async function joinRoom(roomCode: string): Promise<void> {
   validateRoomCode(roomCode)
   await leaveRoom()
+  console.info(`[cairn:sync] joinRoom requested roomCode ${roomCode}`)
   await startRoom(roomCode)
 }
 
@@ -473,6 +478,11 @@ export async function leaveRoom(): Promise<void> {
 
 export function listPeers(): PeerInfo[] {
   return activeRoom?.sync.listPeers() ?? []
+}
+
+/** 暴露 mDNS 的只读诊断状态，便于定位发布或浏览失败。 */
+export function getDiscoveryStatus(): DiscoveryStatus {
+  return getCurrentDiscoveryStatus()
 }
 
 /** 开始向当前房间共享一次静态项目快照。 */
@@ -625,6 +635,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
+  ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))
   ipcMain.handle('cairn:clearLastSession', wrapIpcHandler(clearLastSession))
