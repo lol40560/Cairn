@@ -737,31 +737,30 @@ export async function listRecentOps(limit: number): Promise<Op[]> {
   return activeProject ? activeProject.oplog.listRecent(limit) : []
 }
 
-function requireActiveProject(): ActiveProject {
-  if (!activeProject) {
-    throw new Error('请先选择项目')
-  }
-  return activeProject
-}
-
 /** 返回当前项目中可恢复的已删除文件。 */
 export async function listTrash(): Promise<TrashEntry[]> {
-  return requireActiveProject().trash.list()
+  // 未打开项目时，废纸篓视图应自然显示为空状态。
+  return activeProject ? activeProject.trash.list() : []
 }
 
 /** 恢复后由 watcher 的 add 事件生成并广播恢复 op。 */
 export async function restoreFromTrash(trashId: string): Promise<void> {
+  // 视图卸载或切换项目期间的迟到请求不应产生错误提示。
+  if (!activeProject) return
   if (typeof trashId !== 'string') throw new Error('废纸篓条目 ID 必须是字符串')
-  await requireActiveProject().trash.restore(trashId)
+  await activeProject.trash.restore(trashId)
 }
 
 export async function purgeFromTrash(trashId: string): Promise<void> {
+  // 没有活动项目时，清理操作是安全的空操作。
+  if (!activeProject) return
   if (typeof trashId !== 'string') throw new Error('废纸篓条目 ID 必须是字符串')
-  await requireActiveProject().trash.purge(trashId)
+  await activeProject.trash.purge(trashId)
 }
 
 export async function emptyTrash(): Promise<void> {
-  const trash = requireActiveProject().trash
+  const trash = activeProject?.trash
+  if (!trash) return
   for (const entry of await trash.list()) {
     await trash.purge(entry.trashId)
   }

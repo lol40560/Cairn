@@ -635,6 +635,21 @@ describe('IPC bridge', () => {
     await expect(projectTrash.list()).resolves.toEqual([])
   })
 
+  it('未打开项目时废纸篓 IPC 返回空值或静默成功', async () => {
+    const main = await loadMain()
+    main.registerIpcHandlers()
+
+    const list = mocks.handlers.get('cairn:listTrash')
+    const restore = mocks.handlers.get('cairn:restoreFromTrash')
+    const purge = mocks.handlers.get('cairn:purgeFromTrash')
+    const empty = mocks.handlers.get('cairn:emptyTrash')
+
+    await expect(list?.({})).resolves.toEqual({ ok: true, data: [] })
+    await expect(restore?.({}, 'missing-entry')).resolves.toEqual({ ok: true, data: undefined })
+    await expect(purge?.({}, 'missing-entry')).resolves.toEqual({ ok: true, data: undefined })
+    await expect(empty?.({})).resolves.toEqual({ ok: true, data: undefined })
+  })
+
   it('废纸篓保留天数可读写，并拒绝范围外数值', async () => {
     const main = await loadMain()
     await main.setTrashRetentionDays(7)
