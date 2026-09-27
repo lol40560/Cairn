@@ -369,7 +369,7 @@ export function RoomView({
                   {t('stopSharing')}
                 </button>
               </div>
-            ) : seeders.length > 0 ? (
+            ) : isHost ? null : seeders.length > 0 ? (
               <div className="download-available">
                 {seeders.map((seeder) => (
                   <div key={`${seeder.peerId}:${seeder.snapshotId}`} className="seeder-row">
