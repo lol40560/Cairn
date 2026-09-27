@@ -22,6 +22,7 @@ afterEach(() => {
     ops: [],
     peers: [],
     roomCode: '',
+    isHost: false,
     status: 'idle',
   })
 })
@@ -76,14 +77,16 @@ describe('appStore', () => {
     expect(useAppStore.getState().locale).toBe('zh')
   })
 
-  it('更新房间码和队友列表', () => {
+  it('更新房间码、队友列表和本机角色', () => {
     const peers = [{ host: '127.0.0.1', lastSeen: 1, peerId: 'peer', port: 1234 }]
 
     useAppStore.getState().setRoomCode('ABCDEF')
     useAppStore.getState().setPeers(peers)
+    useAppStore.getState().setIsHost(true)
 
     expect(useAppStore.getState().roomCode).toBe('ABCDEF')
     expect(useAppStore.getState().peers).toEqual(peers)
+    expect(useAppStore.getState().isHost).toBe(true)
   })
 
   it('切换工作区视图', () => {

@@ -50,6 +50,7 @@ export function App() {
   const setActiveView = useAppStore((state) => state.setActiveView)
   const setFolder = useAppStore((state) => state.setFolder)
   const setGithubConfigured = useAppStore((state) => state.setGithubConfigured)
+  const setIsHost = useAppStore((state) => state.setIsHost)
   const setPeers = useAppStore((state) => state.setPeers)
   const setRoomCode = useAppStore((state) => state.setRoomCode)
   const setStatus = useAppStore((state) => state.setStatus)
@@ -145,6 +146,7 @@ export function App() {
 
       getIpcData(await window.cairn.stopWatching())
       setPeers([])
+      setIsHost(false)
       setRoomCode('')
       getIpcData(await window.cairn.startWatching(selectedFolder))
       setFolder(selectedFolder)
@@ -162,6 +164,7 @@ export function App() {
     try {
       const code = getIpcData(await window.cairn.createRoom())
       setRoomCode(code)
+      setIsHost(true)
       setPeers(getIpcData(await window.cairn.listPeers()))
     } catch (error) {
       console.error('[cairn] 无法创建房间', error)
@@ -173,6 +176,7 @@ export function App() {
     try {
       getIpcData(await window.cairn.joinRoom(code))
       setRoomCode(code)
+      setIsHost(false)
       setPeers(getIpcData(await window.cairn.listPeers()))
     } catch (error) {
       console.error('[cairn] 无法加入房间', error)
@@ -184,6 +188,7 @@ export function App() {
     try {
       getIpcData(await window.cairn.leaveRoom())
       setPeers([])
+      setIsHost(false)
       setRoomCode('')
     } catch (error) {
       console.error('[cairn] 无法离开房间', error)

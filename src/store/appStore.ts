@@ -22,6 +22,7 @@ export interface AppState {
   ops: Op[]
   roomCode: string
   peers: PeerInfo[]
+  isHost: boolean
   seeders: SeederInfo[]
   isSharing: boolean
   mySnapshotId: string | undefined
@@ -36,6 +37,7 @@ export interface AppState {
   setStatus(status: WatchStatus): void
   setRoomCode(code: string): void
   setPeers(peers: PeerInfo[]): void
+  setIsHost(isHost: boolean): void
   setSeeders(seeders: SeederInfo[]): void
   setIsSharing(isSharing: boolean): void
   setMySnapshotId(id: string | undefined): void
@@ -59,6 +61,7 @@ export const useAppStore = create<AppState>((set) => ({
   ops: [],
   roomCode: '',
   peers: [],
+  isHost: false,
   seeders: [],
   isSharing: false,
   mySnapshotId: undefined,
@@ -76,6 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
   setStatus: (status) => set({ status }),
   setRoomCode: (roomCode) => set({ roomCode }),
   setPeers: (peers) => set({ peers }),
+  setIsHost: (isHost) => set({ isHost }),
   setSeeders: (seeders) => set({ seeders }),
   setIsSharing: (isSharing) => set({ isSharing }),
   setMySnapshotId: (mySnapshotId) => set({ mySnapshotId }),

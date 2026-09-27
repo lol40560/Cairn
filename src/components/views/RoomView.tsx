@@ -19,12 +19,13 @@ interface RoomViewProps {
 
 const peerColors = ['var(--peer-1)', 'var(--peer-2)', 'var(--peer-3)', 'var(--peer-4)', 'var(--peer-5)']
 
-function getPeerTag(peerId: string, index: number): 'peerAi' | 'peerLan' | 'peerHost' {
+function getPeerTag(peerId: string, isHost: boolean, index: number): 'peerAi' | 'peerLan' | 'peerHost' {
   if (/claude|copilot|cursor|ai/i.test(peerId)) {
     return 'peerAi'
   }
 
-  return index === 0 ? 'peerHost' : 'peerLan'
+  // 创建者看到的均是来宾；加入者最先发现的连接为创建者，其他连接视为 LAN 队友。
+  return !isHost && index === 0 ? 'peerHost' : 'peerLan'
 }
 
 function formatBytes(bytes: number): string {
@@ -62,6 +63,7 @@ export function RoomView({
   const downloadStatus = useAppStore((state) => state.downloadStatus)
   const downloadTargetDir = useAppStore((state) => state.downloadTargetDir)
   const isSharing = useAppStore((state) => state.isSharing)
+  const isHost = useAppStore((state) => state.isHost)
   const seeders = useAppStore((state) => state.seeders)
   const resetDownload = useAppStore((state) => state.resetDownload)
   const setDownloadProgress = useAppStore((state) => state.setDownloadProgress)
@@ -402,7 +404,7 @@ export function RoomView({
                 <div className="sharing-empty-desc">{t('waitingForHostDesc')}</div>
               </div>
             )}
-            {!isSharing && seeders.length === 0 && !isDownloading && (
+            {isHost && !isSharing && seeders.length === 0 && !isDownloading && (
               <button className="btn" type="button" onClick={() => void handleStartSharing()}>
                 {t('startSharing')}
               </button>
@@ -423,7 +425,7 @@ export function RoomView({
               <div key={peer.peerId} className="peer-row">
                 <span aria-hidden="true" className="peer-dot" style={{ background: peerColors[index % peerColors.length] }} />
                 <span className="peer-name">{peer.peerId.slice(0, 8)}</span>
-                <span className="peer-meta">{t(getPeerTag(peer.peerId, index))}</span>
+                <span className="peer-meta">{t(getPeerTag(peer.peerId, isHost, index))}</span>
                 <span className="peer-meta">{peer.host}:{peer.port}</span>
               </div>
             ))}
