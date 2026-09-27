@@ -39,7 +39,7 @@ const mocks = vi.hoisted(() => {
         listeners.set(event, eventListeners)
         return watcher
       }),
-      start: vi.fn(async () => undefined),
+      start: vi.fn(() => watcherStart()),
       stop: vi.fn(async () => undefined),
       emit: (event: string, ...args: unknown[]): void => {
         for (const listener of listeners.get(event) ?? []) {
@@ -53,6 +53,7 @@ const mocks = vi.hoisted(() => {
   const oplogs: Array<{ close: ReturnType<typeof vi.fn>; listRecent: ReturnType<typeof vi.fn> }> = []
   const watchers: ReturnType<typeof makeWatcher>[] = []
   const syncs: Array<ReturnType<typeof makeSync>> = []
+  const watcherStart = vi.fn(async () => undefined)
 
   function makeSync() {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>()
@@ -155,6 +156,7 @@ const mocks = vi.hoisted(() => {
     windowListeners,
     makeWatcher,
     makeSync,
+    watcherStart,
   }
 })
 
@@ -252,6 +254,8 @@ beforeEach(() => {
   mocks.ipcRenderer.on.mockClear()
   mocks.ipcRenderer.removeListener.mockClear()
   mocks.exportPR.mockClear()
+  mocks.watcherStart.mockReset()
+  mocks.watcherStart.mockResolvedValue(undefined)
   mocks.shell.openPath.mockClear()
   mocks.shell.openPath.mockResolvedValue('')
   mocks.shell.showItemInFolder.mockClear()
@@ -512,6 +516,47 @@ describe('IPC bridge', () => {
     expect(firstWatcher?.stop).toHaveBeenCalledOnce()
     expect(firstOplog?.close).toHaveBeenCalledOnce()
     expect(mocks.watchers).toHaveLength(2)
+  })
+
+  it('并发启动同一目录时只保留一个 watcher', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+
+    await Promise.all([main.startWatching(root), main.startWatching(root)])
+
+    expect(mocks.watchers).toHaveLength(1)
+    expect(mocks.watchers[0]?.start).toHaveBeenCalledOnce()
+    expect(mocks.watchers[0]?.stop).not.toHaveBeenCalled()
+  })
+
+  it('启动中调用 stopWatching 会在启动完成后释放 watcher', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    let resolveStart: (() => void) | undefined
+    mocks.watcherStart.mockImplementationOnce(() => new Promise<undefined>((resolve) => {
+      resolveStart = () => resolve(undefined)
+    }))
+
+    const starting = main.startWatching(root)
+    await vi.waitFor(() => expect(mocks.watchers).toHaveLength(1))
+    const stopping = main.stopWatching()
+    resolveStart?.()
+    await Promise.all([starting, stopping])
+
+    expect(mocks.watchers[0]?.stop).toHaveBeenCalledOnce()
+    await expect(main.listRecentOps(1)).resolves.toEqual([])
+  })
+
+  it('启动失败后会清理锁，后续请求仍可启动', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    mocks.watcherStart.mockRejectedValueOnce(new Error('启动失败'))
+
+    await expect(main.startWatching(root)).rejects.toThrow('启动失败')
+    await expect(main.startWatching(root)).resolves.toBeUndefined()
+
+    expect(mocks.watchers).toHaveLength(2)
+    expect(mocks.watchers[1]?.start).toHaveBeenCalledOnce()
   })
 
   it('拒绝相对项目路径', async () => {

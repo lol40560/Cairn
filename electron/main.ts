@@ -57,6 +57,8 @@ let activeDownloader: SnapshotDownloader | undefined
 let handlersRegistered = false
 let isQuitting = false
 let mainWindow: BrowserWindow | undefined
+// 串行化监控启动，避免开发模式初始化与用户操作并发创建多个 watcher。
+let startWatchingPromise: Promise<void> | undefined
 
 app.setName('Cairn')
 
@@ -135,6 +137,16 @@ export async function selectFolder(): Promise<string> {
 }
 
 export async function stopWatching(preserveWatchState = false): Promise<void> {
+  // 启动尚未写入 activeProject 时，也要等待其完成后再停止。
+  const pendingStart = startWatchingPromise
+  if (pendingStart) {
+    try {
+      await pendingStart
+    } catch {
+      // 启动失败时没有需要停止的活动项目。
+    }
+  }
+
   await leaveRoom()
   const project = activeProject
   if (!project) {
@@ -660,38 +672,60 @@ function toSeederInfo(sync: Sync, state: SeederState): SeederInfo {
 }
 
 export async function startWatching(folder: string): Promise<void> {
-  validateFolder(folder)
-  await stopWatching()
-
-  const oplog = createOplog(folder)
-  const trash = new TrashManager(folder)
-  const watcher = new ProjectWatcher(folder, oplog, {}, trash)
-  const shadow = createShadowGit(folder)
-
-  watcher.on('op', (op) => {
-    sendToWindow('cairn:op', op)
-    activeRoom?.sync.announceLocalOp(op)
-    void shadow.commitOp(op, folder).catch((error) => console.error(`[cairn:shadow] ${error.message}`))
-  })
-  watcher.on('error', (error) => {
-    console.error(`[cairn:watcher] ${error.message}`)
-  })
-
-  try {
-    await shadow.init()
-    await watcher.start()
-    const cleaned = await trash.cleanup((await getSettings()).trashRetentionDays)
-    if (cleaned > 0) {
-      console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
+  if (startWatchingPromise) {
+    try {
+      await startWatchingPromise
+    } catch {
+      // 上一次启动失败不应阻断新的用户请求。
     }
-    activeProject = { root: folder, oplog, watcher, trash }
-    activeShadow = shadow
-    await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
-  } catch (error) {
-    await watcher.stop()
-    oplog.close()
-    shadow.close()
-    throw error
+  }
+
+  const currentPromise = (async () => {
+    validateFolder(folder)
+    // 严格模式的重复恢复会在第一个启动完成后到达这里，直接复用即可。
+    if (activeProject?.root === folder) return
+
+    await stopWatching()
+
+    const oplog = createOplog(folder)
+    const trash = new TrashManager(folder)
+    const watcher = new ProjectWatcher(folder, oplog, {}, trash)
+    const shadow = createShadowGit(folder)
+
+    watcher.on('op', (op) => {
+      sendToWindow('cairn:op', op)
+      activeRoom?.sync.announceLocalOp(op)
+      void shadow.commitOp(op, folder).catch((error) => console.error(`[cairn:shadow] ${error.message}`))
+    })
+    watcher.on('error', (error) => {
+      console.error(`[cairn:watcher] ${error.message}`)
+    })
+
+    try {
+      await shadow.init()
+      await watcher.start()
+      const cleaned = await trash.cleanup((await getSettings()).trashRetentionDays)
+      if (cleaned > 0) {
+        console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
+      }
+      activeProject = { root: folder, oplog, watcher, trash }
+      activeShadow = shadow
+      await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
+    } catch (error) {
+      await watcher.stop()
+      oplog.close()
+      shadow.close()
+      throw error
+    }
+  })()
+
+  startWatchingPromise = currentPromise
+  try {
+    await currentPromise
+  } finally {
+    if (startWatchingPromise === currentPromise) {
+      startWatchingPromise = undefined
+    }
   }
 }
 
