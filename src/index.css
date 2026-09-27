@@ -506,6 +506,156 @@
   width: 160px;
 }
 
+.share-active,
+.download-available,
+.sharing-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.share-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-1);
+  font-size: 13px;
+}
+
+.share-active .btn,
+.download-available .btn {
+  align-self: flex-start;
+}
+
+.seeder-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+  margin-bottom: 8px;
+  padding: 14px 16px;
+}
+
+.seeder-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.seeder-name {
+  color: var(--text-0);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.seeder-meta {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.download-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.download-target-label {
+  color: var(--text-2);
+}
+
+.download-target-path {
+  overflow: hidden;
+  max-width: 400px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-0);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  transition: background 0.12s;
+  white-space: nowrap;
+}
+
+.download-target-path:hover {
+  background: var(--bg-2);
+}
+
+.sharing-empty {
+  padding: 20px 0;
+}
+
+.sharing-empty-title {
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sharing-empty-desc {
+  color: var(--text-2);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.download-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 0;
+}
+
+.download-progress-header {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.download-progress-bar {
+  overflow: hidden;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--bg-0);
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: var(--red);
+  transition: width 0.2s;
+}
+
+.download-progress-meta {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.download-conflicts {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  margin-top: 12px;
+}
+
+.download-conflicts p {
+  color: var(--red);
+  margin-bottom: 6px;
+}
+
+.download-conflicts ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
 .peers-section {
   margin-top: 24px;
 }

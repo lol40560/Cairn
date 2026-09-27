@@ -1,11 +1,18 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { Op } from '../types/cairn'
-import type { PeerInfo } from '../types/cairn'
+import type { Op, PeerInfo, SeederInfo } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
 export type ActiveView = 'activity' | 'room' | 'conflicts'
+export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
+
+export interface DownloadProgress {
+  receivedBytes: number
+  totalBytes: number
+  receivedChunks: number
+  totalChunks: number
+}
 
 export interface AppState {
   folder: string
@@ -15,6 +22,12 @@ export interface AppState {
   ops: Op[]
   roomCode: string
   peers: PeerInfo[]
+  seeders: SeederInfo[]
+  isSharing: boolean
+  mySnapshotId: string | undefined
+  downloadStatus: DownloadStatus
+  downloadProgress: DownloadProgress | undefined
+  downloadTargetDir: string
   conflicts: Array<{ op: Op; localContent: string; timestamp: number }>
   githubConfigured: boolean
   setFolder(folder: string): void
@@ -23,6 +36,13 @@ export interface AppState {
   setStatus(status: WatchStatus): void
   setRoomCode(code: string): void
   setPeers(peers: PeerInfo[]): void
+  setSeeders(seeders: SeederInfo[]): void
+  setIsSharing(isSharing: boolean): void
+  setMySnapshotId(id: string | undefined): void
+  setDownloadStatus(status: DownloadStatus): void
+  setDownloadProgress(progress: DownloadProgress | undefined): void
+  setDownloadTargetDir(directory: string): void
+  resetDownload(): void
   addConflict(conflict: { op: Op; localContent: string; timestamp: number }): void
   removeConflict(opHash: string): void
   clearConflicts(): void
@@ -39,6 +59,12 @@ export const useAppStore = create<AppState>((set) => ({
   ops: [],
   roomCode: '',
   peers: [],
+  seeders: [],
+  isSharing: false,
+  mySnapshotId: undefined,
+  downloadStatus: 'idle',
+  downloadProgress: undefined,
+  downloadTargetDir: '',
   conflicts: [],
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
@@ -50,6 +76,13 @@ export const useAppStore = create<AppState>((set) => ({
   setStatus: (status) => set({ status }),
   setRoomCode: (roomCode) => set({ roomCode }),
   setPeers: (peers) => set({ peers }),
+  setSeeders: (seeders) => set({ seeders }),
+  setIsSharing: (isSharing) => set({ isSharing }),
+  setMySnapshotId: (mySnapshotId) => set({ mySnapshotId }),
+  setDownloadStatus: (downloadStatus) => set({ downloadStatus }),
+  setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
+  setDownloadTargetDir: (downloadTargetDir) => set({ downloadTargetDir }),
+  resetDownload: () => set({ downloadProgress: undefined, downloadStatus: 'idle' }),
   addConflict: (conflict) => set((state) => ({ conflicts: [...state.conflicts, conflict] })),
   removeConflict: (opHash) => set((state) => ({ conflicts: state.conflicts.filter((conflict) => conflict.op.hash !== opHash) })),
   clearConflicts: () => set({ conflicts: [] }),
