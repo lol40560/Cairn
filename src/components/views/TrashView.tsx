@@ -103,7 +103,7 @@ export function TrashView() {
       {trash.length === 0 ? (
         <div className="empty">
           <div className="empty-title">{t('trashEmpty')}</div>
-          <div className="empty-desc">{t('trashEmptyDesc').replace('{days}', String(retentionDays))}</div>
+          <div className="empty-desc">{t('trashEmptyDesc2').replace('{days}', String(retentionDays))}</div>
         </div>
       ) : (
         <div className="trash-list">

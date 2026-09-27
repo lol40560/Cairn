@@ -536,7 +536,12 @@ export function RoomView({
 
           <div className="peers-section">
             <p className="peers-label">{t('connectedPeers').replace('{n}', String(peers.length))}</p>
-            {peers.map((peer, index) => (
+            {peers.length === 0 ? (
+              <div className="team-empty">
+                <p className="team-empty-title">{t('teamAlone')}</p>
+                <p className="team-empty-desc">{t('teamAloneDesc')}</p>
+              </div>
+            ) : peers.map((peer, index) => (
               <div key={peer.peerId} className="peer-row">
                 <span aria-hidden="true" className="peer-dot" style={{ background: peerColors[index % peerColors.length] }} />
                 <span className="peer-name">{peer.peerId.slice(0, 8)}</span>

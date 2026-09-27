@@ -40,7 +40,7 @@ export function ConflictsView() {
       {!hasConflicts ? (
         <div className="empty">
           <p className="empty-title">{t('conflictsEmpty')}</p>
-          <p className="empty-desc">{t('conflictsEmptyDesc')}</p>
+          <p className="empty-desc">{t('conflictsEmptyDesc2')}</p>
         </div>
       ) : (
         <div className="conflict-list">

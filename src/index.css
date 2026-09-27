@@ -360,6 +360,12 @@
   line-height: 1.7;
 }
 
+.empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
 .op-list {
   display: flex;
   flex-direction: column;
@@ -780,6 +786,23 @@
 
 .peers-section {
   margin-top: 24px;
+}
+
+.team-empty {
+  padding: 14px 16px;
+}
+
+.team-empty-title {
+  color: var(--text-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.team-empty-desc {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 
 .peer-row {

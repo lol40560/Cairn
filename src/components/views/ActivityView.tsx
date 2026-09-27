@@ -4,11 +4,13 @@ import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 
 import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
+import { useAppStore } from '@/store/appStore'
 import type { TranslateFn } from '@/i18n'
 import type { Op } from '@/types/cairn'
 
 interface ActivityViewProps {
   emptyMessage?: string
+  folder?: string
   ops: Op[]
   onChangeFolder(): Promise<void>
 }
@@ -40,8 +42,11 @@ function formatRelativeTime(timestamp: number, t: TranslateFn): string {
   return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
 }
 
-export function ActivityView({ emptyMessage, ops, onChangeFolder }: ActivityViewProps) {
+export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChangeFolder }: ActivityViewProps) {
   const { locale, t } = useTranslation()
+  const storedFolder = useAppStore((state) => state.folder)
+  const folder = folderOverride ?? storedFolder
+  const setActiveView = useAppStore((state) => state.setActiveView)
   const [remoteOnly, setRemoteOnly] = useState(false)
   const visibleOps = remoteOnly ? ops.filter((op) => op.source === 'remote') : ops
   const fileCount = new Set(ops.map((op) => op.filePath)).size
@@ -69,8 +74,25 @@ export function ActivityView({ emptyMessage, ops, onChangeFolder }: ActivityView
 
       {visibleOps.length === 0 ? (
         <div className="empty">
-          <p className="empty-title">{emptyMessage ?? t('emptyState')}</p>
-          {remoteOnly && <p className="empty-desc">{t('remoteChangesEmpty')}</p>}
+          {!folder ? (
+            <>
+              <p className="empty-title">{t('emptyNoProject')}</p>
+              <p className="empty-desc">{emptyMessage ?? t('emptyNoProjectDesc')}</p>
+              <div className="empty-actions">
+                <button className="btn btn-primary" type="button" onClick={() => void onChangeFolder()}>
+                  {t('chooseFolder')}
+                </button>
+                <button className="btn btn-ghost" type="button" onClick={() => setActiveView('room')}>
+                  {t('joinTeam')}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="empty-title">{t('emptyNoChanges')}</p>
+              <p className="empty-desc">{remoteOnly ? t('remoteChangesEmpty') : t('emptyNoChangesDesc')}</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="op-list">

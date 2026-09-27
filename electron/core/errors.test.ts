@@ -27,6 +27,16 @@ describe('toAppError', () => {
     expect(toAppError(new Error('mDNS socket failure')).hint).toBe('hintCheckFirewall')
     expect(toAppError(new Error('github refused request')).hint).toBe('hintCheckGithubSettings')
   })
+
+  it.each([
+    ['EHOSTUNREACH: host unreachable', 'errorTeammateUnreachable'],
+    ['ECONNREFUSED: connection refused', 'errorTeammateClosed'],
+    ['HttpError: Bad credentials', 'errorGithubExpired'],
+    ['octokit 404 GitHub repository not found', 'errorGithubRepoNotFound'],
+    ['ENOENT: no such file or directory', 'errorFileGone'],
+  ])('为 %s 指定友好展示 key', (message, code) => {
+    expect(toAppError(new Error(message)).code).toBe(code)
+  })
 })
 
 describe('wrapIpcHandler', () => {

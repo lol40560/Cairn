@@ -53,6 +53,23 @@ function errorRaw(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error)
 }
 
+/** 将常见的底层错误映射为 renderer 可本地化的展示 key。 */
+function presentationCode(normalized: string): string | undefined {
+  if (normalized.includes('ehostunreach') || normalized.includes('enetunreach')) return 'errorTeammateUnreachable'
+  if (normalized.includes('econnrefused')) return 'errorTeammateClosed'
+  if (normalized.includes('etimedout') || normalized.includes('timeout')) return 'errorTimeout'
+  if (normalized.includes('enoent')) return 'errorFileGone'
+  if (normalized.includes('eacces') || normalized.includes('eperm')) return 'errorPermission'
+  if (normalized.includes('bad credentials') || normalized.includes('401')) return 'errorGithubExpired'
+  if ((normalized.includes('github') || normalized.includes('octokit') || normalized.includes('httperror')) && normalized.includes('404')) return 'errorGithubRepoNotFound'
+  if ((normalized.includes('github') || normalized.includes('octokit') || normalized.includes('httperror')) && normalized.includes('403')) return 'errorGithubDenied'
+  if (normalized.includes('eaddrinuse') || normalized.includes('port') && normalized.includes('in use')) return 'errorPortInUse'
+  if (normalized.includes('invalid room code') || normalized.includes('invalid invite code') || normalized.includes('邀请码格式')) return 'errorInvalidCode'
+  if (normalized.includes('snapshot') && normalized.includes('large') || normalized.includes('项目过大') || normalized.includes('50 mb')) return 'errorSnapshotTooLarge'
+  if (normalized.includes('enospc') || normalized.includes('disk full')) return 'errorDiskFull'
+  return undefined
+}
+
 /** 将底层异常归类，并保留原始异常以便排查。 */
 export function toAppError(error: unknown): AppError {
   if (error instanceof AppError) {
@@ -60,8 +77,9 @@ export function toAppError(error: unknown): AppError {
   }
 
   const message = errorMessage(error)
-  const normalized = `${error instanceof Error ? error.name : ''} ${message}`.toLowerCase()
-  const code = errorCode(error)
+  const rawCode = errorCode(error)
+  const normalized = `${error instanceof Error ? error.name : ''} ${message} ${rawCode ?? ''}`.toLowerCase()
+  const code = presentationCode(normalized) ?? rawCode
   const isGithub = normalized.includes('httperror') || normalized.includes('octokit') || normalized.includes('github')
   const isTokenFailure = normalized.includes('bad credentials') || normalized.includes('token invalid') || normalized.includes('token expired')
   const isRepoMissing = isGithub && (normalized.includes('404') || normalized.includes('not found'))
@@ -101,7 +119,8 @@ export function toAppError(error: unknown): AppError {
     normalized.includes('econnrefused') ||
     normalized.includes('timeout') ||
     isMdnsOrSocket ||
-    normalized.includes('enetunreach')
+    normalized.includes('enetunreach') ||
+    normalized.includes('ehostunreach')
   ) {
     return new AppError(message, 'network', {
       cause: error,
