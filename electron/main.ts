@@ -14,7 +14,16 @@ import type { ExportSnapshotResult } from './core/snapshot/export'
 import { createOplog } from './core/oplog'
 import type { Oplog, Op } from './core/oplog'
 import { ProjectWatcher } from './core/watcher'
-import { Sync, type PeerInfo } from './core/sync'
+import {
+  SnapshotDownloader,
+  SnapshotSeeder,
+  Sync,
+  type DownloadProgress,
+  type DownloadResult,
+  type PeerInfo,
+  type SeederInfo,
+  type SeederState,
+} from './core/sync'
 
 interface ActiveProject {
   root: string
@@ -36,6 +45,8 @@ export interface AppSettings {
 let activeProject: ActiveProject | undefined
 let activeShadow: ShadowGit | undefined
 let activeRoom: { roomCode: string; sync: Sync } | undefined
+let activeSeeder: SnapshotSeeder | undefined
+let activeDownloader: SnapshotDownloader | undefined
 let handlersRegistered = false
 let isQuitting = false
 let mainWindow: BrowserWindow | undefined
@@ -441,6 +452,12 @@ export async function leaveRoom(): Promise<void> {
     return
   }
 
+  activeDownloader?.cancel()
+  activeDownloader = undefined
+  activeSeeder?.stop()
+  activeSeeder = undefined
+  room.sync.registerDownloader(undefined)
+  room.sync.registerSeeder(undefined)
   activeRoom = undefined
   try {
     await room.sync.stop()
@@ -451,6 +468,90 @@ export async function leaveRoom(): Promise<void> {
 
 export function listPeers(): PeerInfo[] {
   return activeRoom?.sync.listPeers() ?? []
+}
+
+/** 开始向当前房间共享一次静态项目快照。 */
+export async function startSharing(): Promise<SeederInfo> {
+  if (!activeProject) {
+    throw new Error('请先选择项目')
+  }
+  if (!activeRoom) {
+    throw new Error('请先加入房间')
+  }
+
+  activeSeeder?.stop()
+  activeRoom.sync.registerSeeder(undefined)
+  const seeder = new SnapshotSeeder(activeProject.root, activeRoom.sync)
+  activeSeeder = seeder
+  activeRoom.sync.registerSeeder(seeder)
+  try {
+    const state = await seeder.start()
+    return toSeederInfo(activeRoom.sync, state)
+  } catch (error) {
+    if (activeSeeder === seeder) {
+      activeSeeder = undefined
+      activeRoom.sync.registerSeeder(undefined)
+    }
+    throw error
+  }
+}
+
+/** 停止共享当前项目快照。 */
+export function stopSharing(): void {
+  activeSeeder?.stop()
+  activeSeeder = undefined
+  activeRoom?.sync.registerSeeder(undefined)
+}
+
+/** 返回当前房间中已广播的项目快照。 */
+export function listSeeders(): SeederInfo[] {
+  return activeRoom?.sync.listSeeders() ?? []
+}
+
+/** 返回并确保用于接收队友项目的默认目录存在。 */
+export async function getDefaultDownloadDir(): Promise<string> {
+  const directory = join(app.getPath('home'), 'Cairn')
+  await mkdir(directory, { recursive: true })
+  return directory
+}
+
+/** 下载队友共享的项目快照，并将进度单向推送至渲染进程。 */
+export async function downloadProject(input: { snapshotId: string; targetDir: string }): Promise<DownloadResult> {
+  if (!activeRoom) {
+    throw new Error('请先加入房间')
+  }
+  if (!input || typeof input.snapshotId !== 'string' || !input.snapshotId) {
+    throw new Error('snapshotId 不能为空')
+  }
+  if (typeof input.targetDir !== 'string' || !isAbsolute(input.targetDir)) {
+    throw new Error(`下载目标必须是绝对路径：${String(input?.targetDir)}`)
+  }
+
+  await mkdir(input.targetDir, { recursive: true })
+  activeDownloader?.cancel()
+  const room = activeRoom
+  const downloader = new SnapshotDownloader(room.sync)
+  activeDownloader = downloader
+  room.sync.registerDownloader(downloader)
+  try {
+    return await downloader.startDownload(input.snapshotId, input.targetDir, (progress: DownloadProgress) => {
+      sendToWindow('cairn:downloadProgress', progress)
+    })
+  } finally {
+    if (activeDownloader === downloader) {
+      activeDownloader = undefined
+      room.sync.registerDownloader(undefined)
+    }
+  }
+}
+
+function toSeederInfo(sync: Sync, state: SeederState): SeederInfo {
+  return {
+    peerId: sync.getPeerId(),
+    snapshotId: state.snapshotId,
+    projectName: state.projectName,
+    size: state.totalBytes,
+  }
 }
 
 export async function startWatching(folder: string): Promise<void> {
@@ -518,6 +619,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
   ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
   ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
+  ipcMain.handle('cairn:startSharing', wrapIpcHandler(startSharing))
+  ipcMain.handle('cairn:stopSharing', wrapIpcHandler(stopSharing))
+  ipcMain.handle('cairn:downloadProject', wrapIpcHandler((input) => downloadProject(input)))
+  ipcMain.handle('cairn:listSeeders', wrapIpcHandler(listSeeders))
+  ipcMain.handle('cairn:getDefaultDownloadDir', wrapIpcHandler(getDefaultDownloadDir))
 }
 
 export function createWindow(): BrowserWindow {

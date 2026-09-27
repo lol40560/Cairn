@@ -5,7 +5,7 @@ import { applyPatch } from 'diff'
 
 import type { Oplog } from '../oplog'
 import { Discovery } from './discovery'
-import type { PeerInfo, SyncMessage } from './protocol'
+import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
 import { Transport } from './transport'
 
 export interface SyncOptions {
@@ -25,11 +25,26 @@ interface SyncDependencies {
   transport?: Transport
 }
 
+/** 避免 Sync 与快照模块产生循环依赖的最小处理器契约。 */
+export interface SnapshotSeederHandler {
+  handleWantSnapshot(peerId: string, snapshotId: string): void
+  handleWantChunk(peerId: string, snapshotId: string, index: number): void
+  announceToPeer?(peerId: string): void
+}
+
+export interface SnapshotDownloaderHandler {
+  handleSnapshotMeta(peerId: string, message: Extract<SyncMessage, { type: 'snapshot-meta' }>): void
+  handleChunk(peerId: string, message: Extract<SyncMessage, { type: 'chunk' }>): void
+}
+
 export class Sync extends EventEmitter {
   private readonly discovery: Discovery
   private readonly peerId: string
   private readonly peers = new Map<string, PeerInfo>()
+  private readonly seeders = new Map<string, SeederInfo>()
   private readonly transport: Transport
+  private seeder?: SnapshotSeederHandler
+  private downloader?: SnapshotDownloaderHandler
   private started = false
 
   constructor(
@@ -78,6 +93,7 @@ export class Sync extends EventEmitter {
     this.discovery.stopBrowse()
     this.discovery.destroy()
     this.peers.clear()
+    this.seeders.clear()
     try {
       await this.transport.close()
     } catch (error) {
@@ -89,9 +105,41 @@ export class Sync extends EventEmitter {
     return [...this.peers.values()].sort((left, right) => left.peerId.localeCompare(right.peerId))
   }
 
+  getPeerId(): string {
+    return this.peerId
+  }
+
+  listSeeders(): SeederInfo[] {
+    return [...this.seeders.values()].sort((left, right) => {
+      return left.projectName.localeCompare(right.projectName) || left.peerId.localeCompare(right.peerId)
+    })
+  }
+
+  registerSeeder(seeder: SnapshotSeederHandler | undefined): void {
+    this.seeder = seeder
+  }
+
+  registerDownloader(downloader: SnapshotDownloaderHandler | undefined): void {
+    this.downloader = downloader
+  }
+
+  /** 向指定对等端发送快照控制消息。 */
+  send(peerId: string, message: SyncMessage): void {
+    if (this.started) {
+      this.transport.send(peerId, message)
+    }
+  }
+
+  /** 向当前房间的所有已连接对等端广播快照控制消息。 */
+  broadcast(message: SyncMessage): void {
+    if (this.started) {
+      this.transport.broadcast(message)
+    }
+  }
+
   announceLocalOp(op: import('../oplog').Op): void {
     if (this.started) {
-      this.transport.broadcast({ hash: op.hash, type: 'have' })
+      this.broadcast({ hash: op.hash, type: 'have' })
     }
   }
 
@@ -129,20 +177,27 @@ export class Sync extends EventEmitter {
     if (!this.peers.delete(peerId)) {
       return
     }
+    for (const [seederKey, seeder] of this.seeders) {
+      if (seeder.peerId === peerId) {
+        this.seeders.delete(seederKey)
+        this.emit('seederGone', { peerId, snapshotId: seeder.snapshotId })
+      }
+    }
     this.emit('peerLeft', peerId)
   }
 
   private readonly handleConnect = (peerId: string): void => {
     this.emit('connected', peerId)
     for (const hash of this.options.oplog.listAllHashes()) {
-      this.transport.send(peerId, { hash, type: 'have' })
+      this.send(peerId, { hash, type: 'have' })
     }
+    this.seeder?.announceToPeer?.(peerId)
   }
 
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {
     if (message.type === 'have') {
       if (!this.options.oplog.hasOp(message.hash)) {
-        this.transport.send(peerId, { hash: message.hash, type: 'want' })
+        this.send(peerId, { hash: message.hash, type: 'want' })
       }
       return
     }
@@ -150,13 +205,55 @@ export class Sync extends EventEmitter {
     if (message.type === 'want') {
       const op = this.options.oplog.getOp(message.hash)
       if (op) {
-        this.transport.send(peerId, { op, type: 'data' })
+        this.send(peerId, { op, type: 'data' })
       }
       return
     }
 
     if (message.type === 'data') {
       void this.receiveRemoteOp(message.op)
+      return
+    }
+
+    try {
+      if (message.type === 'seeder-available') {
+        const info: SeederInfo = {
+          peerId,
+          snapshotId: message.snapshotId,
+          projectName: message.projectName,
+          size: message.size,
+        }
+        this.seeders.set(this.seederKey(peerId, message.snapshotId), info)
+        this.emit('seederAvailable', info)
+        return
+      }
+
+      if (message.type === 'seeder-gone') {
+        this.seeders.delete(this.seederKey(peerId, message.snapshotId))
+        this.emit('seederGone', { peerId, snapshotId: message.snapshotId })
+        return
+      }
+
+      if (message.type === 'want-snapshot') {
+        this.seeder?.handleWantSnapshot(peerId, message.snapshotId)
+        return
+      }
+
+      if (message.type === 'want-chunk') {
+        this.seeder?.handleWantChunk(peerId, message.snapshotId, message.index)
+        return
+      }
+
+      if (message.type === 'snapshot-meta') {
+        this.downloader?.handleSnapshotMeta(peerId, message)
+        return
+      }
+
+      if (message.type === 'chunk') {
+        this.downloader?.handleChunk(peerId, message)
+      }
+    } catch (error) {
+      this.emitError(error)
     }
   }
 
@@ -198,5 +295,9 @@ export class Sync extends EventEmitter {
 
   private emitError(error: unknown): void {
     this.emit('error', error instanceof Error ? error : new Error(String(error)))
+  }
+
+  private seederKey(peerId: string, snapshotId: string): string {
+    return `${peerId}:${snapshotId}`
   }
 }

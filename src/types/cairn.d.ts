@@ -34,6 +34,30 @@ export interface ExportSnapshotResult {
   skippedCount: number
 }
 
+export interface SeederInfo {
+  peerId: string
+  snapshotId: string
+  projectName: string
+  size: number
+}
+
+export interface DownloadProgress {
+  snapshotId: string
+  projectName: string
+  receivedChunks: number
+  totalChunks: number
+  receivedBytes: number
+  totalBytes: number
+  status: 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
+  error?: string
+}
+
+export interface DownloadResult {
+  targetDir: string
+  extractedFiles: number
+  conflictFiles: string[]
+}
+
 export type ErrorCategory =
   | 'config'
   | 'network'
@@ -74,6 +98,12 @@ export interface CairnApi {
   exportPR(options: { branch?: string; prBranch?: string; title: string; body?: string }): Promise<IpcResult<{ prUrl: string; prNumber: number }>>
   exportSnapshot(): Promise<IpcResult<ExportSnapshotResult | { canceled: true }>>
   copyToClipboard(text: string): Promise<IpcResult<void>>
+  startSharing(): Promise<IpcResult<SeederInfo>>
+  stopSharing(): Promise<IpcResult<void>>
+  downloadProject(input: { snapshotId: string; targetDir: string }): Promise<IpcResult<DownloadResult>>
+  listSeeders(): Promise<IpcResult<SeederInfo[]>>
+  getDefaultDownloadDir(): Promise<IpcResult<string>>
+  onDownloadProgress(callback: (progress: DownloadProgress) => void): () => void
   checkFolder(folder: string): Promise<IpcResult<boolean>>
   getLastSession(): Promise<IpcResult<LastSession>>
   clearLastSession(): Promise<IpcResult<void>>

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { createWriteStream } from 'node:fs'
-import { mkdir, readdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, join, relative, sep } from 'node:path'
+import { Writable } from 'node:stream'
 
 import { isBinaryFile } from '../watcher/watcher'
 import { AppError } from '../errors'
@@ -51,6 +51,12 @@ export interface ExportProjectSnapshotOptions {
   maxSizeBytes?: number
   /** 主进程传入 Electron 临时目录；测试和非 Electron 调用使用系统临时目录。 */
   tempDirectory?: string
+}
+
+export interface PackagedProjectSnapshot {
+  buffer: Buffer
+  fileCount: number
+  skippedCount: number
 }
 
 interface ExportFile {
@@ -109,12 +115,18 @@ function formatMegabytes(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1)
 }
 
-async function writeZip(filePath: string, files: ExportFile[]): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const output = createWriteStream(filePath, { flags: 'wx' })
+async function createZipBuffer(files: ExportFile[]): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const output = new Writable({
+      write(chunk: Buffer | string, _encoding, callback): void {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        callback()
+      },
+    })
     const archive = new ZipArchive({ zlib: { level: 9 } })
 
-    output.once('close', resolve)
+    output.once('finish', () => resolve(Buffer.concat(chunks)))
     output.once('error', reject)
     archive.on('error', reject)
     archive.pipe(output)
@@ -132,12 +144,13 @@ async function writeZip(filePath: string, files: ExportFile[]): Promise<void> {
 }
 
 /**
- * 打包当前项目的文本文件快照。Cairn 内部数据、依赖、构建产物和 binary 文件均不会进入压缩包。
+ * 将项目的可同步文本文件打包为内存 ZIP。P2P seeder 与手动导出共用该入口，
+ * 从而确保过滤规则和体积上限完全一致。
  */
-export async function exportProjectSnapshot(
+export async function packageProjectAsZip(
   projectRoot: string,
   options: ExportProjectSnapshotOptions = {},
-): Promise<ExportSnapshotResult> {
+): Promise<PackagedProjectSnapshot> {
   const projectStats = await stat(projectRoot)
   if (!projectStats.isDirectory()) {
     throw new Error(`项目路径必须是目录：${projectRoot}`)
@@ -158,17 +171,32 @@ export async function exportProjectSnapshot(
     )
   }
 
+  return {
+    buffer: await createZipBuffer(files),
+    fileCount: files.length,
+    skippedCount,
+  }
+}
+
+/**
+ * 打包当前项目的文本文件快照。Cairn 内部数据、依赖、构建产物和 binary 文件均不会进入压缩包。
+ */
+export async function exportProjectSnapshot(
+  projectRoot: string,
+  options: ExportProjectSnapshotOptions = {},
+): Promise<ExportSnapshotResult> {
+  const packaged = await packageProjectAsZip(projectRoot, options)
+
   const tempDirectory = options.tempDirectory ?? tmpdir()
   await mkdir(tempDirectory, { recursive: true })
   const filePath = join(tempDirectory, `${basename(projectRoot)}-${randomUUID()}.zip`)
 
-  await writeZip(filePath, files)
-  const archiveStats = await stat(filePath)
+  await writeFile(filePath, packaged.buffer, { flag: 'wx' })
 
   return {
     filePath,
-    fileSize: archiveStats.size,
-    fileCount: files.length,
-    skippedCount,
+    fileSize: packaged.buffer.length,
+    fileCount: packaged.fileCount,
+    skippedCount: packaged.skippedCount,
   }
 }

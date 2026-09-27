@@ -7,11 +7,25 @@ export interface PeerInfo {
   lastSeen: number
 }
 
+export interface SeederInfo {
+  peerId: string
+  snapshotId: string
+  projectName: string
+  size: number
+}
+
 export type SyncMessage =
   | { type: 'hello'; peerId: string; roomCode: string; version: 1 }
   | { type: 'have'; hash: string }
   | { type: 'want'; hash: string }
   | { type: 'data'; op: Op }
+  | { type: 'seeder-available'; snapshotId: string; projectName: string; size: number }
+  | { type: 'seeder-gone'; snapshotId: string }
+  | { type: 'want-snapshot'; snapshotId: string }
+  | { type: 'snapshot-meta'; snapshotId: string; size: number; chunkCount: number; projectName: string }
+  | { type: 'want-chunk'; snapshotId: string; index: number }
+  | { type: 'chunk'; snapshotId: string; index: number; data: string }
+  | { type: 'snapshot-done'; snapshotId: string }
 
 export function encodeMessage(message: SyncMessage): string {
   return `${JSON.stringify(message)}\n`
@@ -45,7 +59,7 @@ export function decodeMessages(
   return { messages, rest }
 }
 
-function isSyncMessage(message: unknown): message is SyncMessage {
+export function isSyncMessage(message: unknown): message is SyncMessage {
   if (typeof message !== 'object' || message === null || !('type' in message)) {
     return false
   }
@@ -64,7 +78,40 @@ function isSyncMessage(message: unknown): message is SyncMessage {
       return typeof candidate.hash === 'string'
     case 'data':
       return typeof candidate.op === 'object' && candidate.op !== null
+    case 'seeder-available':
+      return (
+        typeof candidate.snapshotId === 'string' &&
+        typeof candidate.projectName === 'string' &&
+        isNonNegativeNumber(candidate.size)
+      )
+    case 'seeder-gone':
+    case 'want-snapshot':
+    case 'snapshot-done':
+      return typeof candidate.snapshotId === 'string'
+    case 'snapshot-meta':
+      return (
+        typeof candidate.snapshotId === 'string' &&
+        typeof candidate.projectName === 'string' &&
+        isNonNegativeNumber(candidate.size) &&
+        isNonNegativeInteger(candidate.chunkCount)
+      )
+    case 'want-chunk':
+      return typeof candidate.snapshotId === 'string' && isNonNegativeInteger(candidate.index)
+    case 'chunk':
+      return (
+        typeof candidate.snapshotId === 'string' &&
+        isNonNegativeInteger(candidate.index) &&
+        typeof candidate.data === 'string'
+      )
     default:
       return false
   }
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return isNonNegativeNumber(value)
 }

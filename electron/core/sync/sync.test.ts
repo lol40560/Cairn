@@ -59,6 +59,7 @@ class MockDiscovery extends EventEmitter {
 }
 
 class MockTransport extends EventEmitter {
+  readonly broadcast = vi.fn()
   readonly connect = vi.fn(async () => undefined)
   readonly send = vi.fn()
 
@@ -177,6 +178,60 @@ describe('transport', () => {
 })
 
 describe('Sync', () => {
+  it('路由快照消息并维护远端 seeder 列表', async () => {
+    const { oplog } = await createTestOplog()
+    const discovery = new MockDiscovery()
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: discovery as unknown as never, peerId: 'local', transport: transport as unknown as never },
+    )
+    const seeder = {
+      announceToPeer: vi.fn(),
+      handleWantChunk: vi.fn(),
+      handleWantSnapshot: vi.fn(),
+    }
+    const downloader = {
+      handleChunk: vi.fn(),
+      handleSnapshotMeta: vi.fn(),
+    }
+    sync.registerSeeder(seeder)
+    sync.registerDownloader(downloader)
+    await sync.start()
+
+    transport.emit('message', 'peer-a', {
+      type: 'seeder-available',
+      snapshotId: 'snapshot-a',
+      projectName: 'project-a',
+      size: 42,
+    } satisfies SyncMessage)
+    transport.emit('message', 'peer-a', { type: 'want-snapshot', snapshotId: 'local-snapshot' } satisfies SyncMessage)
+    transport.emit('message', 'peer-a', { type: 'want-chunk', snapshotId: 'local-snapshot', index: 0 } satisfies SyncMessage)
+    transport.emit('message', 'peer-a', {
+      type: 'snapshot-meta',
+      snapshotId: 'snapshot-a',
+      projectName: 'project-a',
+      size: 42,
+      chunkCount: 1,
+    } satisfies SyncMessage)
+    transport.emit('message', 'peer-a', {
+      type: 'chunk',
+      snapshotId: 'snapshot-a',
+      index: 0,
+      data: 'YQ==',
+    } satisfies SyncMessage)
+
+    expect(sync.listSeeders()).toEqual([
+      { peerId: 'peer-a', snapshotId: 'snapshot-a', projectName: 'project-a', size: 42 },
+    ])
+    expect(seeder.handleWantSnapshot).toHaveBeenCalledWith('peer-a', 'local-snapshot')
+    expect(seeder.handleWantChunk).toHaveBeenCalledWith('peer-a', 'local-snapshot', 0)
+    expect(downloader.handleSnapshotMeta).toHaveBeenCalledOnce()
+    expect(downloader.handleChunk).toHaveBeenCalledOnce()
+
+    await sync.stop()
+  })
+
   it('通过同房间 discovery 在两个实例间同步 op', async () => {
     const first = await createTestOplog()
     const second = await createTestOplog()

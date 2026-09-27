@@ -58,7 +58,13 @@ const mocks = vi.hoisted(() => {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>()
     const sync = {
       announceLocalOp: vi.fn(),
+      broadcast: vi.fn(),
+      getPeerId: vi.fn(() => 'local-peer'),
       listPeers: vi.fn<() => unknown[]>(() => []),
+      listSeeders: vi.fn<() => unknown[]>(() => []),
+      registerDownloader: vi.fn(),
+      registerSeeder: vi.fn(),
+      send: vi.fn(),
       on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
         const eventListeners = listeners.get(event) ?? []
         eventListeners.push(listener)
@@ -181,6 +187,18 @@ vi.mock('./core/sync', () => ({
       const sync = mocks.makeSync()
       mocks.syncs.push(sync)
       return sync
+    }
+  },
+  SnapshotDownloader: class {
+    cancel(): void {}
+    async startDownload(): Promise<never> {
+      throw new Error('测试未配置下载器')
+    }
+  },
+  SnapshotSeeder: class {
+    stop(): void {}
+    async start(): Promise<never> {
+      throw new Error('测试未配置 seeder')
     }
   },
 }))
@@ -379,8 +397,10 @@ describe('IPC bridge', () => {
       'cairn:clearLastSession',
       'cairn:copyToClipboard',
       'cairn:createRoom',
+      'cairn:downloadProject',
       'cairn:exportPR',
       'cairn:exportSnapshot',
+      'cairn:getDefaultDownloadDir',
       'cairn:getGithubConfig',
       'cairn:getLastSession',
       'cairn:getSettings',
@@ -388,10 +408,13 @@ describe('IPC bridge', () => {
       'cairn:leaveRoom',
       'cairn:listPeers',
       'cairn:listRecentOps',
+      'cairn:listSeeders',
       'cairn:resetGithubConfig',
       'cairn:saveGithubConfig',
       'cairn:selectFolder',
+      'cairn:startSharing',
       'cairn:startWatching',
+      'cairn:stopSharing',
       'cairn:stopWatching',
       'cairn:updateSettings',
     ])
@@ -515,8 +538,10 @@ describe('IPC bridge', () => {
       'clearLastSession',
       'copyToClipboard',
       'createRoom',
+      'downloadProject',
       'exportPR',
       'exportSnapshot',
+      'getDefaultDownloadDir',
       'getGithubConfig',
       'getLastSession',
       'getSettings',
@@ -524,13 +549,17 @@ describe('IPC bridge', () => {
       'leaveRoom',
       'listPeers',
       'listRecentOps',
+      'listSeeders',
       'onConflict',
+      'onDownloadProgress',
       'onOp',
       'onPeers',
       'resetGithubConfig',
       'saveGithubConfig',
       'selectFolder',
+      'startSharing',
       'startWatching',
+      'stopSharing',
       'stopWatching',
       'updateSettings',
     ])

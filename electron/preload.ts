@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import type { Op } from './core/oplog/types'
-import type { PeerInfo } from './core/sync/protocol'
+import type { PeerInfo, SeederInfo } from './core/sync/protocol'
 import type { IpcResult } from './core/errors'
 import type { ExportSnapshotResult } from './core/snapshot/export'
+import type { DownloadProgress, DownloadResult } from './core/sync/downloader'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -55,6 +56,20 @@ const cairn = {
   exportPR: (options: { branch?: string; prBranch?: string; title: string; body?: string }): Promise<IpcResult<{ prUrl: string; prNumber: number }>> => invoke('cairn:exportPR', options),
   exportSnapshot: (): Promise<IpcResult<ExportSnapshotResult | { canceled: true }>> => invoke('cairn:exportSnapshot'),
   copyToClipboard: (text: string): Promise<IpcResult<void>> => invoke('cairn:copyToClipboard', text),
+  startSharing: (): Promise<IpcResult<SeederInfo>> => invoke('cairn:startSharing'),
+  stopSharing: (): Promise<IpcResult<void>> => invoke('cairn:stopSharing'),
+  downloadProject: (input: { snapshotId: string; targetDir: string }): Promise<IpcResult<DownloadResult>> =>
+    invoke('cairn:downloadProject', input),
+  listSeeders: (): Promise<IpcResult<SeederInfo[]>> => invoke('cairn:listSeeders'),
+  getDefaultDownloadDir: (): Promise<IpcResult<string>> => invoke('cairn:getDefaultDownloadDir'),
+  onDownloadProgress: (callback: (progress: DownloadProgress) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, progress: DownloadProgress): void => callback(progress)
+    ipcRenderer.on('cairn:downloadProgress', listener)
+
+    return () => {
+      ipcRenderer.removeListener('cairn:downloadProgress', listener)
+    }
+  },
   checkFolder: (folder: string): Promise<IpcResult<boolean>> => invoke('cairn:checkFolder', folder),
   getLastSession: (): Promise<IpcResult<{ folder: string; watching: boolean; updatedAt: number }>> => invoke('cairn:getLastSession'),
   clearLastSession: (): Promise<IpcResult<void>> => invoke('cairn:clearLastSession'),
