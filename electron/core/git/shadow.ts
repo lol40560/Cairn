@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 
 import * as git from 'isomorphic-git'
@@ -43,6 +43,15 @@ function safeProjectPath(projectRoot: string, filePath: string): string {
   return target
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
 class IsomorphicShadowGit implements ShadowGit {
   private readonly configPath: string
   private readonly gitDir: string
@@ -74,11 +83,28 @@ class IsomorphicShadowGit implements ShadowGit {
     await this.init()
     const sourcePath = safeProjectPath(projectRoot, op.filePath)
     const targetPath = safeProjectPath(this.workDir, op.filePath)
+    const fs = await import('node:fs')
+    if (!(await fileExists(sourcePath))) {
+      if (!(await fileExists(targetPath))) {
+        console.info(`[cairn:shadow] 文件已在 shadow 中删除，跳过：${op.filePath}`)
+        return ''
+      }
+
+      // 删除 op 的源文件已由废纸篓接管；同步删除影子工作树中的版本。
+      await rm(targetPath, { force: true })
+      await git.remove({ dir: this.workDir, filepath: op.filePath, fs, gitdir: this.gitDir })
+      return git.commit({
+        author: { email: `${op.author}@cairn.local`, name: op.author },
+        dir: this.workDir,
+        fs,
+        gitdir: this.gitDir,
+        message: `[cairn] ${op.author}: deleted ${op.filePath} (${op.hash.slice(0, 8)})`,
+      })
+    }
+
     const content = await readFile(sourcePath, 'utf8')
     await mkdir(dirname(targetPath), { recursive: true })
     await writeFile(targetPath, content, 'utf8')
-
-    const fs = await import('node:fs')
     await git.add({ dir: this.workDir, filepath: op.filePath, fs, gitdir: this.gitDir })
     return git.commit({
       author: { email: `${op.author}@cairn.local`, name: op.author },

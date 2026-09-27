@@ -71,6 +71,31 @@ describe('ShadowGit', () => {
     ])
   })
 
+  it('删除 op 会从 shadow worktree 删除文件并创建删除提交', async () => {
+    const root = await createProject()
+    const shadow = createShadowGit(root)
+    await shadow.commitOp(createOp('a'.repeat(64)), root)
+    await rm(join(root, 'sample.ts'))
+
+    await shadow.commitOp(createOp('b'.repeat(64), 'bob'), root)
+
+    await expect(shadow.listFiles()).resolves.toEqual([])
+    expect((await shadow.listCommits())[0]).toMatchObject({
+      message: '[cairn] bob: deleted sample.ts (bbbbbbbb)',
+    })
+  })
+
+  it('重复删除在 shadow 中已不存在时幂等跳过', async () => {
+    const root = await createProject()
+    const shadow = createShadowGit(root)
+    await shadow.commitOp(createOp('a'.repeat(64)), root)
+    await rm(join(root, 'sample.ts'))
+    await shadow.commitOp(createOp('b'.repeat(64)), root)
+
+    await expect(shadow.commitOp(createOp('c'.repeat(64)), root)).resolves.toBe('')
+    await expect(shadow.listCommits()).resolves.toHaveLength(2)
+  })
+
   it('远端配置可往返读取', async () => {
     const root = await createProject()
     const shadow = createShadowGit(root)
