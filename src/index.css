@@ -702,6 +702,44 @@
   align-self: flex-start;
 }
 
+.trash-list { display: flex; flex-direction: column; gap: 2px; }
+
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  transition: background 0.12s;
+}
+
+.trash-row:hover { background: var(--bg-2); }
+.trash-info { flex: 1; min-width: 0; }
+
+.trash-file {
+  overflow: hidden;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-meta { margin-top: 3px; color: var(--text-2); font-size: 11px; }
+
+.trash-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0;
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.retention-field { display: flex; align-items: center; gap: 10px; color: var(--text-2); font-size: 12px; }
+.retention-field .input { width: 96px; }
+
 .download-conflicts {
   color: var(--text-2);
   font-family: var(--font-mono);

@@ -16,6 +16,8 @@ import type { DiscoveryStatus } from './core/sync/discovery'
 
 import { createOplog } from './core/oplog'
 import type { Oplog, Op } from './core/oplog'
+import { TrashManager } from './core/trash'
+import type { TrashEntry } from './core/trash'
 import { ProjectWatcher } from './core/watcher'
 import {
   SnapshotDownloader,
@@ -32,6 +34,7 @@ interface ActiveProject {
   root: string
   oplog: Oplog
   watcher: ProjectWatcher
+  trash: TrashManager
 }
 
 export interface LastSession {
@@ -43,6 +46,7 @@ export interface LastSession {
 export interface AppSettings {
   autoStartWatching: boolean
   rememberLastFolder: boolean
+  trashRetentionDays: number
 }
 
 let activeProject: ActiveProject | undefined
@@ -164,7 +168,13 @@ function settingsPath(): string {
 }
 
 const defaultLastSession: LastSession = { folder: '', updatedAt: 0, watching: false }
-const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true }
+const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 }
+
+function normalizeTrashRetentionDays(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 365
+    ? value
+    : defaultSettings.trashRetentionDays
+}
 
 export async function readLastSession(): Promise<LastSession> {
   try {
@@ -211,6 +221,7 @@ export async function getSettings(): Promise<AppSettings> {
         typeof raw.rememberLastFolder === 'boolean'
           ? raw.rememberLastFolder
           : defaultSettings.rememberLastFolder,
+      trashRetentionDays: normalizeTrashRetentionDays(raw.trashRetentionDays),
     }
   } catch {
     return defaultSettings
@@ -228,6 +239,10 @@ export async function updateSettings(partial: Partial<AppSettings>): Promise<voi
       typeof partial.rememberLastFolder === 'boolean'
         ? partial.rememberLastFolder
         : current.rememberLastFolder,
+    trashRetentionDays:
+      partial.trashRetentionDays === undefined
+        ? current.trashRetentionDays
+        : normalizeTrashRetentionDays(partial.trashRetentionDays),
   }
   await mkdir(app.getPath('userData'), { recursive: true })
   await writeFile(settingsPath(), JSON.stringify(next), 'utf8')
@@ -441,6 +456,12 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
         await mkdir(dirname(targetPath), { recursive: true })
         await writeFile(targetPath, content, 'utf8')
       },
+      moveRemoteDeletionToTrash: async (relativePath, author, opHash) => {
+        const targetPath = projectFilePath(project.root, relativePath)
+        if (existsSync(targetPath)) {
+          await project.trash.moveToTrash(relativePath, targetPath, author, opHash)
+        }
+      },
     },
   )
   sync.on('remoteOp', (op: Op) => { sendToWindow('cairn:op', op); void activeShadow?.commitOp(op, project.root).catch((error) => console.error(`[cairn:shadow] ${error.message}`)) })
@@ -643,7 +664,8 @@ export async function startWatching(folder: string): Promise<void> {
   await stopWatching()
 
   const oplog = createOplog(folder)
-  const watcher = new ProjectWatcher(folder, oplog)
+  const trash = new TrashManager(folder)
+  const watcher = new ProjectWatcher(folder, oplog, {}, trash)
   const shadow = createShadowGit(folder)
 
   watcher.on('op', (op) => {
@@ -658,7 +680,11 @@ export async function startWatching(folder: string): Promise<void> {
   try {
     await shadow.init()
     await watcher.start()
-    activeProject = { root: folder, oplog, watcher }
+    const cleaned = await trash.cleanup((await getSettings()).trashRetentionDays)
+    if (cleaned > 0) {
+      console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
+    }
+    activeProject = { root: folder, oplog, watcher, trash }
     activeShadow = shadow
     await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
   } catch (error) {
@@ -675,6 +701,47 @@ export async function listRecentOps(limit: number): Promise<Op[]> {
   }
 
   return activeProject ? activeProject.oplog.listRecent(limit) : []
+}
+
+function requireActiveProject(): ActiveProject {
+  if (!activeProject) {
+    throw new Error('请先选择项目')
+  }
+  return activeProject
+}
+
+/** 返回当前项目中可恢复的已删除文件。 */
+export async function listTrash(): Promise<TrashEntry[]> {
+  return requireActiveProject().trash.list()
+}
+
+/** 恢复后由 watcher 的 add 事件生成并广播恢复 op。 */
+export async function restoreFromTrash(trashId: string): Promise<void> {
+  if (typeof trashId !== 'string') throw new Error('废纸篓条目 ID 必须是字符串')
+  await requireActiveProject().trash.restore(trashId)
+}
+
+export async function purgeFromTrash(trashId: string): Promise<void> {
+  if (typeof trashId !== 'string') throw new Error('废纸篓条目 ID 必须是字符串')
+  await requireActiveProject().trash.purge(trashId)
+}
+
+export async function emptyTrash(): Promise<void> {
+  const trash = requireActiveProject().trash
+  for (const entry of await trash.list()) {
+    await trash.purge(entry.trashId)
+  }
+}
+
+export async function getTrashRetentionDays(): Promise<number> {
+  return (await getSettings()).trashRetentionDays
+}
+
+export async function setTrashRetentionDays(days: number): Promise<void> {
+  if (!Number.isInteger(days) || days < 1 || days > 365) {
+    throw new Error(`废纸篓保留天数必须是 1..365 的整数，收到 ${days}`)
+  }
+  await updateSettings({ trashRetentionDays: days })
 }
 
 export function registerIpcHandlers(): void {
@@ -714,6 +781,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:getDefaultDownloadDir', wrapIpcHandler(getDefaultDownloadDir))
   ipcMain.handle('cairn:cancelDownload', wrapIpcHandler(cancelDownload))
   ipcMain.handle('cairn:selectDownloadFolder', wrapIpcHandler(selectDownloadFolder))
+  ipcMain.handle('cairn:listTrash', wrapIpcHandler(listTrash))
+  ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler((trashId: string) => restoreFromTrash(trashId)))
+  ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler((trashId: string) => purgeFromTrash(trashId)))
+  ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(emptyTrash))
+  ipcMain.handle('cairn:getTrashRetentionDays', wrapIpcHandler(getTrashRetentionDays))
+  ipcMain.handle('cairn:setTrashRetentionDays', wrapIpcHandler((days: number) => setTrashRetentionDays(days)))
 }
 
 export function createWindow(): BrowserWindow {

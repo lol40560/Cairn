@@ -30,6 +30,16 @@ export interface LastSession {
 export interface AppSettings {
   autoStartWatching: boolean
   rememberLastFolder: boolean
+  trashRetentionDays: number
+}
+
+export interface TrashEntry {
+  trashId: string
+  originalPath: string
+  deletedAt: number
+  author: string
+  opHash: string
+  sizeBytes: number
 }
 
 export interface ExportSnapshotResult {
@@ -127,6 +137,12 @@ export interface CairnApi {
   clearLastSession(): Promise<IpcResult<void>>
   getSettings(): Promise<IpcResult<AppSettings>>
   updateSettings(partial: Partial<AppSettings>): Promise<IpcResult<void>>
+  listTrash(): Promise<IpcResult<TrashEntry[]>>
+  restoreFromTrash(trashId: string): Promise<IpcResult<void>>
+  purgeFromTrash(trashId: string): Promise<IpcResult<void>>
+  emptyTrash(): Promise<IpcResult<void>>
+  getTrashRetentionDays(): Promise<IpcResult<number>>
+  setTrashRetentionDays(days: number): Promise<IpcResult<void>>
 }
 
 declare global {

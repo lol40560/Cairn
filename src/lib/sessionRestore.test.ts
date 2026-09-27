@@ -4,7 +4,7 @@ import type { Op } from '@/types/cairn'
 
 import { restoreLastSession, type SessionRestoreActions, type SessionRestoreApi } from './sessionRestore'
 
-function setup(session: { folder: string; watching: boolean; updatedAt: number }, settings = { autoStartWatching: true, rememberLastFolder: true }): { api: SessionRestoreApi; actions: SessionRestoreActions } {
+function setup(session: { folder: string; watching: boolean; updatedAt: number }, settings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 }): { api: SessionRestoreApi; actions: SessionRestoreActions } {
   return {
     api: {
       checkFolder: vi.fn(async () => ({ data: true, ok: true }) as const),
@@ -57,7 +57,7 @@ describe('restoreLastSession', () => {
   it('关闭记住文件夹时完全跳过恢复', async () => {
     const { api, actions } = setup(
       { folder: '/project', updatedAt: 1, watching: true },
-      { autoStartWatching: true, rememberLastFolder: false },
+      { autoStartWatching: true, rememberLastFolder: false, trashRetentionDays: 30 },
     )
 
     await restoreLastSession(api, actions)

@@ -413,6 +413,41 @@ describe('Sync', () => {
     await sync.stop()
   })
 
+  it('收到远端删除 op 时先移入本地废纸篓，再清理 watcher 基线', async () => {
+    const target = await createTestOplog()
+    const discovery = new MockDiscovery()
+    const transport = new MockTransport()
+    const moveRemoteDeletionToTrash = vi.fn(async () => undefined)
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const input = {
+      ...createOp('delete'),
+      diff: createTwoFilesPatch('deleted.ts', 'deleted.ts', 'before\n', ''),
+      filePath: 'deleted.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const writeFile = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { oplog: target.oplog, roomCode: 'ABCDEF' },
+      { discovery: discovery as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        moveRemoteDeletionToTrash,
+        readFile: async () => 'before\n',
+        writeFile,
+      },
+    )
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await remoteOp
+
+    expect(moveRemoteDeletionToTrash).toHaveBeenCalledWith('deleted.ts', remote.author, remote.hash)
+    expect(applyRemoteChange).toHaveBeenCalledWith('deleted.ts', '')
+    expect(writeFile).not.toHaveBeenCalled()
+    await sync.stop()
+  })
+
   it('无法应用远端 diff 时报告冲突且不覆盖本地内容', async () => {
     const target = await createTestOplog()
     const discovery = new MockDiscovery()

@@ -6,6 +6,7 @@ import type { IpcResult } from './core/errors'
 import type { ExportSnapshotResult } from './core/snapshot/export'
 import type { DownloadProgress, DownloadResult } from './core/sync/downloader'
 import type { DiscoveryStatus } from './core/sync/discovery'
+import type { TrashEntry } from './core/trash'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -84,8 +85,14 @@ const cairn = {
   checkFolder: (folder: string): Promise<IpcResult<boolean>> => invoke('cairn:checkFolder', folder),
   getLastSession: (): Promise<IpcResult<{ folder: string; watching: boolean; updatedAt: number }>> => invoke('cairn:getLastSession'),
   clearLastSession: (): Promise<IpcResult<void>> => invoke('cairn:clearLastSession'),
-  getSettings: (): Promise<IpcResult<{ autoStartWatching: boolean; rememberLastFolder: boolean }>> => invoke('cairn:getSettings'),
-  updateSettings: (partial: Partial<{ autoStartWatching: boolean; rememberLastFolder: boolean }>): Promise<IpcResult<void>> => invoke('cairn:updateSettings', partial),
+  getSettings: (): Promise<IpcResult<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number }>> => invoke('cairn:getSettings'),
+  updateSettings: (partial: Partial<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number }>): Promise<IpcResult<void>> => invoke('cairn:updateSettings', partial),
+  listTrash: (): Promise<IpcResult<TrashEntry[]>> => invoke('cairn:listTrash'),
+  restoreFromTrash: (trashId: string): Promise<IpcResult<void>> => invoke('cairn:restoreFromTrash', trashId),
+  purgeFromTrash: (trashId: string): Promise<IpcResult<void>> => invoke('cairn:purgeFromTrash', trashId),
+  emptyTrash: (): Promise<IpcResult<void>> => invoke('cairn:emptyTrash'),
+  getTrashRetentionDays: (): Promise<IpcResult<number>> => invoke('cairn:getTrashRetentionDays'),
+  setTrashRetentionDays: (days: number): Promise<IpcResult<void>> => invoke('cairn:setTrashRetentionDays', days),
 }
 
 contextBridge.exposeInMainWorld('cairn', cairn)

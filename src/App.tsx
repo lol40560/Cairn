@@ -8,6 +8,7 @@ import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
 import { ConflictsView } from '@/components/views/ConflictsView'
 import { RoomView } from '@/components/views/RoomView'
+import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { createPRBranchName } from '@/lib/prBranch'
 import { restoreLastSession } from '@/lib/sessionRestore'
@@ -260,6 +261,7 @@ export function App() {
             />
           )}
           {activeView === 'conflicts' && <ConflictsView />}
+          {activeView === 'trash' && <TrashView />}
         </div>
       </section>
       <Dock

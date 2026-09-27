@@ -7,7 +7,8 @@ import { userInfo } from 'node:os'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createTwoFilesPatch } from 'diff'
 
-import type { Oplog, Op } from '../oplog'
+import { computeHash, type NewOp, type Oplog, type Op } from '../oplog'
+import { TrashManager } from '../trash'
 import { writeSnapshot } from './snapshot'
 
 export interface ProjectWatcherOptions {
@@ -71,6 +72,7 @@ export class ProjectWatcher extends EventEmitter {
   private readonly fileQueues = new Map<string, Promise<void>>()
   private readonly oplog: Oplog
   private readonly projectRoot: string
+  private readonly trash: TrashManager
   private activeRun = 0
   private initializing = false
   private readyResolver: (() => void) | undefined
@@ -81,12 +83,14 @@ export class ProjectWatcher extends EventEmitter {
     projectRoot: string,
     oplog: Oplog,
     options: ProjectWatcherOptions = {},
+    trash: TrashManager = new TrashManager(projectRoot),
   ) {
     super()
     this.projectRoot = projectRoot
     this.oplog = oplog
     this.debounceMs = options.debounceMs ?? 300
     this.author = options.author ?? userInfo().username
+    this.trash = trash
   }
 
   on(event: 'op', listener: (op: Op) => void): this
@@ -194,6 +198,10 @@ export class ProjectWatcher extends EventEmitter {
   async applyRemoteChange(relativePath: string, content: string): Promise<void> {
     const normalizedPath = this.assertSafeRelativePath(relativePath)
     const snapshotHash = writeSnapshot(this.projectRoot, normalizedPath, content)
+    if (content === '') {
+      this.baseline.delete(normalizedPath)
+      return
+    }
     this.baseline.set(normalizedPath, { content, snapshotHash })
   }
 
@@ -310,19 +318,7 @@ export class ProjectWatcher extends EventEmitter {
 
     let op: Op
     try {
-      const snapshotHash = writeSnapshot(this.projectRoot, relativePath, content)
-      if (!this.isRunActive(run)) {
-        return
-      }
-
-      const nextBaseline: BaselineEntry = { content, snapshotHash }
-      if (deleted) {
-        this.baseline.delete(relativePath)
-      } else {
-        this.baseline.set(relativePath, nextBaseline)
-      }
-
-      op = this.oplog.putOp({
+      const input: NewOp = {
         id: randomUUID(),
         author: this.author,
         parentHashes: [],
@@ -330,7 +326,24 @@ export class ProjectWatcher extends EventEmitter {
         filePath: relativePath,
         diff: createTwoFilesPatch(relativePath, relativePath, oldContent, content),
         source: 'local',
-      })
+      }
+      if (deleted) {
+        await this.trash.moveToTrash(
+          relativePath,
+          absolutePath,
+          this.author,
+          computeHash(input),
+          oldContent,
+        )
+      }
+
+      const snapshotHash = writeSnapshot(this.projectRoot, relativePath, content)
+      if (!this.isRunActive(run)) return
+
+      op = this.oplog.putOp(input)
+      const nextBaseline: BaselineEntry = { content, snapshotHash }
+      if (deleted) this.baseline.delete(relativePath)
+      else this.baseline.set(relativePath, nextBaseline)
 
     } catch (error) {
       if (previous) {

@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { LocalEndpoint, Op, PeerInfo, SeederInfo } from '../types/cairn'
+import type { LocalEndpoint, Op, PeerInfo, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ActiveView = 'activity' | 'room' | 'conflicts'
+export type ActiveView = 'activity' | 'room' | 'conflicts' | 'trash'
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
 
 export interface DownloadProgress {
@@ -33,6 +33,7 @@ export interface AppState {
   downloadTargetDir: string
   lastDownloadPath: string | undefined
   lastConflictFiles: string[]
+  trash: TrashEntry[]
   conflicts: Array<{ op: Op; localContent: string; timestamp: number }>
   githubConfigured: boolean
   setFolder(folder: string): void
@@ -53,6 +54,7 @@ export interface AppState {
   resetDownload(): void
   setLastDownloadResult(path: string, conflicts: string[]): void
   clearLastDownloadResult(): void
+  setTrash(trash: TrashEntry[]): void
   addConflict(conflict: { op: Op; localContent: string; timestamp: number }): void
   removeConflict(opHash: string): void
   clearConflicts(): void
@@ -80,6 +82,7 @@ export const useAppStore = create<AppState>((set) => ({
   downloadTargetDir: '',
   lastDownloadPath: undefined,
   lastConflictFiles: [],
+  trash: [],
   conflicts: [],
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
@@ -103,6 +106,7 @@ export const useAppStore = create<AppState>((set) => ({
   resetDownload: () => set({ downloadProgress: undefined, downloadStatus: 'idle' }),
   setLastDownloadResult: (lastDownloadPath, lastConflictFiles) => set({ lastConflictFiles, lastDownloadPath }),
   clearLastDownloadResult: () => set({ lastConflictFiles: [], lastDownloadPath: undefined }),
+  setTrash: (trash) => set({ trash }),
   addConflict: (conflict) => set((state) => ({ conflicts: [...state.conflicts, conflict] })),
   removeConflict: (opHash) => set((state) => ({ conflicts: state.conflicts.filter((conflict) => conflict.op.hash !== opHash) })),
   clearConflicts: () => set({ conflicts: [] }),

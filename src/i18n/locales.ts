@@ -119,6 +119,17 @@ export const zh = {
   openInFinder: '点击打开文件夹',
   dismiss: '忽略',
   pathNotFound: '文件夹不存在',
+  trash: '废纸篓',
+  trashEmpty: '废纸篓是空的',
+  trashEmptyDesc: '删除的文件会在这里保留 {days} 天。',
+  trashItems: '{n} 项',
+  trashRestore: '恢复',
+  trashDelete: '永久删除',
+  trashEmptyAction: '清空废纸篓',
+  trashEmptyConfirm: '永久删除全部 {n} 项？此操作不可撤销。',
+  trashRestoreConflict: '无法恢复：{path} 已存在',
+  trashRetention: '自动清理',
+  trashRetentionDays: '天',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -239,6 +250,17 @@ export const en: Record<keyof typeof zh, string> = {
   openInFinder: 'Click to open folder',
   dismiss: 'Dismiss',
   pathNotFound: 'Folder not found',
+  trash: 'Trash',
+  trashEmpty: 'Trash is empty',
+  trashEmptyDesc: 'Deleted files will appear here for {days} days.',
+  trashItems: '{n} items',
+  trashRestore: 'Restore',
+  trashDelete: 'Delete',
+  trashEmptyAction: 'Empty trash',
+  trashEmptyConfirm: 'Permanently delete all {n} items? This cannot be undone.',
+  trashRestoreConflict: 'Cannot restore: {path} already exists',
+  trashRetention: 'Auto-delete after',
+  trashRetentionDays: 'days',
 }
 
 export type TranslationKey = keyof typeof zh

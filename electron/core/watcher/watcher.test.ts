@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -197,6 +197,23 @@ describe('ProjectWatcher', () => {
 
     expect(op.diff).toContain('-remove me')
     expect(op.diff).not.toContain('+remove me')
+  })
+
+  it('删除文件会将原始内容保存到 .cairn/trash，且内部目录不会产生 op', async () => {
+    const { projectRoot, oplog, watcher } = await createFixture()
+    const path = join(projectRoot, 'deleted.ts')
+    await writeFile(path, 'keep me\n', 'utf8')
+    await watcher.start()
+
+    const opPromise = waitForOp(watcher)
+    await rm(path)
+    await opPromise
+
+    const entries = await import('../trash').then(({ TrashManager }) => new TrashManager(projectRoot).list())
+    expect(entries).toHaveLength(1)
+    await expect(readFile(join(projectRoot, '.cairn', 'trash', entries[0]!.trashId, 'content'), 'utf8')).resolves.toBe('keep me\n')
+    await expectNoOp(watcher)
+    expect(oplog.listRecent(200)).toHaveLength(1)
   })
 
   it('新建、修改、删除会产生三条无 parent 的 op', async () => {

@@ -281,13 +281,14 @@ describe('IPC bridge', () => {
     expect(await main.getSettings()).toEqual({
       autoStartWatching: false,
       rememberLastFolder: true,
+      trashRetentionDays: 30,
     })
 
     await writeFile(join(root, 'last-session.json'), '{invalid json', 'utf8')
     await writeFile(join(root, 'settings.json'), '{invalid json', 'utf8')
 
     expect(await main.readLastSession()).toEqual({ folder: '', updatedAt: 0, watching: false })
-    expect(await main.getSettings()).toEqual({ autoStartWatching: true, rememberLastFolder: true })
+    expect(await main.getSettings()).toEqual({ autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 })
   })
 
   it('checkFolder 只接受存在的绝对目录', async () => {
@@ -410,6 +411,7 @@ describe('IPC bridge', () => {
       'cairn:copyToClipboard',
       'cairn:createRoom',
       'cairn:downloadProject',
+      'cairn:emptyTrash',
       'cairn:exportPR',
       'cairn:exportSnapshot',
       'cairn:getDefaultDownloadDir',
@@ -418,16 +420,21 @@ describe('IPC bridge', () => {
       'cairn:getLastSession',
       'cairn:getLocalEndpoint',
       'cairn:getSettings',
+      'cairn:getTrashRetentionDays',
       'cairn:joinRoom',
       'cairn:leaveRoom',
       'cairn:listPeers',
       'cairn:listRecentOps',
       'cairn:listSeeders',
+      'cairn:listTrash',
       'cairn:openInFileManager',
+      'cairn:purgeFromTrash',
       'cairn:resetGithubConfig',
+      'cairn:restoreFromTrash',
       'cairn:saveGithubConfig',
       'cairn:selectDownloadFolder',
       'cairn:selectFolder',
+      'cairn:setTrashRetentionDays',
       'cairn:startSharing',
       'cairn:startWatching',
       'cairn:stopSharing',
@@ -556,6 +563,41 @@ describe('IPC bridge', () => {
     await expect(main.listRecentOps(1)).resolves.toEqual([])
   })
 
+  it('废纸篓 IPC 可列出、恢复、永久删除和清空条目', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    const source = join(root, 'deleted.ts')
+    await writeFile(source, 'recover me', 'utf8')
+    await main.startWatching(root)
+    const projectTrash = new (await import('./core/trash')).TrashManager(root)
+    const trashId = await projectTrash.moveToTrash('deleted.ts', source, 'tester', 'a'.repeat(64))
+
+    main.registerIpcHandlers()
+    const list = mocks.handlers.get('cairn:listTrash')
+    const restore = mocks.handlers.get('cairn:restoreFromTrash')
+    const purge = mocks.handlers.get('cairn:purgeFromTrash')
+    const empty = mocks.handlers.get('cairn:emptyTrash')
+    await expect(list?.({})).resolves.toMatchObject({ ok: true, data: [expect.objectContaining({ trashId })] })
+    await expect(restore?.({}, trashId)).resolves.toEqual({ data: undefined, ok: true })
+    await expect(projectTrash.list()).resolves.toEqual([])
+
+    const purgeId = await projectTrash.moveToTrash('deleted.ts', source, 'tester', 'b'.repeat(64))
+    await expect(purge?.({}, purgeId)).resolves.toEqual({ data: undefined, ok: true })
+    const emptySource = join(root, 'another.ts')
+    await writeFile(emptySource, 'empty me', 'utf8')
+    await projectTrash.moveToTrash('another.ts', emptySource, 'tester', 'c'.repeat(64))
+    await expect(empty?.({})).resolves.toEqual({ data: undefined, ok: true })
+    await expect(projectTrash.list()).resolves.toEqual([])
+  })
+
+  it('废纸篓保留天数可读写，并拒绝范围外数值', async () => {
+    const main = await loadMain()
+    await main.setTrashRetentionDays(7)
+    await expect(main.getTrashRetentionDays()).resolves.toBe(7)
+    await expect(main.setTrashRetentionDays(0)).rejects.toThrow(/1\.\.365/)
+    await expect(main.setTrashRetentionDays(366)).rejects.toThrow(/1\.\.365/)
+  })
+
   it('watcher op 事件通过指定频道发送到窗口', async () => {
     const main = await loadMain()
     const root = await createDirectory()
@@ -613,6 +655,7 @@ describe('IPC bridge', () => {
       'copyToClipboard',
       'createRoom',
       'downloadProject',
+      'emptyTrash',
       'exportPR',
       'exportSnapshot',
       'getDefaultDownloadDir',
@@ -621,20 +664,25 @@ describe('IPC bridge', () => {
       'getLastSession',
       'getLocalEndpoint',
       'getSettings',
+      'getTrashRetentionDays',
       'joinRoom',
       'leaveRoom',
       'listPeers',
       'listRecentOps',
       'listSeeders',
+      'listTrash',
       'onConflict',
       'onDownloadProgress',
       'onOp',
       'onPeers',
       'openInFileManager',
+      'purgeFromTrash',
       'resetGithubConfig',
+      'restoreFromTrash',
       'saveGithubConfig',
       'selectDownloadFolder',
       'selectFolder',
+      'setTrashRetentionDays',
       'startSharing',
       'startWatching',
       'stopSharing',

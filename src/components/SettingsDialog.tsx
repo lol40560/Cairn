@@ -33,6 +33,7 @@ export function SettingsDialog({
   const [hasToken, setHasToken] = useState(false)
   const [rememberLastFolder, setRememberLastFolder] = useState(true)
   const [autoStartWatching, setAutoStartWatching] = useState(true)
+  const [trashRetentionDays, setTrashRetentionDays] = useState(30)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
 
@@ -52,6 +53,7 @@ export function SettingsDialog({
         setHasToken(config.hasToken)
         setRememberLastFolder(settings.rememberLastFolder)
         setAutoStartWatching(settings.autoStartWatching)
+        setTrashRetentionDays(settings.trashRetentionDays)
         inputRef.current?.focus()
       })
       .catch((cause) => {
@@ -92,6 +94,20 @@ export function SettingsDialog({
     void updateGeneralSettings({ autoStartWatching: value }).then((result) => {
       if (!result.ok) {
         console.error('[cairn] 无法更新通用设置', result.error)
+        setError(normalizeError(result.error, t))
+      }
+    })
+  }
+
+  const changeTrashRetentionDays = (value: number): void => {
+    setTrashRetentionDays(value)
+    if (!Number.isInteger(value) || value < 1 || value > 365) {
+      setError(normalizeError(new Error('废纸篓保留天数必须是 1..365 的整数'), t))
+      return
+    }
+    void window.cairn.setTrashRetentionDays(value).then((result) => {
+      if (!result.ok) {
+        console.error('[cairn] 无法更新废纸篓保留天数', result.error)
         setError(normalizeError(result.error, t))
       }
     })
@@ -150,6 +166,24 @@ export function SettingsDialog({
               </span>
             </label>
           </fieldset>
+
+          <section className="modal-section">
+            <h3 className="modal-section-title">{t('trash')}</h3>
+            <label className="field">
+              <span className="field-label">{t('trashRetention')}</span>
+              <div className="retention-field">
+                <input
+                  className="input"
+                  max={365}
+                  min={1}
+                  type="number"
+                  value={trashRetentionDays}
+                  onChange={(event) => changeTrashRetentionDays(Number(event.target.value))}
+                />
+                <span>{t('trashRetentionDays')}</span>
+              </div>
+            </label>
+          </section>
 
           <section className="modal-section">
             <h3 className="modal-section-title">{t('settingsGithub')}</h3>

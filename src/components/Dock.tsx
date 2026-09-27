@@ -1,4 +1,4 @@
-import { Activity, Settings, TriangleAlert, UsersRound } from 'lucide-react'
+import { Activity, Settings, Trash2, TriangleAlert, UsersRound } from 'lucide-react'
 
 import { useTranslation } from '@/i18n'
 import type { ActiveView } from '@/store/appStore'
@@ -14,6 +14,7 @@ const viewItems = [
   { icon: Activity, labelKey: 'activity', view: 'activity' },
   { icon: UsersRound, labelKey: 'room', view: 'room' },
   { icon: TriangleAlert, labelKey: 'conflicts', view: 'conflicts' },
+  { icon: Trash2, labelKey: 'trash', view: 'trash' },
 ] as const
 
 export function Dock({ activeView, conflictCount, onOpenSettings, onViewChange }: DockProps) {

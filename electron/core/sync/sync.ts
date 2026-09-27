@@ -21,6 +21,7 @@ export interface SyncHooks {
   applyRemoteChange(relativePath: string, content: string): Promise<void>
   readFile(relativePath: string): Promise<string>
   writeFile(relativePath: string, content: string): Promise<void>
+  moveRemoteDeletionToTrash?(relativePath: string, author: string, opHash: string): Promise<void>
 }
 
 interface SyncDependencies {
@@ -362,6 +363,13 @@ export class Sync extends EventEmitter {
     const nextContent = applyPatch(localContent, op.diff)
     if (nextContent === false) {
       this.emit('conflict', op, localContent)
+      return
+    }
+
+    if (nextContent === '') {
+      // 远端删除也先保存本地副本，避免同步操作绕过数据保护。
+      await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      await this.hooks.applyRemoteChange(op.filePath, nextContent)
       return
     }
 
