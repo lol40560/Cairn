@@ -53,6 +53,11 @@ let mainWindow: BrowserWindow | undefined
 
 app.setName('Cairn')
 
+// 开发进程与正式安装版使用独立用户数据目录，便于本机双实例联调。
+if (!app.isPackaged && typeof app.setPath === 'function') {
+  app.setPath('userData', join(app.getPath('appData'), 'Cairn-Dev'))
+}
+
 function verifyNativeDatabase(): void {
   const database = new Database(':memory:')
   database.exec('SELECT 1')
