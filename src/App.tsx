@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Dock } from '@/components/Dock'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
 import { SettingsDialog } from '@/components/SettingsDialog'
-import { Toast } from '@/components/Toast'
+import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
 import { ConflictsView } from '@/components/views/ConflictsView'
@@ -20,6 +20,19 @@ function getIpcData<T>(result: IpcResult<T>): T {
     throw result.error
   }
   return result.data
+}
+
+async function copyExportPath(filePath: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(filePath)
+    return true
+  } catch {
+    const copyResult = await window.cairn.copyToClipboard(filePath)
+    if (!copyResult.ok) {
+      console.error('[cairn] 无法复制导出路径', copyResult.error)
+    }
+    return copyResult.ok
+  }
 }
 
 export function App() {
@@ -43,7 +56,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
-  const [toast, setToast] = useState<NormalizedError | null>(null)
+  const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
 
   useEffect(() => {
     let disposed = false
@@ -178,11 +191,44 @@ export function App() {
     }
   }
 
+  const handleExportSnapshot = async (): Promise<void> => {
+    try {
+      const result = await window.cairn.exportSnapshot()
+      if (!result.ok) {
+        console.error('[cairn] 无法导出项目快照', result.error)
+        setToast(
+          result.error.code === 'SNAPSHOT_TOO_LARGE'
+            ? { message: t('exportSnapshotTooLarge'), tone: 'error' }
+            : normalizeError(result.error, t),
+        )
+        return
+      }
+      if ('canceled' in result.data) {
+        return
+      }
+
+      const copied = await copyExportPath(result.data.filePath)
+
+      setToast({
+        hint: copied ? t('exportSnapshotCopied') : undefined,
+        message: t('exportSnapshotSuccess')
+          .replace('{count}', String(result.data.fileCount))
+          .replace('{path}', result.data.filePath),
+        tone: 'success',
+      })
+    } catch (error) {
+      console.error('[cairn] 无法导出项目快照', error)
+      setToast(normalizeError(error, t))
+    }
+  }
+
   const exportPRSubmit = async (title: string) => window.cairn.exportPR({
     branch: 'main',
     prBranch: createPRBranchName(roomCode),
     title,
   })
+
+  const dismissToast = useCallback(() => setToast(null), [])
 
   return (
     <main aria-label="Cairn" className="app">
@@ -202,6 +248,7 @@ export function App() {
               peers={peers}
               roomCode={roomCode}
               onCreateRoom={handleCreateRoom}
+              onExportSnapshot={handleExportSnapshot}
               onExportPR={() => setExportDialogOpen(true)}
               onJoinRoom={handleJoinRoom}
               onLeaveRoom={handleLeaveRoom}
@@ -227,7 +274,7 @@ export function App() {
         }}
         onSubmit={exportPRSubmit}
       />
-      <Toast error={toast} onDismiss={() => setToast(null)} />
+      <Toast message={toast} onDismiss={dismissToast} />
     </main>
   )
 }

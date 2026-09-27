@@ -8,6 +8,7 @@ interface RoomViewProps {
   peers: PeerInfo[]
   roomCode: string
   onCreateRoom(): Promise<void>
+  onExportSnapshot(): Promise<void>
   onExportPR(): void
   onJoinRoom(roomCode: string): Promise<void>
   onLeaveRoom(): Promise<void>
@@ -28,6 +29,7 @@ export function RoomView({
   peers,
   roomCode,
   onCreateRoom,
+  onExportSnapshot,
   onExportPR,
   onJoinRoom,
   onLeaveRoom,
@@ -35,6 +37,7 @@ export function RoomView({
   const { t } = useTranslation()
   const [joinCode, setJoinCode] = useState('')
   const [copied, setCopied] = useState(false)
+  const [exportingSnapshot, setExportingSnapshot] = useState(false)
   const joined = roomCode !== ''
 
   useEffect(() => {
@@ -56,6 +59,15 @@ export function RoomView({
     setCopied(true)
   }
 
+  const handleExportSnapshot = async (): Promise<void> => {
+    setExportingSnapshot(true)
+    try {
+      await onExportSnapshot()
+    } finally {
+      setExportingSnapshot(false)
+    }
+  }
+
   return (
     <section className="view active">
       <div className="view-header">
@@ -64,6 +76,11 @@ export function RoomView({
         {joined && (
           <button className="btn btn-ghost" type="button" onClick={() => void onLeaveRoom()}>
             {t('leaveRoom')}
+          </button>
+        )}
+        {joined && (
+          <button className="btn btn-ghost" disabled={exportingSnapshot} type="button" onClick={() => void handleExportSnapshot()}>
+            {t('exportSnapshot')}
           </button>
         )}
         {joined && (

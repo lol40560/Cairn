@@ -1,0 +1,95 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { exportProjectSnapshot } from './export'
+
+const roots: string[] = []
+const archives: string[] = []
+
+async function createProject(): Promise<string> {
+  const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-export-'))
+  roots.push(projectRoot)
+  return projectRoot
+}
+
+afterEach(async () => {
+  await Promise.all(archives.splice(0).map((filePath) => rm(filePath, { force: true })))
+  await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })))
+})
+
+describe('exportProjectSnapshot', () => {
+  it('打包三个文本文件并返回文件计数', async () => {
+    const root = await createProject()
+    await writeFile(join(root, 'one.ts'), 'export const one = 1\n')
+    await writeFile(join(root, 'two.md'), '# Two\n')
+    await writeFile(join(root, 'three.txt'), 'three\n')
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+
+    expect(result.fileCount).toBe(3)
+    expect(result.fileSize).toBeGreaterThan(0)
+  })
+
+  it('跳过内部目录与依赖目录', async () => {
+    const root = await createProject()
+    await mkdir(join(root, '.git'), { recursive: true })
+    await mkdir(join(root, 'node_modules', 'package'), { recursive: true })
+    await writeFile(join(root, 'keep.ts'), 'export {}\n')
+    await writeFile(join(root, '.git', 'config'), 'ignored')
+    await writeFile(join(root, 'node_modules', 'package', 'index.js'), 'ignored')
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+    const archiveContents = (await readFile(result.filePath)).toString('utf8')
+
+    expect(result.fileCount).toBe(1)
+    expect(archiveContents).toContain('keep.ts')
+    expect(archiveContents).not.toContain('.git/config')
+    expect(archiveContents).not.toContain('node_modules/package/index.js')
+  })
+
+  it('跳过 binary 文件', async () => {
+    const root = await createProject()
+    await writeFile(join(root, 'notes.txt'), 'text')
+    await writeFile(join(root, 'image.png'), Buffer.from([137, 80, 78, 71, 0]))
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+
+    expect(result.fileCount).toBe(1)
+    expect(result.skippedCount).toBe(1)
+  })
+
+  it('超过大小上限时拒绝打包', async () => {
+    const root = await createProject()
+    await writeFile(join(root, 'large.txt'), '123456')
+
+    await expect(exportProjectSnapshot(root, { maxSizeBytes: 5 })).rejects.toThrow('项目过大')
+  })
+
+  it('空项目也会生成空 zip', async () => {
+    const root = await createProject()
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+
+    expect(result.fileCount).toBe(0)
+    expect(result.fileSize).toBeGreaterThan(0)
+  })
+
+  it('保留嵌套文件的相对路径', async () => {
+    const root = await createProject()
+    await mkdir(join(root, 'src', 'nested'), { recursive: true })
+    await writeFile(join(root, 'src', 'nested', 'file.ts'), 'export const nested = true\n')
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+    const archiveContents = (await readFile(result.filePath)).toString('utf8')
+
+    expect(archiveContents).toContain('src/nested/file.ts')
+  })
+})

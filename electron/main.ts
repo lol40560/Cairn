@@ -1,13 +1,15 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { cp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomInt } from 'node:crypto'
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
 import Database from 'better-sqlite3'
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage } from 'electron'
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { wrapIpcHandler } from './core/errors'
+import { exportProjectSnapshot } from './core/snapshot/export'
+import type { ExportSnapshotResult } from './core/snapshot/export'
 
 import { createOplog } from './core/oplog'
 import type { Oplog, Op } from './core/oplog'
@@ -295,6 +297,56 @@ export async function exportProjectPR(
   return exportPR(activeShadow, { ...input, owner: config.owner, repo: config.repo, token })
 }
 
+function formatSnapshotTimestamp(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}${month}${day}-${hours}${minutes}`
+}
+
+/** 导出项目文本快照，并让用户决定最终 zip 保存位置。 */
+export async function exportProjectSnapshotFile(): Promise<ExportSnapshotResult | { canceled: true }> {
+  if (!activeProject) {
+    throw new Error('请先选择项目')
+  }
+
+  const project = activeProject
+  const temporary = await exportProjectSnapshot(project.root, {
+    tempDirectory: app.getPath('temp'),
+  })
+
+  try {
+    const result = await dialog.showSaveDialog({
+      defaultPath: join(
+        app.getPath('desktop'),
+        `${basename(project.root)}-${formatSnapshotTimestamp(new Date())}.zip`,
+      ),
+      filters: [{ extensions: ['zip'], name: 'Zip Archive' }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      await rm(temporary.filePath, { force: true })
+      return { canceled: true }
+    }
+
+    await rename(temporary.filePath, result.filePath)
+    return { ...temporary, filePath: result.filePath }
+  } catch (error) {
+    await rm(temporary.filePath, { force: true })
+    throw error
+  }
+}
+
+/** 写入系统剪贴板，供受限渲染进程作为 navigator.clipboard 的后备方案。 */
+export function copyToClipboard(text: string): void {
+  if (typeof text !== 'string') {
+    throw new Error('剪贴板内容必须是字符串')
+  }
+  clipboard.writeText(text)
+}
+
 function generateRoomCode(): string {
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
   let roomCode = ''
@@ -464,6 +516,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:clearGithubConfig', wrapIpcHandler(clearGithubConfig))
   ipcMain.handle('cairn:resetGithubConfig', wrapIpcHandler(resetGithubConfig))
   ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
+  ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
+  ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
 }
 
 export function createWindow(): BrowserWindow {

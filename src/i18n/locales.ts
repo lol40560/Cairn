@@ -87,6 +87,10 @@ export const zh = {
   exportPRCreate: '创建',
   exportPRCreating: '创建中...',
   exportPRCancel: '取消',
+  exportSnapshot: '导出 .zip',
+  exportSnapshotSuccess: '已导出 {count} 个文件到：{path}',
+  exportSnapshotCopied: '路径已复制到剪贴板',
+  exportSnapshotTooLarge: '项目过大，超过 50 MB 上限',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -175,6 +179,10 @@ export const en: Record<keyof typeof zh, string> = {
   exportPRCreate: 'Create',
   exportPRCreating: 'Creating...',
   exportPRCancel: 'Cancel',
+  exportSnapshot: 'Export .zip',
+  exportSnapshotSuccess: 'Exported {count} files to: {path}',
+  exportSnapshotCopied: 'Path copied to clipboard',
+  exportSnapshotTooLarge: 'Project exceeds 50 MB limit',
 }
 
 export type TranslationKey = keyof typeof zh

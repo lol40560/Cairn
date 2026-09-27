@@ -27,6 +27,13 @@ export interface AppSettings {
   rememberLastFolder: boolean
 }
 
+export interface ExportSnapshotResult {
+  filePath: string
+  fileSize: number
+  fileCount: number
+  skippedCount: number
+}
+
 export type ErrorCategory =
   | 'config'
   | 'network'
@@ -65,6 +72,8 @@ export interface CairnApi {
   clearGithubConfig(): Promise<IpcResult<void>>
   resetGithubConfig(): Promise<IpcResult<void>>
   exportPR(options: { branch?: string; prBranch?: string; title: string; body?: string }): Promise<IpcResult<{ prUrl: string; prNumber: number }>>
+  exportSnapshot(): Promise<IpcResult<ExportSnapshotResult | { canceled: true }>>
+  copyToClipboard(text: string): Promise<IpcResult<void>>
   checkFolder(folder: string): Promise<IpcResult<boolean>>
   getLastSession(): Promise<IpcResult<LastSession>>
   clearLastSession(): Promise<IpcResult<void>>

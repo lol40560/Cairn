@@ -1,25 +1,40 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { NormalizedError } from '@/lib/errors'
 
-export function Toast({ error, onDismiss }: { error: NormalizedError | null; onDismiss(): void }) {
+export interface ToastMessage {
+  hint?: string
+  message: string
+  tone?: 'error' | 'success'
+}
+
+export function Toast({ message, onDismiss }: { message: ToastMessage | NormalizedError | null; onDismiss(): void }) {
+  const [leavingMessage, setLeavingMessage] = useState<ToastMessage | NormalizedError | null>(null)
+
   useEffect(() => {
-    if (!error) {
+    if (!message) {
       return
     }
 
-    const timer = window.setTimeout(onDismiss, 5000)
-    return () => window.clearTimeout(timer)
-  }, [error, onDismiss])
+    const leaveTimer = window.setTimeout(() => setLeavingMessage(message), 5_850)
+    const dismissTimer = window.setTimeout(onDismiss, 6_000)
+    return () => {
+      window.clearTimeout(leaveTimer)
+      window.clearTimeout(dismissTimer)
+    }
+  }, [message, onDismiss])
 
-  if (!error) {
+  if (!message) {
     return null
   }
 
+  const tone = 'tone' in message ? message.tone ?? 'error' : 'error'
+  const leaving = leavingMessage === message
+
   return (
-    <aside className="fixed bottom-4 right-4 z-30 max-w-sm rounded-md bg-destructive p-3 text-sm text-destructive-foreground shadow">
-      <p>{error.message}</p>
-      {error.hint && <p className="mt-1">{error.hint}</p>}
+    <aside className={`toast${leaving ? ' is-leaving' : ''}`} data-tone={tone} role="status">
+      <p>{message.message}</p>
+      {message.hint && <p className="toast-hint">{message.hint}</p>}
     </aside>
   )
 }

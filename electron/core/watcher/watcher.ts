@@ -31,6 +31,37 @@ const IGNORED_DIRECTORIES = new Set([
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.html', '.css', '.scss', '.yml', '.yaml', '.toml', '.xml', '.svg', '.vue', '.svelte', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h', '.sh', '.sql'])
 const BINARY_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff', '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar', '.mp3', '.mp4', '.wav', '.mov', '.avi', '.mkv', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite'])
 
+/** 以扩展名优先、NUL 字节兜底的方式判断文件是否为 binary。 */
+export async function isBinaryFile(
+  absolutePath: string,
+  relativePath: string,
+  binaryByExtension: Map<string, boolean> = new Map(),
+): Promise<boolean> {
+  const extension = extname(relativePath).toLowerCase()
+  if (TEXT_EXTENSIONS.has(extension)) return false
+  if (BINARY_EXTENSIONS.has(extension)) return true
+  const cached = binaryByExtension.get(extension)
+  if (cached !== undefined) return cached
+  try {
+    const sample = (await readFile(absolutePath)).subarray(0, 8000)
+    const binary = sample.includes(0)
+    binaryByExtension.set(extension, binary)
+    return binary
+  } catch (error) {
+    if (isMissingFileError(error)) return false
+    throw error
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'ENOENT'
+  )
+}
+
 export class ProjectWatcher extends EventEmitter {
   private readonly author: string
   private readonly baseline = new Map<string, BaselineEntry>()
@@ -342,20 +373,7 @@ export class ProjectWatcher extends EventEmitter {
   }
 
   private async isBinaryFile(absolutePath: string, relativePath: string): Promise<boolean> {
-    const extension = extname(relativePath).toLowerCase()
-    if (TEXT_EXTENSIONS.has(extension)) return false
-    if (BINARY_EXTENSIONS.has(extension)) return true
-    const cached = this.binaryByExtension.get(extension)
-    if (cached !== undefined) return cached
-    try {
-      const sample = (await readFile(absolutePath)).subarray(0, 8000)
-      const binary = sample.includes(0)
-      this.binaryByExtension.set(extension, binary)
-      return binary
-    } catch (error) {
-      if (this.isMissingFile(error)) return false
-      throw error
-    }
+    return isBinaryFile(absolutePath, relativePath, this.binaryByExtension)
   }
 
   private toRelativePath(absolutePath: string): string {
@@ -390,12 +408,7 @@ export class ProjectWatcher extends EventEmitter {
   }
 
   private isMissingFile(error: unknown): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    )
+    return isMissingFileError(error)
   }
 
   private reportError(error: Error): void {

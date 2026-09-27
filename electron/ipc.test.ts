@@ -98,6 +98,10 @@ const mocks = vi.hoisted(() => {
     }),
     dialog: {
       showOpenDialog: vi.fn(),
+      showSaveDialog: vi.fn(),
+    },
+    clipboard: {
+      writeText: vi.fn(),
     },
     safeStorage: {
       decryptString: vi.fn((value: Buffer) => value.toString('utf8')),
@@ -149,6 +153,7 @@ vi.mock('better-sqlite3', () => ({
 vi.mock('electron', () => ({
   app: mocks.app,
   BrowserWindow: mocks.BrowserWindow,
+  clipboard: mocks.clipboard,
   contextBridge: mocks.contextBridge,
   dialog: mocks.dialog,
   ipcMain: mocks.ipcMain,
@@ -372,8 +377,10 @@ describe('IPC bridge', () => {
       'cairn:checkFolder',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
+      'cairn:copyToClipboard',
       'cairn:createRoom',
       'cairn:exportPR',
+      'cairn:exportSnapshot',
       'cairn:getGithubConfig',
       'cairn:getLastSession',
       'cairn:getSettings',
@@ -496,7 +503,7 @@ describe('IPC bridge', () => {
     expect(mocks.window.webContents.send).not.toHaveBeenCalled()
   })
 
-  it('preload 只暴露契约中的十一个 API', async () => {
+  it('preload 只暴露契约白名单 API', async () => {
     vi.resetModules()
     await import('./preload')
 
@@ -506,8 +513,10 @@ describe('IPC bridge', () => {
       'checkFolder',
       'clearGithubConfig',
       'clearLastSession',
+      'copyToClipboard',
       'createRoom',
       'exportPR',
+      'exportSnapshot',
       'getGithubConfig',
       'getLastSession',
       'getSettings',
