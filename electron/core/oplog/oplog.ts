@@ -14,7 +14,7 @@ import Database from 'better-sqlite3'
 
 import { ensureCairnDataDir } from '../data-dir'
 import { computeHash } from './hash'
-import type { NewOp, Op, Oplog } from './types'
+import type { NewOp, Op, OpKind, Oplog } from './types'
 
 interface HashRow {
   hash: string
@@ -41,8 +41,20 @@ function canonicalize(input: NewOp): NewOp {
     timestamp: input.timestamp,
     filePath: input.filePath,
     diff: input.diff,
+    kind: input.kind,
     source: input.source,
   }
+}
+
+/** 为旧版对象补齐仅用于显示的变更类型。 */
+function inferKind(diff: string): OpKind {
+  if (diff.includes('--- /dev/null') || diff.includes('new file mode')) {
+    return 'created'
+  }
+  if (diff.includes('+++ /dev/null') || diff.includes('deleted file mode')) {
+    return 'deleted'
+  }
+  return 'modified'
 }
 
 function isStoredOp(input: NewOp | Op): input is Op {
@@ -78,6 +90,8 @@ class SqliteOplog implements Oplog {
     const op: Op = {
       ...canonicalInput,
       hash: computedHash,
+      // 旧调用方没有显式提供时，也为新对象持久化可展示的类型。
+      kind: canonicalInput.kind ?? inferKind(canonicalInput.diff),
     }
     const objectPath = this.objectPath(op.hash)
 
@@ -215,7 +229,8 @@ class SqliteOplog implements Oplog {
     const objectPath = this.objectPath(hash)
 
     try {
-      return JSON.parse(readFileSync(objectPath, 'utf8')) as Op
+      const op = JSON.parse(readFileSync(objectPath, 'utf8')) as Op
+      return op.kind ? op : { ...op, kind: inferKind(op.diff) }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       throw new Error(
@@ -238,6 +253,7 @@ class SqliteOplog implements Oplog {
         filePath: op.filePath,
         hash: op.hash,
         id: op.id,
+        kind: op.kind,
         parentHashes: op.parentHashes,
         timestamp: op.timestamp,
       }

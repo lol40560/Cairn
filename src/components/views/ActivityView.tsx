@@ -87,8 +87,26 @@ export function ActivityView({ emptyMessage, ops, onChangeFolder }: ActivityView
                   <p className="op-file-meta">{op.author} · {formatRelativeTime(op.timestamp, t)}</p>
                 </div>
                 <div className="op-stats">
-                  <span>+{added}</span>
-                  <span className="op-del">−{removed}</span>
+                  {op.kind === 'created' ? (
+                    <>
+                      <span className="op-kind-badge">{t('opCreated')}</span>
+                      <span className="op-kind-stats">
+                        {t('opLinesAdded').replace('{n}', String(added))}
+                      </span>
+                    </>
+                  ) : op.kind === 'deleted' ? (
+                    <>
+                      <span className="op-kind-badge op-kind-deleted">{t('opDeleted')}</span>
+                      <span className="op-kind-stats">
+                        {t('opLinesRemoved').replace('{n}', String(removed))}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span>+{added}</span>
+                      <span className="op-del">−{removed}</span>
+                    </>
+                  )}
                 </div>
               </article>
             )

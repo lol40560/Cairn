@@ -1,3 +1,5 @@
+export type OpKind = 'created' | 'deleted' | 'modified'
+
 export interface Op {
   id: string
   hash: string
@@ -6,6 +8,8 @@ export interface Op {
   timestamp: number
   filePath: string
   diff: string
+  /** 由文件变更方向推导，用于界面展示且不参与 hash。 */
+  kind?: OpKind
   source?: 'local' | 'remote'
 }
 
@@ -16,6 +20,8 @@ export interface NewOp {
   timestamp: number
   filePath: string
   diff: string
+  /** 新写入的操作会携带类型，旧操作保持兼容。 */
+  kind?: OpKind
   source?: 'local' | 'remote'
 }
 

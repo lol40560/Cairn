@@ -96,6 +96,7 @@ describe('ProjectWatcher', () => {
     expect(op.author).toBe('watcher-test')
     expect(op.diff).toContain('+export const value = 1')
     expect(op.parentHashes).toEqual([])
+    expect(op.kind).toBe('created')
   })
 
   it('applyRemoteChange 更新基线但不产生 op，后续本地修改仍会产生 op', async () => {
@@ -197,6 +198,7 @@ describe('ProjectWatcher', () => {
 
     expect(op.diff).toContain('-remove me')
     expect(op.diff).not.toContain('+remove me')
+    expect(op.kind).toBe('deleted')
   })
 
   it('删除文件会将原始内容保存到 .cairn/trash，且内部目录不会产生 op', async () => {
@@ -235,6 +237,11 @@ describe('ProjectWatcher', () => {
 
     expect([first, second, third]).toHaveLength(3)
     expect([first, second, third].every((op) => op.parentHashes.length === 0)).toBe(true)
+    expect([first.kind, second.kind, third.kind]).toEqual([
+      'created',
+      'modified',
+      'deleted',
+    ])
   })
 
   it('快照以内容 SHA-256 为键去重', async () => {

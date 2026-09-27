@@ -6,6 +6,8 @@ export interface Op {
   timestamp: number
   filePath: string
   diff: string
+  /** 必须与 electron/core/oplog/types.ts 的 OpKind 保持一致。 */
+  kind?: 'created' | 'deleted' | 'modified'
   source?: 'local' | 'remote'
 }
 

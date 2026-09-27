@@ -331,8 +331,15 @@ describe('Sync', () => {
 
     await sync.start()
     transport.emit('message', 'source', { op: validOp, type: 'data' })
-    await expect(remoteOp).resolves.toEqual([{ ...validOp, source: 'remote' }])
-    expect(target.oplog.getOp(validOp.hash)).toEqual(validOp)
+    await expect(remoteOp).resolves.toEqual([{
+      ...validOp,
+      kind: 'modified',
+      source: 'remote',
+    }])
+    expect(target.oplog.getOp(validOp.hash)).toEqual({
+      ...validOp,
+      kind: 'modified',
+    })
     await sync.stop()
   })
 
@@ -474,7 +481,11 @@ describe('Sync', () => {
     await sync.start()
     transport.emit('message', 'source', { op: remote, type: 'data' })
 
-    await expect(conflict).resolves.toEqual([{ ...remote, source: 'remote' }, content])
+    await expect(conflict).resolves.toEqual([{
+      ...remote,
+      kind: 'modified',
+      source: 'remote',
+    }, content])
     expect(writeFile).not.toHaveBeenCalled()
     await sync.stop()
   })

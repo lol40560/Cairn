@@ -325,6 +325,7 @@ export class ProjectWatcher extends EventEmitter {
         timestamp: Date.now(),
         filePath: relativePath,
         diff: createTwoFilesPatch(relativePath, relativePath, oldContent, content),
+        kind: deleted ? 'deleted' : previous ? 'modified' : 'created',
         source: 'local',
       }
       if (deleted) {

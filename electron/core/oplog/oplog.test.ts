@@ -180,6 +180,37 @@ describe('oplog', () => {
     expect(oplog.getOp(local.hash)?.source).toBeUndefined()
   })
 
+  it('kind 不参与 hash，且读取旧对象时会从 diff 推导类型', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const legacyCases = [
+      {
+        diff: 'new file mode 100644\n--- /dev/null\n+++ created.ts\n+hello\n',
+        kind: 'created' as const,
+      },
+      {
+        diff: 'deleted file mode 100644\n--- deleted.ts\n+++ /dev/null\n-old\n',
+        kind: 'deleted' as const,
+      },
+      {
+        diff: '@@ -1 +1 @@\n-old\n+new\n',
+        kind: 'modified' as const,
+      },
+    ]
+
+    for (const [index, legacyCase] of legacyCases.entries()) {
+      const input = newOp({
+        diff: legacyCase.diff,
+        filePath: `legacy-${index}.ts`,
+        id: `legacy-${index}`,
+      })
+      const hash = computeHash(input)
+
+      expect(computeHash({ ...input, kind: legacyCase.kind })).toBe(hash)
+      await writeCorruptOp(projectRoot, { ...input, hash })
+      expect(oplog.getOp(hash)?.kind).toBe(legacyCase.kind)
+    }
+  })
+
   it('将对象写入正确的内容寻址路径', async () => {
     const { projectRoot, oplog } = await createFixture()
     const stored = oplog.putOp(newOp())
