@@ -1116,10 +1116,31 @@
   width: min(620px, 100%);
 }
 
+.privacy-modal {
+  width: min(640px, 100%);
+}
+
 .licenses-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.privacy-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.privacy-content {
+  max-height: min(500px, 58vh);
+  overflow-y: auto;
+  color: var(--text-1);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .licenses-list {

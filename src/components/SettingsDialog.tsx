@@ -4,6 +4,7 @@ import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { LicensesDialog } from './LicensesDialog'
+import { PrivacyDialog } from './PrivacyDialog'
 import {
   shouldCloseDialogFromBackdrop,
   shouldCloseDialogFromKey,
@@ -41,6 +42,7 @@ export function SettingsDialog({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
   const [licensesOpen, setLicensesOpen] = useState(false)
+  const [privacyOpen, setPrivacyOpen] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -254,9 +256,9 @@ export function SettingsDialog({
             </dl>
             <p className="about-privacy">{t('aboutPrivacy')}</p>
             <div className="about-actions">
-              <button className="btn btn-ghost" type="button" onClick={() => setLicensesOpen(true)}>{t('aboutOpenSourceLicenses')}</button>
-              <button className="btn btn-ghost" type="button" onClick={() => void openExternal('https://github.com/lol40560/Cairn/blob/main/PRIVACY.md')}>{t('aboutPrivacyPolicy')}</button>
-              <button className="btn btn-ghost" type="button" onClick={() => void openExternal('https://github.com/lol40560/Cairn')}>{t('aboutGithubRepository')}</button>
+              <button className="btn btn-ghost" type="button" onClick={() => setLicensesOpen(true)}>{t('aboutViewLicenses')}</button>
+              <button className="btn btn-ghost" type="button" onClick={() => setPrivacyOpen(true)}>{t('aboutViewPrivacy')}</button>
+              <button className="btn btn-ghost" type="button" onClick={() => void openExternal('https://github.com/lol40560/Cairn')}>{t('aboutGithub')}</button>
             </div>
           </section>
 
@@ -297,6 +299,7 @@ export function SettingsDialog({
         </div>
       </section>
       <LicensesDialog open={licensesOpen} onClose={() => setLicensesOpen(false)} />
+      <PrivacyDialog open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
     </div>
   )
 }
