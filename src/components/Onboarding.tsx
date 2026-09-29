@@ -217,10 +217,8 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
             <h1 id="onboarding-title" className="onboarding-title">{t('onboardingWelcomeTitle')}</h1>
             <p className="onboarding-subtitle">{t('onboardingWelcomeSubtitle')}</p>
             <div className="onboarding-actions">
-              <button className="btn btn-primary" type="button" onClick={() => setStep('project')}>{t('onboardingStartProject')}</button>
-              <p className="onboarding-divider">{t('onboardingOr')}</p>
-              <p className="onboarding-already">{t('onboardingAlreadyHaveTeam')}</p>
-              <button className="btn btn-ghost" type="button" onClick={() => setStep('join')}>{t('onboardingJoinTeam')}</button>
+              <button className="btn btn-primary onboarding-btn" type="button" onClick={() => setStep('project')}>{t('onboardingStartProject')}</button>
+              <button className="btn onboarding-btn" type="button" onClick={() => setStep('join')}>{t('onboardingJoinTeam')}</button>
             </div>
           </>
         )}

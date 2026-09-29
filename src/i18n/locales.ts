@@ -359,7 +359,7 @@ export const en: Record<keyof typeof zh, string> = {
   chooseFolder: 'Choose a folder',
   joinTeam: 'Join a team',
   onboardingWelcomeTitle: 'Welcome to Cairn',
-  onboardingWelcomeSubtitle: 'Collaborate on the same files with your teammates, in real time.',
+  onboardingWelcomeSubtitle: 'Work on the same files with your teammates, in real time.',
   onboardingStartProject: 'Start a project',
   onboardingOr: 'or',
   onboardingAlreadyHaveTeam: 'Already have a team?',

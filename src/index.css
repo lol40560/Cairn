@@ -1135,27 +1135,29 @@
 
 .onboarding-card {
   position: relative;
-  width: min(560px, 100%);
+  width: 100%;
+  max-width: 480px;
   border: 1px solid var(--line);
   border-radius: var(--r-xl);
   background: var(--bg-1);
   box-shadow: 0 40px 100px rgb(0 0 0 / 50%);
-  padding: 56px 48px;
+  padding: 48px 40px;
 }
 
 .onboarding-title {
   margin: 0 0 12px;
   color: var(--text-0);
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 500;
   letter-spacing: -0.02em;
+  line-height: 1.2;
   text-align: center;
 }
 
 .onboarding-subtitle {
-  margin: 0 0 40px;
+  margin: 0 0 32px;
   color: var(--text-1);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.6;
   text-align: center;
 }
@@ -1163,25 +1165,20 @@
 .onboarding-actions {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
-.onboarding-actions .btn {
+.onboarding-btn {
+  width: 100%;
+  height: 44px;
+  font-size: 14px;
+  justify-content: center;
+}
+
+.onboarding-actions .btn:not(.onboarding-btn) {
   width: 100%;
   min-height: 44px;
   font-size: 14px;
-}
-
-.onboarding-divider,
-.onboarding-already {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 12px;
-  text-align: center;
-}
-
-.onboarding-divider {
-  margin: 4px 0;
 }
 
 .onboarding-skip,
@@ -1204,6 +1201,7 @@
   position: absolute;
   top: 20px;
   right: 24px;
+  font-family: var(--font-sans);
   padding: 4px 8px;
 }
 
