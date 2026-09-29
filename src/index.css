@@ -1072,6 +1072,56 @@
   gap: 8px;
 }
 
+.download-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.download-prompt-project {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.download-prompt-name {
+  color: var(--text-0);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.download-prompt-meta {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.download-prompt-target {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.download-prompt-target-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.download-prompt-target-row code {
+  overflow: hidden;
+  flex: 1;
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 10px 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toast {
   position: fixed;
   z-index: 70;

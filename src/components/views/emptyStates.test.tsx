@@ -7,6 +7,7 @@ import { ActivityView } from './ActivityView'
 import { createRoomAndStartSharing, RoomView } from './RoomView'
 import { TrashView } from './TrashView'
 import { useAppStore, type AppState } from '@/store/appStore'
+import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
 
 const initialState = useAppStore.getState()
 
@@ -71,6 +72,24 @@ describe('引导式空状态', () => {
 
     expect(html).toContain('Just you so far')
     expect(html).toContain('Share your invite code to add teammates.')
+  })
+
+  it('加入团队发现分享者后显示下载确认内容', () => {
+    const html = renderToStaticMarkup(
+      <DownloadPromptDialog
+        defaultTargetDir="/Users/test/Cairn/project"
+        open
+        seeder={{ peerId: 'alice-macbook', projectName: 'project', size: 5_242_880, snapshotId: 'snapshot' }}
+        onChangeTarget={() => undefined}
+        onConfirm={() => undefined}
+        onSkip={() => undefined}
+      />,
+    )
+
+    expect(html).toContain('Download project')
+    expect(html).toContain('project')
+    expect(html).toContain('5.0 MB')
+    expect(html).toContain('Download now')
   })
 
   it('创建团队成功后会自动开始分享', async () => {

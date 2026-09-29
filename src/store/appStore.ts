@@ -31,6 +31,8 @@ export interface AppState {
   downloadStatus: DownloadStatus
   downloadProgress: DownloadProgress | undefined
   downloadTargetDir: string
+  pendingAutoDownload: boolean
+  showDownloadPrompt: boolean
   lastDownloadPath: string | undefined
   lastConflictFiles: string[]
   trash: TrashEntry[]
@@ -51,6 +53,8 @@ export interface AppState {
   setDownloadStatus(status: DownloadStatus): void
   setDownloadProgress(progress: DownloadProgress | undefined): void
   setDownloadTargetDir(directory: string): void
+  setPendingAutoDownload(value: boolean): void
+  setShowDownloadPrompt(value: boolean): void
   resetDownload(): void
   setLastDownloadResult(path: string, conflicts: string[]): void
   clearLastDownloadResult(): void
@@ -80,6 +84,8 @@ export const useAppStore = create<AppState>((set) => ({
   downloadStatus: 'idle',
   downloadProgress: undefined,
   downloadTargetDir: '',
+  pendingAutoDownload: false,
+  showDownloadPrompt: false,
   lastDownloadPath: undefined,
   lastConflictFiles: [],
   trash: [],
@@ -103,7 +109,14 @@ export const useAppStore = create<AppState>((set) => ({
   setDownloadStatus: (downloadStatus) => set({ downloadStatus }),
   setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
   setDownloadTargetDir: (downloadTargetDir) => set({ downloadTargetDir }),
-  resetDownload: () => set({ downloadProgress: undefined, downloadStatus: 'idle' }),
+  setPendingAutoDownload: (pendingAutoDownload) => set({ pendingAutoDownload }),
+  setShowDownloadPrompt: (showDownloadPrompt) => set({ showDownloadPrompt }),
+  resetDownload: () => set({
+    downloadProgress: undefined,
+    downloadStatus: 'idle',
+    pendingAutoDownload: false,
+    showDownloadPrompt: false,
+  }),
   setLastDownloadResult: (lastDownloadPath, lastConflictFiles) => set({ lastConflictFiles, lastDownloadPath }),
   clearLastDownloadResult: () => set({ lastConflictFiles: [], lastDownloadPath: undefined }),
   setTrash: (trash) => set({ trash }),

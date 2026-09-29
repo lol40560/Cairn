@@ -23,7 +23,9 @@ afterEach(() => {
     peers: [],
     roomCode: '',
     isHost: false,
+    pendingAutoDownload: false,
     status: 'idle',
+    showDownloadPrompt: false,
   })
 })
 
@@ -95,5 +97,17 @@ describe('appStore', () => {
 
     useAppStore.getState().setActiveView('conflicts')
     expect(useAppStore.getState().activeView).toBe('conflicts')
+  })
+
+  it('加入团队后可等待 seeder 并控制下载确认弹窗', () => {
+    useAppStore.getState().setPendingAutoDownload(true)
+    expect(useAppStore.getState().pendingAutoDownload).toBe(true)
+
+    useAppStore.getState().setShowDownloadPrompt(true)
+    expect(useAppStore.getState().showDownloadPrompt).toBe(true)
+
+    useAppStore.getState().resetDownload()
+    expect(useAppStore.getState().pendingAutoDownload).toBe(false)
+    expect(useAppStore.getState().showDownloadPrompt).toBe(false)
   })
 })

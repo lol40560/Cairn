@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Toast, type ToastMessage } from '@/components/Toast'
+import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { useAppStore } from '@/store/appStore'
@@ -89,7 +90,9 @@ export function RoomView({
   const lastDownloadPath = useAppStore((state) => state.lastDownloadPath)
   const isSharing = useAppStore((state) => state.isSharing)
   const isHost = useAppStore((state) => state.isHost)
+  const pendingAutoDownload = useAppStore((state) => state.pendingAutoDownload)
   const seeders = useAppStore((state) => state.seeders)
+  const showDownloadPrompt = useAppStore((state) => state.showDownloadPrompt)
   const resetDownload = useAppStore((state) => state.resetDownload)
   const clearLastDownloadResult = useAppStore((state) => state.clearLastDownloadResult)
   const setDownloadProgress = useAppStore((state) => state.setDownloadProgress)
@@ -101,7 +104,9 @@ export function RoomView({
   const setIsHost = useAppStore((state) => state.setIsHost)
   const setLocalEndpoint = useAppStore((state) => state.setLocalEndpoint)
   const setMySnapshotId = useAppStore((state) => state.setMySnapshotId)
+  const setPendingAutoDownload = useAppStore((state) => state.setPendingAutoDownload)
   const setSeeders = useAppStore((state) => state.setSeeders)
+  const setShowDownloadPrompt = useAppStore((state) => state.setShowDownloadPrompt)
   const dismissToast = useCallback(() => setToast(null), [])
 
   useEffect(() => {
@@ -184,10 +189,31 @@ export function RoomView({
     }
   }, [isHost, joinedByRoomCode, setLocalEndpoint])
 
+  useEffect(() => {
+    if (!pendingAutoDownload) return
+
+    const timeout = window.setTimeout(() => {
+      setPendingAutoDownload(false)
+      setToast({ message: t('downloadPromptTimeout'), tone: 'error' })
+    }, 10_000)
+    return () => window.clearTimeout(timeout)
+  }, [pendingAutoDownload, setPendingAutoDownload, t])
+
+  useEffect(() => {
+    if (!pendingAutoDownload || seeders.length === 0 || downloadStatus !== 'idle') return
+
+    setPendingAutoDownload(false)
+    setShowDownloadPrompt(true)
+  }, [downloadStatus, pendingAutoDownload, seeders, setPendingAutoDownload, setShowDownloadPrompt])
+
   const handleJoin = async (): Promise<void> => {
     const value = joinCode.trim()
     if (/^[A-Z0-9]{6}$/i.test(value)) {
       await onJoinRoom(value.toUpperCase())
+      // App 的加入回调会在成功时同步写入房间状态；失败时不启动下载等待。
+      if (useAppStore.getState().roomCode === value.toUpperCase()) {
+        setPendingAutoDownload(true)
+      }
       setJoinCode('')
       return
     }
@@ -292,6 +318,18 @@ export function RoomView({
       console.error('[cairn] 无法停止项目分享', error)
       setToast(normalizeError(error, t))
     }
+  }
+
+  const handleDownloadConfirm = async (): Promise<void> => {
+    const seeder = seeders[0]
+    setShowDownloadPrompt(false)
+    setPendingAutoDownload(false)
+    if (seeder) await handleDownload(seeder)
+  }
+
+  const handleDownloadSkip = (): void => {
+    setShowDownloadPrompt(false)
+    setPendingAutoDownload(false)
   }
 
   const handleDownload = async (seeder: SeederInfo): Promise<void> => {
@@ -410,6 +448,14 @@ export function RoomView({
 
   return (
     <section className="view active">
+      <DownloadPromptDialog
+        defaultTargetDir={downloadTargetDir}
+        open={showDownloadPrompt}
+        seeder={seeders[0]}
+        onChangeTarget={() => void handleChangeTargetDir()}
+        onConfirm={() => void handleDownloadConfirm()}
+        onSkip={handleDownloadSkip}
+      />
       <div className="view-header">
         <h1 className="view-title">{t('roomTitle')}</h1>
         <span className="view-spacer" />
