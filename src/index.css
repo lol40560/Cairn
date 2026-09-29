@@ -550,7 +550,8 @@
 }
 
 .share-active .btn,
-.download-available .btn {
+.download-available .btn,
+.sharing-empty .btn {
   align-self: flex-start;
 }
 

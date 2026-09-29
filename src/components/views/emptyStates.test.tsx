@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ConflictsView } from './ConflictsView'
 import { ActivityView } from './ActivityView'
-import { RoomView } from './RoomView'
+import { createRoomAndStartSharing, RoomView } from './RoomView'
 import { TrashView } from './TrashView'
 import { useAppStore, type AppState } from '@/store/appStore'
 
@@ -71,5 +71,45 @@ describe('引导式空状态', () => {
 
     expect(html).toContain('Just you so far')
     expect(html).toContain('Share your invite code to add teammates.')
+  })
+
+  it('创建团队成功后会自动开始分享', async () => {
+    const createRoom = vi.fn(async () => {
+      useAppStore.getState().setRoomCode('ABC123')
+      useAppStore.getState().setIsHost(true)
+    })
+    const startSharing = vi.fn(async () => ({
+      data: { peerId: 'host', projectName: 'project', size: 1, snapshotId: 'snapshot-1' },
+      ok: true as const,
+    }))
+
+    await createRoomAndStartSharing(createRoom, startSharing)
+
+    expect(createRoom).toHaveBeenCalledOnce()
+    expect(startSharing).toHaveBeenCalledOnce()
+    expect(useAppStore.getState().isSharing).toBe(true)
+    expect(useAppStore.getState().mySnapshotId).toBe('snapshot-1')
+  })
+
+  it('分享失败不会撤销已创建的团队，停止分享后状态会重置', async () => {
+    const createRoom = vi.fn(async () => {
+      useAppStore.getState().setRoomCode('ABC123')
+      useAppStore.getState().setIsHost(true)
+    })
+    const startSharing = vi.fn(async () => ({
+      error: { category: 'unknown' as const, message: 'failed', raw: 'failed' },
+      ok: false as const,
+    }))
+
+    await createRoomAndStartSharing(createRoom, startSharing)
+
+    expect(startSharing).toHaveBeenCalledOnce()
+    expect(useAppStore.getState().roomCode).toBe('ABC123')
+    expect(useAppStore.getState().isHost).toBe(true)
+    expect(useAppStore.getState().isSharing).toBe(false)
+
+    useAppStore.getState().setIsSharing(true)
+    useAppStore.getState().setIsSharing(false)
+    expect(useAppStore.getState().isSharing).toBe(false)
   })
 })

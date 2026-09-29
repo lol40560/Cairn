@@ -4,7 +4,7 @@ import { Toast, type ToastMessage } from '@/components/Toast'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { useAppStore } from '@/store/appStore'
-import type { PeerInfo, SeederInfo } from '@/types/cairn'
+import type { IpcResult, PeerInfo, SeederInfo } from '@/types/cairn'
 
 interface RoomViewProps {
   hasOps: boolean
@@ -39,6 +39,27 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   }
   return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+/** 创建团队成功后立即开始项目分享；创建失败时不尝试分享。 */
+// eslint-disable-next-line react-refresh/only-export-components -- 单测复用此交互流程。
+export async function createRoomAndStartSharing(
+  onCreateRoom: () => Promise<void>,
+  startSharing: () => Promise<IpcResult<SeederInfo>>,
+): Promise<IpcResult<SeederInfo> | undefined> {
+  await onCreateRoom()
+
+  const state = useAppStore.getState()
+  if (!state.isHost || state.roomCode === '') {
+    return undefined
+  }
+
+  const result = await startSharing()
+  if (result.ok) {
+    state.setIsSharing(true)
+    state.setMySnapshotId(result.data.snapshotId)
+  }
+  return result
 }
 
 export function RoomView({
@@ -246,6 +267,18 @@ export function RoomView({
     }
   }
 
+  const handleStartRoom = async (): Promise<void> => {
+    try {
+      const result = await createRoomAndStartSharing(onCreateRoom, () => window.cairn.startSharing())
+      if (result && !result.ok) {
+        setToast(normalizeError(result.error, t))
+      }
+    } catch (error) {
+      console.error('[cairn] 创建团队后无法开始项目分享', error)
+      setToast(normalizeError(error, t))
+    }
+  }
+
   const handleStopSharing = async (): Promise<void> => {
     try {
       const result = await window.cairn.stopSharing()
@@ -401,7 +434,7 @@ export function RoomView({
         <div className="room-block">
           <p className="room-label">{t('createOrJoin')}</p>
           <div className="room-actions">
-            <button className="btn btn-primary" type="button" onClick={() => void onCreateRoom()}>
+            <button className="btn btn-primary" type="button" onClick={() => void handleStartRoom()}>
               {t('createRoom')}
             </button>
             <input
@@ -462,13 +495,20 @@ export function RoomView({
               <div className="share-active">
                 <div className="share-status">
                   <span aria-hidden="true" className="peer-dot" style={{ background: 'var(--peer-1)' }} />
-                  <span>{t('sharingActive').replace('{n}', String(seeders.length))}</span>
+                  <span>{t('teammatesCanDownload').replace('{n}', String(seeders.length))}</span>
                 </div>
                 <button className="btn btn-ghost" type="button" onClick={() => void handleStopSharing()}>
                   {t('stopSharing')}
                 </button>
               </div>
-            ) : isHost ? null : seeders.length > 0 ? (
+            ) : isHost ? (
+              <div className="sharing-empty">
+                <div className="sharing-empty-title">{t('stoppedSharing')}</div>
+                <button className="btn" type="button" onClick={() => void handleStartSharing()}>
+                  {t('restartSharing')}
+                </button>
+              </div>
+            ) : seeders.length > 0 ? (
               <div className="download-available">
                 {seeders.map((seeder) => (
                   <div key={`${seeder.peerId}:${seeder.snapshotId}`} className="seeder-row">
@@ -502,11 +542,6 @@ export function RoomView({
                 <div className="sharing-empty-title">{t('waitingForHost')}</div>
                 <div className="sharing-empty-desc">{t('waitingForHostDesc')}</div>
               </div>
-            )}
-            {isHost && !isSharing && seeders.length === 0 && !isDownloading && (
-              <button className="btn" type="button" onClick={() => void handleStartSharing()}>
-                {t('startSharing')}
-              </button>
             )}
             {lastDownloadPath && (
               <div className="download-result">
