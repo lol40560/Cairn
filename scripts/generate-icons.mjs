@@ -8,7 +8,7 @@ import sharp from 'sharp'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDir, '..')
 const buildDir = path.join(projectRoot, 'build')
-const logoPath = path.join(projectRoot, 'src', 'assets', 'logo.svg')
+const iconSourcePath = path.join(buildDir, 'icon.svg')
 const iconPath = path.join(buildDir, 'icon.png')
 const iconsetDir = path.join(buildDir, 'icon.iconset')
 
@@ -26,15 +26,12 @@ const icnsSizes = [
   [1024, 'icon_512x512@2x.png'],
 ]
 
-function backgroundSvg(size) {
-  const radius = Math.round(size * 0.18)
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><defs><linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1A1D21"/><stop offset="1" stop-color="#22262B"/></linearGradient></defs><rect width="${size}" height="${size}" rx="${radius}" fill="url(#background)"/></svg>`
-}
-
-function traySvg(size) {
-  const scale = size / 1024
-  const point = (value) => value * scale
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><g fill="#000000" stroke="#000000" stroke-width="${point(20)}" stroke-linecap="round"><path d="M${point(390)} ${point(390)} ${point(320)} ${point(560)}M${point(634)} ${point(390)} ${point(704)} ${point(560)}M${point(320)} ${point(680)} ${point(455)} ${point(770)}M${point(704)} ${point(680)} ${point(569)} ${point(770)}" fill="none"/><circle cx="${point(512)}" cy="${point(260)}" r="${point(110)}"/><circle cx="${point(240)}" cy="${point(620)}" r="${point(80)}"/><circle cx="${point(784)}" cy="${point(620)}" r="${point(80)}"/><circle cx="${point(512)}" cy="${point(800)}" r="${point(70)}"/></g></svg>`
+function traySvg(iconSource) {
+  // 托盘图标保持透明背景，仅保留单色石头轮廓与透明的眼睛。
+  return iconSource
+    .replace(/<rect[^>]*\/>\s*/u, '')
+    .replaceAll('#D15060', '#000000')
+    .replaceAll('fill="#17171A"', 'fill="none"')
 }
 
 async function commandExists(command) {
@@ -62,20 +59,16 @@ async function createIcns() {
 
 async function main() {
   await mkdir(buildDir, { recursive: true })
-  await access(logoPath)
-  const logo = await readFile(logoPath)
-  const iconLogo = await sharp(logo).resize(717, 717, { fit: 'contain' }).png().toBuffer()
-
-  await sharp(Buffer.from(backgroundSvg(1024)))
-    .composite([{ input: iconLogo, left: 154, top: 154 }])
-    .png()
-    .toFile(iconPath)
+  await access(iconSourcePath)
+  const iconSource = await readFile(iconSourcePath, 'utf8')
+  await sharp(Buffer.from(iconSource)).png().toFile(iconPath)
 
   const icoInputs = await Promise.all(iconSizes.map((size) => sharp(iconPath).resize(size, size).png().toBuffer()))
   await writeFile(path.join(buildDir, 'icon.ico'), await pngToIco(icoInputs))
 
-  await sharp(Buffer.from(traySvg(16))).png().toFile(path.join(buildDir, 'trayTemplate.png'))
-  await sharp(Buffer.from(traySvg(32))).png().toFile(path.join(buildDir, 'trayTemplate@2x.png'))
+  const traySource = traySvg(iconSource)
+  await sharp(Buffer.from(traySource)).resize(16, 16).png().toFile(path.join(buildDir, 'trayTemplate.png'))
+  await sharp(Buffer.from(traySource)).resize(32, 32).png().toFile(path.join(buildDir, 'trayTemplate@2x.png'))
   await createIcns()
   console.info('已生成 Cairn App 与托盘图标。')
 }
