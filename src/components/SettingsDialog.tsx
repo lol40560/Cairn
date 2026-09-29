@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
+import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { LicensesDialog } from './LicensesDialog'
 import {
   shouldCloseDialogFromBackdrop,
   shouldCloseDialogFromKey,
@@ -38,6 +40,7 @@ export function SettingsDialog({
   const [trashRetentionDays, setTrashRetentionDays] = useState(30)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
+  const [licensesOpen, setLicensesOpen] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -113,6 +116,13 @@ export function SettingsDialog({
         setError(normalizeError(result.error, t))
       }
     })
+  }
+
+  const openExternal = async (url: string): Promise<void> => {
+    const result = await window.cairn.openExternal(url)
+    if (!result.ok) {
+      setError(normalizeError(result.error, t))
+    }
   }
 
   if (!open) {
@@ -236,6 +246,20 @@ export function SettingsDialog({
             </label>
           </section>
 
+          <section className="modal-section about-section">
+            <h3 className="modal-section-title">{t('about')}</h3>
+            <dl className="about-meta">
+              <div><dt>{t('aboutVersion')}</dt><dd>{appPackage.version}</dd></div>
+              <div><dt>{t('aboutLicense')}</dt><dd>MIT</dd></div>
+            </dl>
+            <p className="about-privacy">{t('aboutPrivacy')}</p>
+            <div className="about-actions">
+              <button className="btn btn-ghost" type="button" onClick={() => setLicensesOpen(true)}>{t('aboutOpenSourceLicenses')}</button>
+              <button className="btn btn-ghost" type="button" onClick={() => void openExternal('https://github.com/lol40560/Cairn/blob/main/PRIVACY.md')}>{t('aboutPrivacyPolicy')}</button>
+              <button className="btn btn-ghost" type="button" onClick={() => void openExternal('https://github.com/lol40560/Cairn')}>{t('aboutGithubRepository')}</button>
+            </div>
+          </section>
+
           {error && (
             <div className="modal-error">
               <p>{error.message}</p>
@@ -272,6 +296,7 @@ export function SettingsDialog({
           </footer>
         </div>
       </section>
+      <LicensesDialog open={licensesOpen} onClose={() => setLicensesOpen(false)} />
     </div>
   )
 }

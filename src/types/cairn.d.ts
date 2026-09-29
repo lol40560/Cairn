@@ -130,6 +130,7 @@ export interface CairnApi {
   exportPR(options: { branch?: string; prBranch?: string; title: string; body?: string }): Promise<IpcResult<{ prUrl: string; prNumber: number }>>
   exportSnapshot(): Promise<IpcResult<ExportSnapshotResult | { canceled: true }>>
   copyToClipboard(text: string): Promise<IpcResult<void>>
+  openExternal(url: string): Promise<IpcResult<void>>
   openInFileManager(targetPath: string): Promise<IpcResult<void>>
   startSharing(): Promise<IpcResult<SeederInfo>>
   stopSharing(): Promise<IpcResult<void>>

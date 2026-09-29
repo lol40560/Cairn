@@ -1,0 +1,1039 @@
+{
+  "@fontsource/inter@5.3.0": {
+    "licenses": "OFL-1.1",
+    "repository": "https://github.com/fontsource/font-files",
+    "publisher": "Google Inc.",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@fontsource/inter",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@fontsource/inter/LICENSE"
+  },
+  "@fontsource/jetbrains-mono@5.3.0": {
+    "licenses": "OFL-1.1",
+    "repository": "https://github.com/fontsource/font-files",
+    "publisher": "Google Inc.",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@fontsource/jetbrains-mono",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@fontsource/jetbrains-mono/LICENSE"
+  },
+  "@leichtgewicht/ip-codec@2.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/martinheidegger/ip-codec",
+    "publisher": "Martin Heidegger",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@leichtgewicht/ip-codec",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@leichtgewicht/ip-codec/LICENSE"
+  },
+  "@octokit/auth-token@6.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/auth-token.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/auth-token",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/auth-token/LICENSE"
+  },
+  "@octokit/core@7.0.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/core.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/core",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/core/LICENSE"
+  },
+  "@octokit/endpoint@11.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/endpoint.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/endpoint",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/endpoint/LICENSE"
+  },
+  "@octokit/graphql@9.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/graphql.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/graphql",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/graphql/LICENSE"
+  },
+  "@octokit/openapi-types@27.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/openapi-types.ts",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest/node_modules/@octokit/openapi-types",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest/node_modules/@octokit/openapi-types/LICENSE"
+  },
+  "@octokit/openapi-types@29.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/openapi-types.ts",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/openapi-types",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/openapi-types/LICENSE"
+  },
+  "@octokit/plugin-paginate-rest@14.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/plugin-paginate-rest.js",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest/LICENSE"
+  },
+  "@octokit/plugin-request-log@6.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/plugin-request-log.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-request-log",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-request-log/LICENSE"
+  },
+  "@octokit/plugin-rest-endpoint-methods@17.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/plugin-rest-endpoint-methods.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-rest-endpoint-methods",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-rest-endpoint-methods/LICENSE"
+  },
+  "@octokit/request-error@7.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/request-error.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/request-error",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/request-error/LICENSE"
+  },
+  "@octokit/request@10.0.16": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/request.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/request",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/request/LICENSE"
+  },
+  "@octokit/rest@22.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/rest.js",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/rest",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/rest/LICENSE"
+  },
+  "@octokit/types@16.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/types.ts",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest/node_modules/@octokit/types",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/plugin-paginate-rest/node_modules/@octokit/types/LICENSE"
+  },
+  "@octokit/types@18.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/octokit/types.ts",
+    "publisher": "Gregor Martynus",
+    "url": "https://twitter.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/types",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@octokit/types/LICENSE"
+  },
+  "@types/react@19.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@types/react",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/@types/react/LICENSE"
+  },
+  "abort-controller@3.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mysticatea/abort-controller",
+    "publisher": "Toru Nagashima",
+    "url": "https://github.com/mysticatea",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/abort-controller",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/abort-controller/LICENSE"
+  },
+  "archiver@8.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/archiverjs/node-archiver",
+    "publisher": "Chris Talkington",
+    "url": "http://christalkington.com/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/archiver",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/archiver/LICENSE"
+  },
+  "async-lock@1.4.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/rogierschouten/async-lock",
+    "publisher": "Rogier Schouten",
+    "email": "github@workingcode.ninja",
+    "url": "https://github.com/rogierschouten/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/async-lock",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/async-lock/LICENSE"
+  },
+  "async@3.2.6": {
+    "licenses": "MIT",
+    "repository": "https://github.com/caolan/async",
+    "publisher": "Caolan McMahon",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/async",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/async/LICENSE"
+  },
+  "available-typed-arrays@1.0.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/available-typed-arrays",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/available-typed-arrays",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/available-typed-arrays/LICENSE"
+  },
+  "b4a@1.9.0": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/b4a",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/b4a",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/b4a/LICENSE"
+  },
+  "balanced-match@4.0.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/juliangruber/balanced-match",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/balanced-match",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/balanced-match/LICENSE.md"
+  },
+  "bare-events@2.9.2": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/bare-events",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-events",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-events/LICENSE"
+  },
+  "bare-fs@4.8.2": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/bare-fs",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-fs",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-fs/LICENSE"
+  },
+  "bare-path@3.1.2": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/bare-path",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-path",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-path/LICENSE",
+    "noticeFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-path/NOTICE"
+  },
+  "bare-stream@2.13.4": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/bare-stream",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-stream/LICENSE"
+  },
+  "bare-url@2.5.4": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/bare-url",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-url",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bare-url/LICENSE"
+  },
+  "base64-js@1.5.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/beatgammit/base64-js",
+    "publisher": "T. Jameson Little",
+    "email": "t.jameson.little@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/base64-js",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/base64-js/LICENSE"
+  },
+  "before-after-hook@4.0.0": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/gr2m/before-after-hook",
+    "publisher": "Gregor Martynus",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/before-after-hook",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/before-after-hook/LICENSE"
+  },
+  "better-sqlite3@13.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/WiseLibs/better-sqlite3",
+    "publisher": "Joshua Wise",
+    "email": "joshuathomaswise@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/better-sqlite3",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/better-sqlite3/LICENSE"
+  },
+  "bonjour-service@1.4.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/onlxltd/bonjour-service",
+    "publisher": "ON LX Lited",
+    "email": "team@onlx.ltd",
+    "url": "https://onlx.ltd",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bonjour-service",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/bonjour-service/LICENSE"
+  },
+  "brace-expansion@5.0.12": {
+    "licenses": "MIT",
+    "repository": "https://github.com/juliangruber/brace-expansion",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/brace-expansion",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/brace-expansion/LICENSE"
+  },
+  "buffer-crc32@1.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/brianloveswords/buffer-crc32",
+    "publisher": "Brian J. Brennan",
+    "email": "brianloveswords@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/buffer-crc32",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/buffer-crc32/LICENSE"
+  },
+  "buffer@6.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/feross/buffer",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/buffer",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/buffer/LICENSE"
+  },
+  "cairn@0.1.0": {
+    "licenses": "UNLICENSED",
+    "private": true,
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/LICENSE"
+  },
+  "call-bind-apply-helpers@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/call-bind-apply-helpers",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bind-apply-helpers",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bind-apply-helpers/LICENSE"
+  },
+  "call-bind@1.0.9": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/call-bind",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bind",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bind/LICENSE"
+  },
+  "call-bound@1.0.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/call-bound",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bound",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/call-bound/LICENSE"
+  },
+  "chokidar@4.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/paulmillr/chokidar",
+    "publisher": "Paul Miller",
+    "url": "https://paulmillr.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/chokidar",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/chokidar/LICENSE"
+  },
+  "class-variance-authority@0.7.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/joe-bell/cva",
+    "publisher": "Joe Bell",
+    "url": "https://joebell.co.uk",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/class-variance-authority",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/class-variance-authority/LICENSE"
+  },
+  "clean-git-ref@2.0.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/TheSavior/clean-git-ref",
+    "publisher": "Eli White",
+    "email": "github@eli-white.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/clean-git-ref",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/clean-git-ref/README.md"
+  },
+  "clsx@2.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/lukeed/clsx",
+    "publisher": "Luke Edwards",
+    "email": "luke.edwards05@gmail.com",
+    "url": "https://lukeed.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/clsx",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/clsx/license"
+  },
+  "compress-commons@7.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/archiverjs/node-compress-commons",
+    "publisher": "Chris Talkington",
+    "url": "http://christalkington.com/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/compress-commons",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/compress-commons/LICENSE"
+  },
+  "content-type@3.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/jshttp/content-type",
+    "publisher": "Douglas Christopher Wilson",
+    "email": "doug@somethingdoug.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/content-type",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/content-type/LICENSE"
+  },
+  "core-util-is@1.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/isaacs/core-util-is",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "url": "http://blog.izs.me/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/core-util-is",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/core-util-is/LICENSE"
+  },
+  "crc-32@1.2.2": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/SheetJS/js-crc32",
+    "publisher": "sheetjs",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/crc-32",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/crc-32/LICENSE"
+  },
+  "crc32-stream@7.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/archiverjs/node-crc32-stream",
+    "publisher": "Chris Talkington",
+    "url": "http://christalkington.com/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/crc32-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/crc32-stream/LICENSE"
+  },
+  "csstype@3.2.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/frenic/csstype",
+    "publisher": "Fredrik Nicol",
+    "email": "fredrik.nicol@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/csstype",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/csstype/LICENSE"
+  },
+  "decompress-response@6.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sindresorhus/decompress-response",
+    "publisher": "Sindre Sorhus",
+    "email": "sindresorhus@gmail.com",
+    "url": "https://sindresorhus.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/decompress-response",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/decompress-response/license"
+  },
+  "define-data-property@1.1.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/define-data-property",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/define-data-property",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/define-data-property/LICENSE"
+  },
+  "diff3@0.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/axosoft/diff3",
+    "publisher": "Tyler Wanek",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/diff3",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/diff3/README.md"
+  },
+  "diff@8.0.4": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/kpdecker/jsdiff",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/diff",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/diff/LICENSE"
+  },
+  "dns-packet@5.6.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/dns-packet",
+    "publisher": "Mathias Buus",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/dns-packet",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/dns-packet/LICENSE"
+  },
+  "dunder-proto@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/es-shims/dunder-proto",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/dunder-proto",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/dunder-proto/LICENSE"
+  },
+  "es-define-property@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/es-define-property",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-define-property",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-define-property/LICENSE"
+  },
+  "es-errors@1.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/es-errors",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-errors",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-errors/LICENSE"
+  },
+  "es-object-atoms@1.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/es-object-atoms",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-object-atoms",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/es-object-atoms/LICENSE"
+  },
+  "event-target-shim@5.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mysticatea/event-target-shim",
+    "publisher": "Toru Nagashima",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/event-target-shim",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/event-target-shim/LICENSE"
+  },
+  "events-universal@1.0.1": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/events-universal",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/events-universal",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/events-universal/LICENSE"
+  },
+  "events@3.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Gozala/events",
+    "publisher": "Irakli Gozalishvili",
+    "email": "rfobic@gmail.com",
+    "url": "http://jeditoolkit.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/events",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/events/LICENSE"
+  },
+  "fast-deep-equal@3.1.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/epoberezkin/fast-deep-equal",
+    "publisher": "Evgeny Poberezkin",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/fast-deep-equal",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/fast-deep-equal/LICENSE"
+  },
+  "fast-fifo@1.3.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/fast-fifo",
+    "publisher": "Mathias Buus",
+    "url": "@mafintosh",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/fast-fifo",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/fast-fifo/LICENSE"
+  },
+  "for-each@0.3.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Raynos/for-each",
+    "publisher": "Raynos",
+    "email": "raynos2@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/for-each",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/for-each/LICENSE"
+  },
+  "function-bind@1.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Raynos/function-bind",
+    "publisher": "Raynos",
+    "email": "raynos2@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/function-bind",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/function-bind/LICENSE"
+  },
+  "get-intrinsic@1.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/get-intrinsic",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/get-intrinsic",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/get-intrinsic/LICENSE"
+  },
+  "get-proto@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/get-proto",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/get-proto",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/get-proto/LICENSE"
+  },
+  "gopd@1.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/gopd",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/gopd",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/gopd/LICENSE"
+  },
+  "has-property-descriptors@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/has-property-descriptors",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-property-descriptors",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-property-descriptors/LICENSE"
+  },
+  "has-symbols@1.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/has-symbols",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "url": "http://ljharb.codes",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-symbols",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-symbols/LICENSE"
+  },
+  "has-tostringtag@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/has-tostringtag",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "url": "http://ljharb.codes",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-tostringtag",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/has-tostringtag/LICENSE"
+  },
+  "hasown@2.0.4": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/hasOwn",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/hasown",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/hasown/LICENSE"
+  },
+  "ieee754@1.2.1": {
+    "licenses": "BSD-3-Clause",
+    "repository": "https://github.com/feross/ieee754",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/ieee754",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/ieee754/LICENSE"
+  },
+  "ignore@5.3.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/kaelzhang/node-ignore",
+    "publisher": "kael",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/ignore",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/ignore/LICENSE-MIT"
+  },
+  "inherits@2.0.4": {
+    "licenses": "ISC",
+    "repository": "https://github.com/isaacs/inherits",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/inherits",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/inherits/LICENSE"
+  },
+  "is-callable@1.2.7": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/is-callable",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "url": "http://ljharb.codes",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-callable",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-callable/LICENSE"
+  },
+  "is-stream@4.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sindresorhus/is-stream",
+    "publisher": "Sindre Sorhus",
+    "email": "sindresorhus@gmail.com",
+    "url": "https://sindresorhus.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-stream/license"
+  },
+  "is-typed-array@1.1.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/is-typed-array",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "url": "http://ljharb.codes",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-typed-array",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/is-typed-array/LICENSE"
+  },
+  "isarray@1.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/juliangruber/isarray",
+    "publisher": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/isarray",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/isarray/README.md"
+  },
+  "isarray@2.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/juliangruber/isarray",
+    "publisher": "Julian Gruber",
+    "email": "mail@juliangruber.com",
+    "url": "http://juliangruber.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/isarray",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/isarray/LICENSE"
+  },
+  "isomorphic-git@1.42.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/isomorphic-git/isomorphic-git",
+    "publisher": "William Hilton",
+    "email": "wmhilton@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/isomorphic-git",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/isomorphic-git/LICENSE.md"
+  },
+  "json-with-bigint@3.5.12": {
+    "licenses": "MIT",
+    "repository": "https://github.com/Ivan-Korolenko/json-with-bigint",
+    "publisher": "Ivan Korolenko",
+    "email": "iam@ivankorolenko.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/json-with-bigint",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/json-with-bigint/LICENSE"
+  },
+  "lazystream@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/jpommerening/node-lazystream",
+    "publisher": "Jonas Pommerening",
+    "email": "jonas.pommerening@gmail.com",
+    "url": "https://npmjs.org/~jpommerening",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/LICENSE"
+  },
+  "lucide-react@1.47.0": {
+    "licenses": "ISC",
+    "repository": "https://github.com/lucide-icons/lucide",
+    "publisher": "Eric Fennis",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lucide-react",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lucide-react/LICENSE"
+  },
+  "math-intrinsics@1.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/es-shims/math-intrinsics",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/math-intrinsics",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/math-intrinsics/LICENSE"
+  },
+  "mimic-response@3.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sindresorhus/mimic-response",
+    "publisher": "Sindre Sorhus",
+    "email": "sindresorhus@gmail.com",
+    "url": "https://sindresorhus.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/mimic-response",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/mimic-response/license"
+  },
+  "minimatch@10.2.6": {
+    "licenses": "BlueOak-1.0.0",
+    "repository": "https://github.com/isaacs/minimatch",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "url": "http://blog.izs.me",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimatch",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimatch/LICENSE.md"
+  },
+  "minimist@1.2.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/minimistjs/minimist",
+    "publisher": "James Halliday",
+    "email": "mail@substack.net",
+    "url": "http://substack.net",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimist",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimist/LICENSE"
+  },
+  "minimisted@2.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/kt3k/minimisted",
+    "publisher": "Yoshiya Hinosawa",
+    "email": "stibium121@gmail.com",
+    "url": "https://twitter.com/kt3k",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimisted",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/minimisted/README.md"
+  },
+  "multicast-dns@7.2.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/multicast-dns",
+    "publisher": "Mathias Buus",
+    "url": "@mafintosh",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/multicast-dns",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/multicast-dns/LICENSE"
+  },
+  "node-addon-api@8.9.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/nodejs/node-addon-api",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/node-addon-api",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/node-addon-api/LICENSE.md"
+  },
+  "normalize-path@3.0.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/jonschlinkert/normalize-path",
+    "publisher": "Jon Schlinkert",
+    "url": "https://github.com/jonschlinkert",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/normalize-path",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/normalize-path/LICENSE"
+  },
+  "once@1.4.0": {
+    "licenses": "ISC",
+    "repository": "https://github.com/isaacs/once",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "url": "http://blog.izs.me/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/once",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/once/LICENSE"
+  },
+  "pako@1.0.11": {
+    "licenses": "(MIT AND Zlib)",
+    "repository": "https://github.com/nodeca/pako",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pako",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pako/LICENSE"
+  },
+  "pend@1.2.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/andrewrk/node-pend",
+    "publisher": "Andrew Kelley",
+    "email": "superjoe30@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pend",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pend/LICENSE"
+  },
+  "pify@4.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/sindresorhus/pify",
+    "publisher": "Sindre Sorhus",
+    "email": "sindresorhus@gmail.com",
+    "url": "sindresorhus.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pify",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/pify/license"
+  },
+  "possible-typed-array-names@1.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/possible-typed-array-names",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/possible-typed-array-names",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/possible-typed-array-names/LICENSE"
+  },
+  "process-nextick-args@2.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/calvinmetcalf/process-nextick-args",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/process-nextick-args",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/process-nextick-args/license.md"
+  },
+  "process@0.11.10": {
+    "licenses": "MIT",
+    "repository": "https://github.com/shtylman/node-process",
+    "publisher": "Roman Shtylman",
+    "email": "shtylman@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/process",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/process/LICENSE"
+  },
+  "react-dom@19.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react/react",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/react-dom",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/react-dom/LICENSE"
+  },
+  "react@19.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react/react",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/react",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/react/LICENSE"
+  },
+  "readable-stream@2.3.8": {
+    "licenses": "MIT",
+    "repository": "https://github.com/nodejs/readable-stream",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/readable-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/readable-stream/LICENSE"
+  },
+  "readable-stream@4.7.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/nodejs/readable-stream",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readable-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readable-stream/LICENSE"
+  },
+  "readdir-glob@3.0.0": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/Yqnn/node-readdir-glob",
+    "publisher": "Yann Armelin",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readdir-glob",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readdir-glob/LICENSE"
+  },
+  "readdirp@4.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/paulmillr/readdirp",
+    "publisher": "Thorsten Lorenz",
+    "email": "thlorenz@gmx.de",
+    "url": "thlorenz.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readdirp",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/readdirp/LICENSE"
+  },
+  "safe-buffer@5.1.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/feross/safe-buffer",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "http://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/safe-buffer",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/safe-buffer/LICENSE"
+  },
+  "safe-buffer@5.2.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/feross/safe-buffer",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/safe-buffer",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/safe-buffer/LICENSE"
+  },
+  "scheduler@0.28.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/react/react",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/scheduler",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/scheduler/LICENSE"
+  },
+  "set-function-length@1.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/ljharb/set-function-length",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/set-function-length",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/set-function-length/LICENSE"
+  },
+  "sha.js@2.4.12": {
+    "licenses": "(MIT AND BSD-3-Clause)",
+    "repository": "https://github.com/crypto-browserify/sha.js",
+    "publisher": "Dominic Tarr",
+    "email": "dominic.tarr@gmail.com",
+    "url": "dominictarr.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/sha.js",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/sha.js/LICENSE"
+  },
+  "simple-concat@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/feross/simple-concat",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/simple-concat",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/simple-concat/LICENSE"
+  },
+  "simple-get@4.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/feross/simple-get",
+    "publisher": "Feross Aboukhadijeh",
+    "email": "feross@feross.org",
+    "url": "https://feross.org",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/simple-get",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/simple-get/LICENSE"
+  },
+  "streamx@2.28.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/streamx",
+    "publisher": "Mathias Buus",
+    "url": "@mafintosh",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/streamx",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/streamx/LICENSE"
+  },
+  "string_decoder@1.1.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/nodejs/string_decoder",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/string_decoder",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/lazystream/node_modules/string_decoder/LICENSE"
+  },
+  "string_decoder@1.3.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/nodejs/string_decoder",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/string_decoder",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/string_decoder/LICENSE"
+  },
+  "tailwind-merge@3.7.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/dcastil/tailwind-merge",
+    "publisher": "Dany Castillo",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwind-merge",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwind-merge/LICENSE.md"
+  },
+  "tailwindcss-animate@1.0.7": {
+    "licenses": "MIT",
+    "publisher": "Jamie Kyle",
+    "email": "me@thejameskyle.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwindcss-animate",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwindcss-animate/LICENSE"
+  },
+  "tailwindcss@4.3.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/tailwindlabs/tailwindcss",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwindcss",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tailwindcss/LICENSE"
+  },
+  "tar-stream@3.2.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/tar-stream",
+    "publisher": "Mathias Buus",
+    "email": "mathiasbuus@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tar-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/tar-stream/LICENSE"
+  },
+  "teex@1.0.1": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/teex",
+    "publisher": "Mathias Buus",
+    "url": "@mafintosh",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/teex",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/teex/LICENSE"
+  },
+  "text-decoder@1.2.7": {
+    "licenses": "Apache-2.0",
+    "repository": "https://github.com/holepunchto/text-decoder",
+    "publisher": "Holepunch",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/text-decoder",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/text-decoder/LICENSE"
+  },
+  "thunky@1.1.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/mafintosh/thunky",
+    "publisher": "Mathias Buus Madsen",
+    "email": "mathiasbuus@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/thunky",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/thunky/LICENSE"
+  },
+  "to-buffer@1.2.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/browserify/to-buffer",
+    "publisher": "Mathias Buus",
+    "url": "@mafintosh",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/to-buffer",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/to-buffer/LICENSE"
+  },
+  "typed-array-buffer@1.0.3": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/typed-array-buffer",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/typed-array-buffer",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/typed-array-buffer/LICENSE"
+  },
+  "universal-user-agent@7.0.3": {
+    "licenses": "ISC",
+    "repository": "https://github.com/gr2m/universal-user-agent",
+    "publisher": "Gregor Martynus",
+    "url": "https://github.com/gr2m",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/universal-user-agent",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/universal-user-agent/LICENSE.md"
+  },
+  "util-deprecate@1.0.2": {
+    "licenses": "MIT",
+    "repository": "https://github.com/TooTallNate/util-deprecate",
+    "publisher": "Nathan Rajlich",
+    "email": "nathan@tootallnate.net",
+    "url": "http://n8.io/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/util-deprecate",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/util-deprecate/LICENSE"
+  },
+  "which-typed-array@1.1.24": {
+    "licenses": "MIT",
+    "repository": "https://github.com/inspect-js/which-typed-array",
+    "publisher": "Jordan Harband",
+    "email": "ljharb@gmail.com",
+    "url": "http://ljharb.codes",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/which-typed-array",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/which-typed-array/LICENSE"
+  },
+  "wrappy@1.0.2": {
+    "licenses": "ISC",
+    "repository": "https://github.com/npm/wrappy",
+    "publisher": "Isaac Z. Schlueter",
+    "email": "i@izs.me",
+    "url": "http://blog.izs.me/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/wrappy",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/wrappy/LICENSE"
+  },
+  "yauzl@3.4.0": {
+    "licenses": "MIT",
+    "repository": "https://github.com/thejoshwolfe/yauzl",
+    "publisher": "Josh Wolfe",
+    "email": "thejoshwolfe@gmail.com",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/yauzl",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/yauzl/LICENSE"
+  },
+  "zip-stream@7.0.5": {
+    "licenses": "MIT",
+    "repository": "https://github.com/archiverjs/node-zip-stream",
+    "publisher": "Chris Talkington",
+    "url": "http://christalkington.com/",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/zip-stream",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/zip-stream/LICENSE"
+  },
+  "zustand@5.0.15": {
+    "licenses": "MIT",
+    "repository": "https://github.com/pmndrs/zustand",
+    "publisher": "Paul Henschel",
+    "path": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/zustand",
+    "licenseFile": "/Users/quentinchih/Documents/ChatGPT/Vibecoding Stuff/node_modules/zustand/LICENSE"
+  }
+}
+

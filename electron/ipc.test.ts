@@ -113,6 +113,7 @@ const mocks = vi.hoisted(() => {
       writeText: vi.fn(),
     },
     shell: {
+      openExternal: vi.fn(async () => undefined),
       openPath: vi.fn(async () => ''),
       showItemInFolder: vi.fn(),
     },
@@ -445,6 +446,7 @@ describe('IPC bridge', () => {
       'cairn:listRecentOps',
       'cairn:listSeeders',
       'cairn:listTrash',
+      'cairn:openExternal',
       'cairn:openInFileManager',
       'cairn:purgeFromTrash',
       'cairn:resetGithubConfig',
@@ -468,6 +470,15 @@ describe('IPC bridge', () => {
     const handler = mocks.handlers.get('cairn:cancelDownload')
 
     await expect(handler?.({})).resolves.toEqual({ data: undefined, ok: true })
+  })
+
+  it('About 外部链接仅允许 HTTPS 地址', async () => {
+    const main = await loadMain()
+
+    await main.openExternal('https://github.com/lol40560/Cairn')
+    await expect(main.openExternal('file:///tmp/private')).rejects.toThrow('仅支持打开 HTTPS 链接')
+
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith('https://github.com/lol40560/Cairn')
   })
 
   it('没有活动 sync 时直连端点为空，连接请求会转发给 sync', async () => {
@@ -752,6 +763,7 @@ describe('IPC bridge', () => {
       'onDownloadProgress',
       'onOp',
       'onPeers',
+      'openExternal',
       'openInFileManager',
       'purgeFromTrash',
       'resetGithubConfig',

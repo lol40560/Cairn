@@ -430,6 +430,20 @@ export function copyToClipboard(text: string): void {
   clipboard.writeText(text)
 }
 
+/** 仅允许从设置页打开明确的 HTTPS 外部链接。 */
+export async function openExternal(url: string): Promise<void> {
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(url)
+  } catch {
+    throw new AppError('外部链接格式不正确', 'config')
+  }
+  if (parsedUrl.protocol !== 'https:') {
+    throw new AppError('仅支持打开 HTTPS 链接', 'config')
+  }
+  await shell.openExternal(parsedUrl.toString())
+}
+
 /** 在系统文件管理器中打开目录，或定位到一个具体文件。 */
 export async function openInFileManager(targetPath: string): Promise<void> {
   if (typeof targetPath !== 'string' || targetPath.length === 0) {
@@ -846,6 +860,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
   ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
   ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
+  ipcMain.handle('cairn:openExternal', wrapIpcHandler((url: string) => openExternal(url)))
   ipcMain.handle('cairn:openInFileManager', wrapIpcHandler((targetPath: string) => openInFileManager(targetPath)))
   ipcMain.handle('cairn:startSharing', wrapIpcHandler(startSharing))
   ipcMain.handle('cairn:stopSharing', wrapIpcHandler(stopSharing))
