@@ -59,7 +59,12 @@ async function createIcns() {
 
 async function main() {
   await mkdir(buildDir, { recursive: true })
-  await access(iconSourcePath)
+  try {
+    await access(iconSourcePath)
+  } catch {
+    console.warn('未生成图标：等待新的 build/icon.svg 图标源文件。')
+    return
+  }
   const iconSource = await readFile(iconSourcePath, 'utf8')
   await sharp(Buffer.from(iconSource)).png().toFile(iconPath)
 

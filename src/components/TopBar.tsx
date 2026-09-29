@@ -1,8 +1,6 @@
 import { useTranslation } from '@/i18n'
 import type { WatchStatus } from '@/store/appStore'
 
-import { Logo } from './Logo'
-
 interface TopBarProps {
   folder: string
   opCount: number
@@ -25,7 +23,6 @@ export function TopBar({ folder, opCount, roomCode, status }: TopBarProps) {
 
   return (
     <header className="topbar">
-      <Logo size={48} className="shrink-0" />
       <div className="project">
         <span className="project-name">{getProjectName(folder)}</span>
         <span className="project-path" title={folder}>{folder || '—'}</span>
