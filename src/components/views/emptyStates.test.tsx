@@ -8,6 +8,7 @@ import { createRoomAndStartSharing, RoomView } from './RoomView'
 import { TrashView } from './TrashView'
 import { useAppStore, type AppState } from '@/store/appStore'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
+import { Onboarding } from '@/components/Onboarding'
 
 const initialState = useAppStore.getState()
 
@@ -90,6 +91,15 @@ describe('引导式空状态', () => {
     expect(html).toContain('project')
     expect(html).toContain('5.0 MB')
     expect(html).toContain('Download now')
+  })
+
+  it('首次引导默认显示欢迎页和两条开始路径', () => {
+    const html = renderToStaticMarkup(<Onboarding onComplete={() => undefined} />)
+
+    expect(html).toContain('Welcome to Cairn')
+    expect(html).toContain('Start a project')
+    expect(html).toContain('Join a team')
+    expect(html).toContain('Skip')
   })
 
   it('创建团队成功后会自动开始分享', async () => {

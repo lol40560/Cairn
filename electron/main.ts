@@ -49,6 +49,11 @@ export interface AppSettings {
   trashRetentionDays: number
 }
 
+export interface OnboardingState {
+  completed: boolean
+  completedAt?: number
+}
+
 let activeProject: ActiveProject | undefined
 let activeShadow: ShadowGit | undefined
 let activeRoom: { roomCode: string; sync: Sync } | undefined
@@ -179,8 +184,13 @@ function settingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
 }
 
+function onboardingPath(): string {
+  return join(app.getPath('userData'), 'onboarding.json')
+}
+
 const defaultLastSession: LastSession = { folder: '', updatedAt: 0, watching: false }
 const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 }
+const defaultOnboardingState: OnboardingState = { completed: false }
 
 function normalizeTrashRetentionDays(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 365
@@ -207,6 +217,33 @@ export async function writeLastSession(session: LastSession): Promise<void> {
 
 export async function clearLastSession(): Promise<void> {
   await writeLastSession({ ...defaultLastSession, updatedAt: Date.now() })
+}
+
+/** 读取首次引导状态；文件缺失或损坏时视为尚未完成。 */
+export async function readOnboarding(): Promise<OnboardingState> {
+  try {
+    const raw = JSON.parse(await readFile(onboardingPath(), 'utf8')) as Partial<OnboardingState>
+    if (typeof raw.completed !== 'boolean') return defaultOnboardingState
+    return typeof raw.completedAt === 'number'
+      ? { completed: raw.completed, completedAt: raw.completedAt }
+      : { completed: raw.completed }
+  } catch {
+    return defaultOnboardingState
+  }
+}
+
+/** 持久化首次引导状态，写入完成前不会返回。 */
+export async function writeOnboarding(data: OnboardingState): Promise<void> {
+  await mkdir(app.getPath('userData'), { recursive: true })
+  await writeFile(onboardingPath(), JSON.stringify(data), 'utf8')
+}
+
+export async function completeOnboarding(): Promise<void> {
+  await writeOnboarding({ completed: true, completedAt: Date.now() })
+}
+
+export async function resetOnboarding(): Promise<void> {
+  await writeOnboarding(defaultOnboardingState)
 }
 
 export async function checkFolder(folder: string): Promise<boolean> {
@@ -797,6 +834,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))
   ipcMain.handle('cairn:clearLastSession', wrapIpcHandler(clearLastSession))
+  ipcMain.handle('cairn:getOnboardingState', wrapIpcHandler(readOnboarding))
+  ipcMain.handle('cairn:completeOnboarding', wrapIpcHandler(completeOnboarding))
+  ipcMain.handle('cairn:resetOnboarding', wrapIpcHandler(resetOnboarding))
   ipcMain.handle('cairn:getSettings', wrapIpcHandler(getSettings))
   ipcMain.handle('cairn:updateSettings', wrapIpcHandler((partial) => updateSettings(partial)))
   ipcMain.handle('cairn:saveGithubConfig', wrapIpcHandler((config) => saveGithubConfig(config)))

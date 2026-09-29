@@ -1122,6 +1122,187 @@
   white-space: nowrap;
 }
 
+.onboarding-overlay {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-0);
+  padding: 24px;
+}
+
+.onboarding-card {
+  position: relative;
+  width: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  background: var(--bg-1);
+  box-shadow: 0 40px 100px rgb(0 0 0 / 50%);
+  padding: 56px 48px;
+}
+
+.onboarding-title {
+  margin: 0 0 12px;
+  color: var(--text-0);
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.onboarding-subtitle {
+  margin: 0 0 40px;
+  color: var(--text-1);
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-actions .btn {
+  width: 100%;
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.onboarding-divider,
+.onboarding-already {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  text-align: center;
+}
+
+.onboarding-divider {
+  margin: 4px 0;
+}
+
+.onboarding-skip,
+.onboarding-back {
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.12s;
+}
+
+.onboarding-skip:hover,
+.onboarding-back:hover {
+  color: var(--text-0);
+}
+
+.onboarding-skip {
+  position: absolute;
+  top: 20px;
+  right: 24px;
+  padding: 4px 8px;
+}
+
+.onboarding-back {
+  margin-top: 16px;
+  padding: 8px;
+}
+
+.onboarding-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  outline: none;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 0 16px;
+  transition: border-color 0.12s;
+}
+
+.onboarding-input:focus {
+  border-color: var(--red-line);
+}
+
+.onboarding-input::placeholder {
+  color: var(--text-3);
+}
+
+.onboarding-field {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.onboarding-field > span,
+.onboarding-field-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.onboarding-folder-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.onboarding-folder-path {
+  overflow: hidden;
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.onboarding-done-code {
+  margin-bottom: 32px;
+  color: var(--text-1);
+  font-size: 14px;
+  text-align: center;
+}
+
+.onboarding-done-code p {
+  margin: 0 0 12px;
+}
+
+.onboarding-done-code > div {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.onboarding-done-code code {
+  border-radius: var(--r-md);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: 20px;
+  letter-spacing: 0.16em;
+  padding: 10px 16px;
+}
+
+.onboarding-error {
+  margin: 18px 0 0;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
 .toast {
   position: fixed;
   z-index: 70;

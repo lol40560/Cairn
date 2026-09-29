@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Dock } from '@/components/Dock'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
+import { Onboarding } from '@/components/Onboarding'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
@@ -58,6 +59,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
 
   useEffect(() => {
@@ -65,6 +67,9 @@ export function App() {
 
     const restoreSession = async (): Promise<void> => {
       try {
+        const sessionResult = await window.cairn.getLastSession()
+        if (!sessionResult.ok) throw sessionResult.error
+
         await restoreLastSession(window.cairn, {
           replaceOps: (recentOps) => {
             if (!disposed) {
@@ -87,6 +92,15 @@ export function App() {
             }
           },
         })
+
+        // 已保存过项目的用户直接恢复工作区，不再覆盖为首次引导。
+        if (!sessionResult.data.folder) {
+          const onboardingResult = await window.cairn.getOnboardingState()
+          if (!onboardingResult.ok) throw onboardingResult.error
+          if (!onboardingResult.data.completed && !disposed) {
+            setShowOnboarding(true)
+          }
+        }
       } catch (error) {
         console.error('[cairn] 无法恢复上次会话', error)
         if (!disposed) {
@@ -237,7 +251,8 @@ export function App() {
   const dismissToast = useCallback(() => setToast(null), [])
 
   return (
-    <main aria-label="Cairn" className="app">
+    <>
+      <main aria-label="Cairn" className="app">
       <section className="shell">
         <TopBar folder={folder} opCount={ops.length} roomCode={roomCode} status={status} />
         <div className="content">
@@ -270,7 +285,12 @@ export function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onViewChange={setActiveView}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} onConfigured={setGithubConfigured} />
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onConfigured={setGithubConfigured}
+        onShowOnboarding={() => setShowOnboarding(true)}
+      />
       <ExportPRDialog
         defaultTitle={`Cairn ${roomCode}`}
         open={exportDialogOpen}
@@ -282,6 +302,8 @@ export function App() {
         onSubmit={exportPRSubmit}
       />
       <Toast message={toast} onDismiss={dismissToast} />
-    </main>
+      </main>
+      {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+    </>
   )
 }

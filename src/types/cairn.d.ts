@@ -29,6 +29,11 @@ export interface LastSession {
   updatedAt: number
 }
 
+export interface OnboardingState {
+  completed: boolean
+  completedAt?: number
+}
+
 export interface AppSettings {
   autoStartWatching: boolean
   rememberLastFolder: boolean
@@ -137,6 +142,9 @@ export interface CairnApi {
   checkFolder(folder: string): Promise<IpcResult<boolean>>
   getLastSession(): Promise<IpcResult<LastSession>>
   clearLastSession(): Promise<IpcResult<void>>
+  getOnboardingState(): Promise<IpcResult<OnboardingState>>
+  completeOnboarding(): Promise<IpcResult<void>>
+  resetOnboarding(): Promise<IpcResult<void>>
   getSettings(): Promise<IpcResult<AppSettings>>
   updateSettings(partial: Partial<AppSettings>): Promise<IpcResult<void>>
   listTrash(): Promise<IpcResult<TrashEntry[]>>

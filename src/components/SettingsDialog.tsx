@@ -20,10 +20,12 @@ export function SettingsDialog({
   open,
   onClose,
   onConfigured,
+  onShowOnboarding,
 }: {
   open: boolean
   onClose(): void
   onConfigured(value: boolean): void
+  onShowOnboarding(): void
 }) {
   const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -165,6 +167,24 @@ export function SettingsDialog({
                 <span className="checkbox-hint">{t('autoStartWatchingHint')}</span>
               </span>
             </label>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                void window.cairn.resetOnboarding()
+                  .then((result) => {
+                    getIpcData(result)
+                    onClose()
+                    onShowOnboarding()
+                  })
+                  .catch((cause) => {
+                    console.error('[cairn] 无法重新开启首次引导', cause)
+                    setError(normalizeError(cause, t))
+                  })
+              }}
+            >
+              {t('settingsShowOnboarding')}
+            </button>
           </fieldset>
 
           <section className="modal-section">

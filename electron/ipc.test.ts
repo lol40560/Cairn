@@ -295,6 +295,18 @@ describe('IPC bridge', () => {
     expect(await main.getSettings()).toEqual({ autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 })
   })
 
+  it('首次引导状态缺失时未完成，完成后可读回并可重新开启', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    mocks.app.getPath.mockReturnValue(root)
+
+    await expect(main.readOnboarding()).resolves.toEqual({ completed: false })
+    await main.completeOnboarding()
+    await expect(main.readOnboarding()).resolves.toMatchObject({ completed: true, completedAt: expect.any(Number) })
+    await main.resetOnboarding()
+    await expect(main.readOnboarding()).resolves.toEqual({ completed: false })
+  })
+
   it('checkFolder 只接受存在的绝对目录', async () => {
     const main = await loadMain()
     const root = await createDirectory()
@@ -411,6 +423,7 @@ describe('IPC bridge', () => {
       'cairn:checkFolder',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
+      'cairn:completeOnboarding',
       'cairn:connectToAddress',
       'cairn:copyToClipboard',
       'cairn:createRoom',
@@ -423,6 +436,7 @@ describe('IPC bridge', () => {
       'cairn:getGithubConfig',
       'cairn:getLastSession',
       'cairn:getLocalEndpoint',
+      'cairn:getOnboardingState',
       'cairn:getSettings',
       'cairn:getTrashRetentionDays',
       'cairn:joinRoom',
@@ -434,6 +448,7 @@ describe('IPC bridge', () => {
       'cairn:openInFileManager',
       'cairn:purgeFromTrash',
       'cairn:resetGithubConfig',
+      'cairn:resetOnboarding',
       'cairn:restoreFromTrash',
       'cairn:saveGithubConfig',
       'cairn:selectDownloadFolder',
@@ -711,6 +726,7 @@ describe('IPC bridge', () => {
       'checkFolder',
       'clearGithubConfig',
       'clearLastSession',
+      'completeOnboarding',
       'connectToAddress',
       'copyToClipboard',
       'createRoom',
@@ -723,6 +739,7 @@ describe('IPC bridge', () => {
       'getGithubConfig',
       'getLastSession',
       'getLocalEndpoint',
+      'getOnboardingState',
       'getSettings',
       'getTrashRetentionDays',
       'joinRoom',
@@ -738,6 +755,7 @@ describe('IPC bridge', () => {
       'openInFileManager',
       'purgeFromTrash',
       'resetGithubConfig',
+      'resetOnboarding',
       'restoreFromTrash',
       'saveGithubConfig',
       'selectDownloadFolder',
