@@ -1204,6 +1204,27 @@
   white-space: pre-wrap;
 }
 
+.license-repository {
+  border: 0;
+  background: none;
+  color: var(--text-1);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+}
+
+.license-repository:hover {
+  color: var(--red-hover);
+  text-decoration-color: var(--red);
+}
+
 .licenses-empty {
   color: var(--text-2);
   font-size: 12px;

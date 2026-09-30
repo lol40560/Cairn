@@ -10,6 +10,7 @@ describe('PrivacyDialog', () => {
 
     expect(html).toContain('Privacy Policy')
     expect(html).toContain('What we collect')
+    expect(html).toContain('Open on GitHub')
     expect(html).toContain('Close')
   })
 })

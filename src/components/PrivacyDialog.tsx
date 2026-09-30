@@ -7,6 +7,13 @@ import { shouldCloseDialogFromBackdrop, shouldCloseDialogFromKey } from '@/lib/s
 export function PrivacyDialog({ open, onClose }: { open: boolean; onClose(): void }) {
   const { locale, t } = useTranslation()
 
+  const openOnGithub = async (): Promise<void> => {
+    const result = await window.cairn.openExternal('https://github.com/lol40560/Cairn/blob/main/PRIVACY.md')
+    if (!result.ok) {
+      console.error('[cairn] 无法打开 GitHub 隐私政策', result.error)
+    }
+  }
+
   useEffect(() => {
     if (!open) return
 
@@ -40,6 +47,7 @@ export function PrivacyDialog({ open, onClose }: { open: boolean; onClose(): voi
         <div className="modal-body privacy-body">
           <pre className="privacy-content">{content}</pre>
           <footer className="modal-actions">
+            <button className="btn btn-ghost" type="button" onClick={() => void openOnGithub()}>{t('openOnGithub')}</button>
             <button className="btn btn-ghost" type="button" onClick={onClose}>{t('close')}</button>
           </footer>
         </div>

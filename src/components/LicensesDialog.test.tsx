@@ -11,6 +11,7 @@ describe('LicensesDialog', () => {
 
     expect(html).toContain('Open Source Licenses')
     expect(html).toContain('@octokit/rest@')
+    expect(html).not.toContain('Full license text is not included in this license list.')
   })
 
   it('按包名过滤许可证列表', () => {

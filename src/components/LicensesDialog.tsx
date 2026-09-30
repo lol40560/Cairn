@@ -36,6 +36,13 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose(): vo
   const [expandedName, setExpandedName] = useState<string | undefined>()
   const visibleLicenses = useMemo(() => filterLicenses(allLicenses, query), [query])
 
+  const openRepository = async (repository: string): Promise<void> => {
+    const result = await window.cairn.openExternal(repository)
+    if (!result.ok) {
+      console.error('[cairn] 无法打开依赖仓库', result.error)
+    }
+  }
+
   if (!open) return null
 
   return (
@@ -85,8 +92,16 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose(): vo
                     </button>
                     {expanded && (
                       <div className="license-details">
-                        {entry.repository && <p>{entry.repository}</p>}
-                        {entry.licenseText ? <pre>{entry.licenseText}</pre> : <p>{t('licensesTextUnavailable')}</p>}
+                        {entry.repository && (
+                          <button
+                            className="license-repository"
+                            type="button"
+                            onClick={() => void openRepository(entry.repository!)}
+                          >
+                            {entry.repository}
+                          </button>
+                        )}
+                        {entry.licenseText && <pre>{entry.licenseText}</pre>}
                       </div>
                     )}
                   </div>
