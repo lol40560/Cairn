@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -605,6 +605,34 @@ describe('IPC bridge', () => {
     await writeFile(file, 'export {}\n', 'utf8')
 
     await expect(main.startWatching(file)).rejects.toThrow(/必须是目录/)
+  })
+
+  it('countFiles 在到达上限时提前返回，并忽略内部目录', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await mkdir(join(root, '.cairn'), { recursive: true })
+    await Promise.all([
+      writeFile(join(root, 'first.ts'), 'export {}\n', 'utf8'),
+      writeFile(join(root, 'second.ts'), 'export {}\n', 'utf8'),
+      writeFile(join(root, 'third.ts'), 'export {}\n', 'utf8'),
+      writeFile(join(root, '.cairn', 'internal.db'), 'internal', 'utf8'),
+    ])
+
+    await expect(main.countFiles(root, 2)).resolves.toBe(2)
+    await expect(main.countFiles(root, 10)).resolves.toBe(3)
+  })
+
+  it('startWatching 拒绝超过文件上限的目录', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await Promise.all([
+      writeFile(join(root, 'first.txt'), 'x', 'utf8'),
+      writeFile(join(root, 'second.txt'), 'x', 'utf8'),
+      writeFile(join(root, 'third.txt'), 'x', 'utf8'),
+    ])
+
+    await expect(main.startWatching(root, 3)).rejects.toThrow(/超过 3 个文件/)
+    expect(mocks.watchers).toHaveLength(0)
   })
 
   it('listRecentOps 转发合法 limit 并拒绝越界值', async () => {

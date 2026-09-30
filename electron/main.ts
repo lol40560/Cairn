@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomInt } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
@@ -65,6 +65,12 @@ let mainWindow: BrowserWindow | undefined
 // 串行化监控启动，避免开发模式初始化与用户操作并发创建多个 watcher。
 let startWatchingPromise: Promise<void> | undefined
 
+const MAX_WATCHED_FILES = 2_000
+const FILE_COUNT_IGNORED_DIRECTORIES = new Set([
+  '.cairn', '.git', '.next', '.nuxt', '.turbo', '.vibeswarm', '.cache', '.vscode',
+  'build', 'coverage', 'dist', 'node_modules', 'target',
+])
+
 app.setName('Cairn')
 
 // 开发进程与正式安装版使用独立用户数据目录，便于本机双实例联调。
@@ -119,6 +125,34 @@ function validateFolder(folder: string): void {
   }
 }
 
+/** 在启动监控前快速统计文件数，到达上限即停止遍历。 */
+export async function countFiles(folder: string, limit: number): Promise<number> {
+  let count = 0
+  const stack = [folder]
+
+  while (stack.length > 0 && count < limit) {
+    const directory = stack.pop()
+    if (!directory) continue
+
+    try {
+      const entries = await readdir(directory, { withFileTypes: true })
+      for (const entry of entries) {
+        if (FILE_COUNT_IGNORED_DIRECTORIES.has(entry.name)) continue
+        if (entry.isDirectory()) {
+          stack.push(join(directory, entry.name))
+          continue
+        }
+        count += 1
+        if (count >= limit) return count
+      }
+    } catch {
+      // 单个不可读目录不应阻断其余项目文件的检查。
+    }
+  }
+
+  return count
+}
+
 function sendToWindow(channel: string, payload: unknown): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
@@ -141,10 +175,10 @@ export async function selectFolder(): Promise<string> {
   return folder
 }
 
-export async function stopWatching(preserveWatchState = false): Promise<void> {
+export async function stopWatching(preserveWatchState = false, waitForPendingStart = true): Promise<void> {
   // 启动尚未写入 activeProject 时，也要等待其完成后再停止。
   const pendingStart = startWatchingPromise
-  if (pendingStart) {
+  if (pendingStart && waitForPendingStart) {
     try {
       await pendingStart
     } catch {
@@ -722,7 +756,7 @@ function toSeederInfo(sync: Sync, state: SeederState): SeederInfo {
   }
 }
 
-export async function startWatching(folder: string): Promise<void> {
+export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILES): Promise<void> {
   if (startWatchingPromise) {
     try {
       await startWatchingPromise
@@ -733,10 +767,19 @@ export async function startWatching(folder: string): Promise<void> {
 
   const currentPromise = (async () => {
     validateFolder(folder)
+    const fileCount = await countFiles(folder, fileLimit)
+    if (fileCount >= fileLimit) {
+      throw new AppError(
+        `该文件夹有超过 ${fileLimit} 个文件，Cairn 适合 1000 个文件以内的项目。请选择更小的文件夹。`,
+        'config',
+        { hint: 'hintChooseSmallerFolder' },
+      )
+    }
     // 严格模式的重复恢复会在第一个启动完成后到达这里，直接复用即可。
     if (activeProject?.root === folder) return
 
-    await stopWatching()
+    // 当前启动任务已经登记在 startWatchingPromise，不能在这里等待自身完成。
+    await stopWatching(false, false)
 
     const oplog = createOplog(folder)
     const trash = new TrashManager(folder)

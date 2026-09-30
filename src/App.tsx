@@ -60,6 +60,8 @@ export function App() {
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [restoring, setRestoring] = useState(true)
+  const [restoreError, setRestoreError] = useState<string | undefined>()
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
 
   useEffect(() => {
@@ -101,10 +103,17 @@ export function App() {
             setShowOnboarding(true)
           }
         }
+        if (!disposed) {
+          setRestoreError(undefined)
+        }
       } catch (error) {
         console.error('[cairn] 无法恢复上次会话', error)
         if (!disposed) {
-          setToast(normalizeError(error, t))
+          setRestoreError(normalizeError(error, t).message)
+        }
+      } finally {
+        if (!disposed) {
+          setRestoring(false)
         }
       }
     }
@@ -172,6 +181,29 @@ export function App() {
       setStatus('stopped')
       console.error('[cairn] 无法开始监控', error)
       setToast(normalizeError(error, t))
+    }
+  }
+
+  const handleOpenDifferentProject = async (): Promise<void> => {
+    try {
+      const selectedFolder = getIpcData(await window.cairn.selectFolder())
+      if (selectedFolder === '') return
+
+      setRestoring(true)
+      setRestoreError(undefined)
+      getIpcData(await window.cairn.startWatching(selectedFolder))
+      setPeers([])
+      setIsHost(false)
+      setRoomCode('')
+      setFolder(selectedFolder)
+      setStatus('watching')
+      setLastFolderUnavailable(false)
+      replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
+    } catch (error) {
+      console.error('[cairn] 无法打开其他项目', error)
+      setRestoreError(normalizeError(error, t).message)
+    } finally {
+      setRestoring(false)
     }
   }
 
@@ -303,6 +335,20 @@ export function App() {
       />
       <Toast message={toast} onDismiss={dismissToast} />
       </main>
+      {restoring && (
+        <div className="startup-overlay" role="status">
+          <div aria-hidden="true" className="startup-spinner" />
+          <div className="startup-message">{t('startupLoading')}</div>
+        </div>
+      )}
+      {restoreError && (
+        <div className="startup-error" role="alert">
+          <span>{restoreError}</span>
+          <button className="btn btn-ghost" type="button" onClick={() => void handleOpenDifferentProject()}>
+            {t('openDifferentProject')}
+          </button>
+        </div>
+      )}
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
     </>
   )

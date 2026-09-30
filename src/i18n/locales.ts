@@ -205,6 +205,9 @@ export const zh = {
   onboardingNoFolder: '未选择文件夹',
   onboardingChooseFolderAction: '选择文件夹',
   settingsShowOnboarding: '重新查看引导',
+  startupLoading: '正在加载项目...',
+  openDifferentProject: '打开其他项目',
+  hintChooseSmallerFolder: '请选择更小的文件夹或子目录。',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -411,6 +414,9 @@ export const en: Record<keyof typeof zh, string> = {
   onboardingNoFolder: 'No folder chosen',
   onboardingChooseFolderAction: 'Choose folder',
   settingsShowOnboarding: 'Show onboarding again',
+  startupLoading: 'Loading your project...',
+  openDifferentProject: 'Open different project',
+  hintChooseSmallerFolder: 'Choose a smaller folder or a subdirectory.',
 }
 
 export type TranslationKey = keyof typeof zh
