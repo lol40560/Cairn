@@ -89,9 +89,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico",
-      "publisherName": "Cairn",
-      "verifyUpdateCodeSignature": false
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,
