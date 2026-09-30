@@ -4,6 +4,7 @@ import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 
 import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
+import { formatLineCount } from '@/lib/lineCount'
 import { useAppStore } from '@/store/appStore'
 import type { TranslateFn } from '@/i18n'
 import type { Op } from '@/types/cairn'
@@ -113,20 +114,20 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
                     <>
                       <span className="op-kind-badge">{t('opCreated')}</span>
                       <span className="op-kind-stats">
-                        {t('opLinesAdded').replace('{n}', String(added))}
+                        {t('opLinesAdded').replace('{n}', formatLineCount(added))}
                       </span>
                     </>
                   ) : op.kind === 'deleted' ? (
                     <>
                       <span className="op-kind-badge op-kind-deleted">{t('opDeleted')}</span>
                       <span className="op-kind-stats">
-                        {t('opLinesRemoved').replace('{n}', String(removed))}
+                        {t('opLinesRemoved').replace('{n}', formatLineCount(removed))}
                       </span>
                     </>
                   ) : (
                     <>
-                      <span>+{added}</span>
-                      <span className="op-del">−{removed}</span>
+                      <span>+{formatLineCount(added)}</span>
+                      <span className="op-del">−{formatLineCount(removed)}</span>
                     </>
                   )}
                 </div>
