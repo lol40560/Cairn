@@ -24,7 +24,9 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "pack": "npm run build && electron-builder --dir",
     "predist:mac": "npm run native:electron && npm run build",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:all": "npm run build && electron-builder --mac --win"
   },
   "build": {
     "appId": "com.cairn.app",
@@ -71,6 +73,34 @@
           "_cairn._tcp"
         ]
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "publisherName": "Cairn",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cairn",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "dmg": {
       "contents": [
