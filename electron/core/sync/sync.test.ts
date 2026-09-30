@@ -187,6 +187,12 @@ describe('Sync', () => {
       { oplog, roomCode: 'ABCDEF' },
       { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
     )
+    const seeder = {
+      announceToPeer: vi.fn(),
+      handleWantChunk: vi.fn(),
+      handleWantSnapshot: vi.fn(),
+    }
+    sync.registerSeeder(seeder)
 
     await sync.start({ discovery: false })
     await sync.connectToAddress('192.168.1.10', 49500)
@@ -195,6 +201,7 @@ describe('Sync', () => {
     expect(sync.listPeers()).toEqual([
       { host: '192.168.1.10', lastSeen: expect.any(Number), peerId: 'direct-peer', port: 49500 },
     ])
+    expect(seeder.announceToPeer).toHaveBeenCalledWith('direct-peer')
     await sync.stop()
   })
 
@@ -420,6 +427,87 @@ describe('Sync', () => {
     await sync.stop()
   })
 
+  it('本地不存在文件时用创建操作重建文件', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = ''
+    const input = {
+      ...createOp('created'),
+      diff: createTwoFilesPatch('/dev/null', 'created.ts', '', 'export const created = true\n'),
+      filePath: 'created.ts',
+      kind: 'created' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        readFile: async () => content,
+        writeFile: async (_path, nextContent) => {
+          content = nextContent
+        },
+      },
+    )
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await remoteOp
+
+    expect(content).toBe('export const created = true\n')
+    await sync.stop()
+  })
+
+  it('空基线无法应用修改操作时保存 pending，并在后续基线操作到达后自动重试', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = ''
+    const input = {
+      ...createOp('pending'),
+      diff: createTwoFilesPatch('pending.ts', 'pending.ts', 'before\n', 'after\n'),
+      filePath: 'pending.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const writeFile = vi.fn(async (_path: string, nextContent: string) => {
+      content = nextContent
+    })
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        readFile: async () => content,
+        writeFile,
+      },
+    )
+    const conflict = vi.fn()
+    sync.on('conflict', conflict)
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await remoteOp
+
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(conflict).not.toHaveBeenCalled()
+
+    const baseInput = {
+      ...createOp('pending-base'),
+      diff: createTwoFilesPatch('/dev/null', 'pending.ts', '', 'before\n'),
+      filePath: 'pending.ts',
+      kind: 'created' as const,
+    }
+    const base = { ...baseInput, hash: computeHash(baseInput) }
+    const baseRemoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+    transport.emit('message', 'source', { op: base, type: 'data' })
+    await baseRemoteOp
+
+    expect(content).toBe('after\n')
+    expect(writeFile).toHaveBeenCalledWith('pending.ts', 'after\n')
+    await sync.stop()
+  })
+
   it('收到远端删除 op 时先移入本地废纸篓，再清理 watcher 基线', async () => {
     const target = await createTestOplog()
     const discovery = new MockDiscovery()
@@ -455,7 +543,7 @@ describe('Sync', () => {
     await sync.stop()
   })
 
-  it('无法应用远端 diff 时报告冲突且不覆盖本地内容', async () => {
+  it('无法应用远端 diff 时不覆盖本地内容，也不重复报告冲突', async () => {
     const target = await createTestOplog()
     const discovery = new MockDiscovery()
     const transport = new MockTransport()
@@ -476,17 +564,16 @@ describe('Sync', () => {
         writeFile,
       },
     )
-    const conflict = waitForEvent<[Op, string]>(sync, 'conflict')
+    const conflict = vi.fn()
+    sync.on('conflict', conflict)
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
 
     await sync.start()
     transport.emit('message', 'source', { op: remote, type: 'data' })
 
-    await expect(conflict).resolves.toEqual([{
-      ...remote,
-      kind: 'modified',
-      source: 'remote',
-    }, content])
+    await remoteOp
     expect(writeFile).not.toHaveBeenCalled()
+    expect(conflict).not.toHaveBeenCalled()
     await sync.stop()
   })
 })

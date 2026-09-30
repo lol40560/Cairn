@@ -19,6 +19,7 @@ class FakeSync {
   chunks: Buffer[] = []
   readonly broadcasts: SyncMessage[] = []
   readonly sent: Array<{ peerId: string; message: SyncMessage }> = []
+  readonly retryPendingOps = vi.fn(async () => undefined)
 
   broadcast(message: SyncMessage): void {
     this.broadcasts.push(message)
@@ -90,6 +91,7 @@ describe('SnapshotDownloader', () => {
     expect(result.conflictFiles).toEqual([])
     await expect(readFile(join(target, 'src', 'nested', 'sample.ts'), 'utf8')).resolves.toBe('export const value = 2\n')
     expect(sync.sent.some(({ message }) => message.type === 'snapshot-done')).toBe(true)
+    expect(sync.retryPendingOps).toHaveBeenCalledOnce()
   })
 
   it('哈希校验失败时拒绝解压', async () => {

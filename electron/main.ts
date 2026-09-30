@@ -533,7 +533,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
 
   const project = activeProject
   const sync = new Sync(
-    { oplog: project.oplog, roomCode },
+    { oplog: project.oplog, projectRoot: project.root, roomCode },
     {},
     {
       applyRemoteChange: (relativePath, content) =>

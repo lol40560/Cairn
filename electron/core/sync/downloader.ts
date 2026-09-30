@@ -126,6 +126,8 @@ export class SnapshotDownloader extends EventEmitter {
 
           this.updateProgress(session, { status: 'extracting' })
           const result = await extractSnapshot(buffer, targetDir)
+          // 快照提供了文件基线；现在可以重试此前因基线缺失而延后的远端操作。
+          await this.sync.retryPendingOps()
           this.updateProgress(session, { status: 'done' })
           if (session.peerId) {
             this.sync.send(session.peerId, { type: 'snapshot-done', snapshotId })

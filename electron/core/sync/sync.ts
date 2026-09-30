@@ -5,12 +5,15 @@ import { applyPatch } from 'diff'
 
 import type { Oplog } from '../oplog'
 import { Discovery } from './discovery'
+import { PendingOps } from './pending-ops'
 import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
 import { Transport } from './transport'
 
 export interface SyncOptions {
   roomCode: string
   oplog: Oplog
+  /** 用于持久化等待文件基线的远端操作。 */
+  projectRoot?: string
 }
 
 export interface SyncStartOptions {
@@ -53,6 +56,8 @@ export class Sync extends EventEmitter {
   private localPort: number | undefined
   private pendingDirectEndpoint: { host: string; port: number } | undefined
   private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
+  private readonly pendingOps: PendingOps | undefined
+  private retryingPending = false
   private started = false
 
   constructor(
@@ -64,6 +69,7 @@ export class Sync extends EventEmitter {
     this.peerId = dependencies.peerId ?? randomUUID()
     this.discovery = dependencies.discovery ?? new Discovery()
     this.transport = dependencies.transport ?? new Transport(this.peerId)
+    this.pendingOps = options.projectRoot ? new PendingOps(options.projectRoot) : undefined
   }
 
   async start(startOptions: SyncStartOptions = {}): Promise<void> {
@@ -78,6 +84,7 @@ export class Sync extends EventEmitter {
       const port = await this.transport.listen()
       this.localPort = port
       this.started = true
+      void this.retryPendingOps().catch((error: unknown) => this.emitError(error))
       if (discoveryEnabled) {
         this.discovery.publish({ peerId: this.peerId, port, roomCode: this.options.roomCode })
         this.discovery.startBrowse(this.options.roomCode, this.peerId)
@@ -354,27 +361,53 @@ export class Sync extends EventEmitter {
     }
   }
 
-  private async applyRemoteOp(op: import('../oplog').Op): Promise<void> {
-    if (op.source !== 'remote' || !this.hooks) {
+  /** 快照解压完成后由下载器调用，重试此前缺少基线的操作。 */
+  async retryPendingOps(): Promise<void> {
+    if (!this.pendingOps || this.retryingPending) {
       return
     }
 
+    this.retryingPending = true
+    try {
+      await this.pendingOps.retryAll((op) => this.applyRemoteOp(op, false))
+    } finally {
+      this.retryingPending = false
+    }
+  }
+
+  private async applyRemoteOp(op: import('../oplog').Op, retryPending = true): Promise<boolean> {
+    if (op.source !== 'remote' || !this.hooks) {
+      return false
+    }
+
     const localContent = await this.hooks.readFile(op.filePath)
-    const nextContent = applyPatch(localContent, op.diff)
+    // 缺失文件和空文件都以空基线处理；创建操作可直接从 unified diff 重建。
+    const nextContent = applyPatch(localContent === '' ? '' : localContent, op.diff)
     if (nextContent === false) {
-      this.emit('conflict', op, localContent)
-      return
+      console.error('[cairn:sync] 无法应用远端操作，已存入待重试队列', {
+        diffPreview: op.diff.slice(0, 300),
+        filePath: op.filePath,
+        kind: op.kind ?? 'modified',
+        localContentLength: localContent.length,
+      })
+      await this.pendingOps?.add(op)
+      return false
     }
 
     if (nextContent === '') {
       // 远端删除也先保存本地副本，避免同步操作绕过数据保护。
       await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
       await this.hooks.applyRemoteChange(op.filePath, nextContent)
-      return
+    } else {
+      await this.hooks.applyRemoteChange(op.filePath, nextContent)
+      await this.hooks.writeFile(op.filePath, nextContent)
     }
 
-    await this.hooks.applyRemoteChange(op.filePath, nextContent)
-    await this.hooks.writeFile(op.filePath, nextContent)
+    await this.pendingOps?.remove(op.hash)
+    if (retryPending) {
+      await this.retryPendingOps()
+    }
+    return true
   }
 
   private readonly handleError = (error: Error): void => {
