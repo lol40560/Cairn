@@ -13,7 +13,7 @@ import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { createPRBranchName } from '@/lib/prBranch'
 import { restoreLastSession } from '@/lib/sessionRestore'
-import { useTranslation } from '@/i18n'
+import { useTranslation, type TranslateFn } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
 import type { IpcResult } from '@/types/cairn'
 
@@ -22,6 +22,18 @@ function getIpcData<T>(result: IpcResult<T>): T {
     throw result.error
   }
   return result.data
+}
+
+function startupRestoreError(error: unknown, t: TranslateFn): string {
+  if (
+    typeof error === 'object'
+    && error !== null
+    && 'hintKey' in error
+    && error.hintKey === 'hintChooseSmallerFolder'
+  ) {
+    return t('startupFolderTooLarge')
+  }
+  return normalizeError(error, t).message
 }
 
 async function copyExportPath(filePath: string): Promise<boolean> {
@@ -109,7 +121,7 @@ export function App() {
       } catch (error) {
         console.error('[cairn] 无法恢复上次会话', error)
         if (!disposed) {
-          setRestoreError(normalizeError(error, t).message)
+          setRestoreError(startupRestoreError(error, t))
         }
       } finally {
         if (!disposed) {
@@ -201,7 +213,7 @@ export function App() {
       replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
     } catch (error) {
       console.error('[cairn] 无法打开其他项目', error)
-      setRestoreError(normalizeError(error, t).message)
+      setRestoreError(startupRestoreError(error, t))
     } finally {
       setRestoring(false)
     }

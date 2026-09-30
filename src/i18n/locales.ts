@@ -206,6 +206,7 @@ export const zh = {
   onboardingChooseFolderAction: '选择文件夹',
   settingsShowOnboarding: '重新查看引导',
   startupLoading: '正在加载项目...',
+  startupFolderTooLarge: '该文件夹有超过 2000 个文件，请选择更小的文件夹。',
   openDifferentProject: '打开其他项目',
   hintChooseSmallerFolder: '请选择更小的文件夹或子目录。',
 } as const
@@ -415,6 +416,7 @@ export const en: Record<keyof typeof zh, string> = {
   onboardingChooseFolderAction: 'Choose folder',
   settingsShowOnboarding: 'Show onboarding again',
   startupLoading: 'Loading your project...',
+  startupFolderTooLarge: 'This folder has more than 2,000 files. Choose a smaller folder.',
   openDifferentProject: 'Open different project',
   hintChooseSmallerFolder: 'Choose a smaller folder or a subdirectory.',
 }
