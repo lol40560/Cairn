@@ -9,6 +9,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } fr
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { AppError, wrapIpcHandler } from './core/errors'
+import { ProjectsManager } from './core/projects'
+import type { ProjectEntry } from './core/projects'
 import { exportProjectSnapshot } from './core/snapshot/export'
 import type { ExportSnapshotResult } from './core/snapshot/export'
 import { getCurrentDiscoveryStatus } from './core/sync/discovery'
@@ -59,6 +61,7 @@ let activeShadow: ShadowGit | undefined
 let activeRoom: { roomCode: string; sync: Sync } | undefined
 let activeSeeder: SnapshotSeeder | undefined
 let activeDownloader: SnapshotDownloader | undefined
+let projectsManager: ProjectsManager | undefined
 let handlersRegistered = false
 let isQuitting = false
 let mainWindow: BrowserWindow | undefined
@@ -222,6 +225,15 @@ function onboardingPath(): string {
   return join(app.getPath('userData'), 'onboarding.json')
 }
 
+function projectsPath(): string {
+  return join(app.getPath('userData'), 'projects.json')
+}
+
+function getProjectsManager(): ProjectsManager {
+  projectsManager ??= new ProjectsManager(projectsPath())
+  return projectsManager
+}
+
 const defaultLastSession: LastSession = { folder: '', updatedAt: 0, watching: false }
 const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 }
 const defaultOnboardingState: OnboardingState = { completed: false }
@@ -290,6 +302,35 @@ export async function checkFolder(folder: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export async function listProjects(): Promise<Array<ProjectEntry & { available: boolean }>> {
+  const manager = getProjectsManager()
+  const projects = await manager.list()
+  return Promise.all(projects.map(async (project) => ({
+    ...project,
+    available: await manager.checkAvailability(project.id),
+  })))
+}
+
+export function addProject(projectPath: string): Promise<ProjectEntry> {
+  return getProjectsManager().add(projectPath)
+}
+
+export function removeProject(id: string): Promise<void> {
+  return getProjectsManager().remove(id)
+}
+
+export function setActiveProject(id: string): Promise<void> {
+  return getProjectsManager().setActive(id)
+}
+
+export function getActiveProject(): Promise<ProjectEntry | undefined> {
+  return getProjectsManager().getActive()
+}
+
+export function checkProjectAvailability(id: string): Promise<boolean> {
+  return getProjectsManager().checkAvailability(id)
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -776,7 +817,11 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
       )
     }
     // 严格模式的重复恢复会在第一个启动完成后到达这里，直接复用即可。
-    if (activeProject?.root === folder) return
+    if (activeProject?.root === folder) {
+      const entry = await getProjectsManager().add(folder)
+      await getProjectsManager().setActive(entry.id)
+      return
+    }
 
     // 当前启动任务已经登记在 startWatchingPromise，不能在这里等待自身完成。
     await stopWatching(false, false)
@@ -805,6 +850,13 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
       activeProject = { root: folder, oplog, watcher, trash }
       activeShadow = shadow
       await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
+      // 项目索引失败不应撤销已成功启动的监控。
+      try {
+        const entry = await getProjectsManager().add(folder)
+        await getProjectsManager().setActive(entry.id)
+      } catch (error) {
+        console.error('[cairn:projects] 记录最近项目失败', error)
+      }
     } catch (error) {
       await watcher.stop()
       oplog.close()
@@ -889,6 +941,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
   ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
+  ipcMain.handle('cairn:listProjects', wrapIpcHandler(listProjects))
+  ipcMain.handle('cairn:addProject', wrapIpcHandler((projectPath: string) => addProject(projectPath)))
+  ipcMain.handle('cairn:removeProject', wrapIpcHandler((id: string) => removeProject(id)))
+  ipcMain.handle('cairn:setActiveProject', wrapIpcHandler((id: string) => setActiveProject(id)))
+  ipcMain.handle('cairn:getActiveProject', wrapIpcHandler(getActiveProject))
+  ipcMain.handle('cairn:checkProjectAvailability', wrapIpcHandler((id: string) => checkProjectAvailability(id)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))
   ipcMain.handle('cairn:clearLastSession', wrapIpcHandler(clearLastSession))
   ipcMain.handle('cairn:getOnboardingState', wrapIpcHandler(readOnboarding))
@@ -952,6 +1010,8 @@ export function createWindow(): BrowserWindow {
 
 app.whenReady().then(async () => {
   await migrateLegacyData()
+  projectsManager = new ProjectsManager(projectsPath())
+  await projectsManager.migrateFromLastSession(lastSessionPath())
   verifyNativeDatabase()
   registerIpcHandlers()
   createWindow()

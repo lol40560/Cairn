@@ -29,6 +29,18 @@ export interface LastSession {
   updatedAt: number
 }
 
+export interface ProjectEntry {
+  id: string
+  name: string
+  path: string
+  lastOpenedAt: number
+  isFavorite: boolean
+}
+
+export interface AvailableProjectEntry extends ProjectEntry {
+  available: boolean
+}
+
 export interface OnboardingState {
   completed: boolean
   completedAt?: number
@@ -141,6 +153,12 @@ export interface CairnApi {
   selectDownloadFolder(): Promise<IpcResult<string>>
   onDownloadProgress(callback: (progress: DownloadProgress) => void): () => void
   checkFolder(folder: string): Promise<IpcResult<boolean>>
+  listProjects(): Promise<IpcResult<AvailableProjectEntry[]>>
+  addProject(projectPath: string): Promise<IpcResult<ProjectEntry>>
+  removeProject(id: string): Promise<IpcResult<void>>
+  setActiveProject(id: string): Promise<IpcResult<void>>
+  getActiveProject(): Promise<IpcResult<ProjectEntry | undefined>>
+  checkProjectAvailability(id: string): Promise<IpcResult<boolean>>
   getLastSession(): Promise<IpcResult<LastSession>>
   clearLastSession(): Promise<IpcResult<void>>
   getOnboardingState(): Promise<IpcResult<OnboardingState>>

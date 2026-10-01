@@ -336,6 +336,20 @@ describe('IPC bridge', () => {
     expect(await main.readLastSession()).toMatchObject({ folder: projectRoot, watching: false })
   })
 
+  it('开始监控成功后会登记并设为当前项目', async () => {
+    const main = await loadMain()
+    const projectRoot = await createDirectory()
+    const configRoot = await createDirectory()
+    mocks.app.getPath.mockReturnValue(configRoot)
+
+    await main.startWatching(projectRoot)
+
+    await expect(main.listProjects()).resolves.toMatchObject([
+      { name: projectRoot.split('/').at(-1), path: projectRoot, available: true },
+    ])
+    await expect(main.getActiveProject()).resolves.toMatchObject({ path: projectRoot })
+  })
+
   it('拒绝含中文或格式错误的 GitHub token 与非法仓库标识', async () => {
     const main = await loadMain()
 
@@ -420,8 +434,10 @@ describe('IPC bridge', () => {
     await expect(main.selectFolder()).resolves.toBe(root)
     expect(mocks.watchers).toHaveLength(0)
     expect([...mocks.handlers.keys()].sort()).toEqual([
+      'cairn:addProject',
       'cairn:cancelDownload',
       'cairn:checkFolder',
+      'cairn:checkProjectAvailability',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
       'cairn:completeOnboarding',
@@ -432,6 +448,7 @@ describe('IPC bridge', () => {
       'cairn:emptyTrash',
       'cairn:exportPR',
       'cairn:exportSnapshot',
+      'cairn:getActiveProject',
       'cairn:getDefaultDownloadDir',
       'cairn:getDiscoveryStatus',
       'cairn:getGithubConfig',
@@ -443,18 +460,21 @@ describe('IPC bridge', () => {
       'cairn:joinRoom',
       'cairn:leaveRoom',
       'cairn:listPeers',
+      'cairn:listProjects',
       'cairn:listRecentOps',
       'cairn:listSeeders',
       'cairn:listTrash',
       'cairn:openExternal',
       'cairn:openInFileManager',
       'cairn:purgeFromTrash',
+      'cairn:removeProject',
       'cairn:resetGithubConfig',
       'cairn:resetOnboarding',
       'cairn:restoreFromTrash',
       'cairn:saveGithubConfig',
       'cairn:selectDownloadFolder',
       'cairn:selectFolder',
+      'cairn:setActiveProject',
       'cairn:setTrashRetentionDays',
       'cairn:startSharing',
       'cairn:startWatching',
@@ -761,8 +781,10 @@ describe('IPC bridge', () => {
     const exposed = mocks.contextBridge.exposeInMainWorld.mock.calls[0]
     expect(exposed?.[0]).toBe('cairn')
     expect(Object.keys(exposed?.[1] as object).sort()).toEqual([
+      'addProject',
       'cancelDownload',
       'checkFolder',
+      'checkProjectAvailability',
       'clearGithubConfig',
       'clearLastSession',
       'completeOnboarding',
@@ -773,6 +795,7 @@ describe('IPC bridge', () => {
       'emptyTrash',
       'exportPR',
       'exportSnapshot',
+      'getActiveProject',
       'getDefaultDownloadDir',
       'getDiscoveryStatus',
       'getGithubConfig',
@@ -784,6 +807,7 @@ describe('IPC bridge', () => {
       'joinRoom',
       'leaveRoom',
       'listPeers',
+      'listProjects',
       'listRecentOps',
       'listSeeders',
       'listTrash',
@@ -794,12 +818,14 @@ describe('IPC bridge', () => {
       'openExternal',
       'openInFileManager',
       'purgeFromTrash',
+      'removeProject',
       'resetGithubConfig',
       'resetOnboarding',
       'restoreFromTrash',
       'saveGithubConfig',
       'selectDownloadFolder',
       'selectFolder',
+      'setActiveProject',
       'setTrashRetentionDays',
       'startSharing',
       'startWatching',

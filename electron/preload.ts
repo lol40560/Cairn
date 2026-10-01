@@ -7,6 +7,7 @@ import type { ExportSnapshotResult } from './core/snapshot/export'
 import type { DownloadProgress, DownloadResult } from './core/sync/downloader'
 import type { DiscoveryStatus } from './core/sync/discovery'
 import type { TrashEntry } from './core/trash'
+import type { ProjectEntry } from './core/projects'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -84,6 +85,16 @@ const cairn = {
     }
   },
   checkFolder: (folder: string): Promise<IpcResult<boolean>> => invoke('cairn:checkFolder', folder),
+  listProjects: (): Promise<IpcResult<Array<ProjectEntry & { available: boolean }>>> =>
+    invoke('cairn:listProjects'),
+  addProject: (projectPath: string): Promise<IpcResult<ProjectEntry>> =>
+    invoke('cairn:addProject', projectPath),
+  removeProject: (id: string): Promise<IpcResult<void>> => invoke('cairn:removeProject', id),
+  setActiveProject: (id: string): Promise<IpcResult<void>> => invoke('cairn:setActiveProject', id),
+  getActiveProject: (): Promise<IpcResult<ProjectEntry | undefined>> =>
+    invoke('cairn:getActiveProject'),
+  checkProjectAvailability: (id: string): Promise<IpcResult<boolean>> =>
+    invoke('cairn:checkProjectAvailability', id),
   getLastSession: (): Promise<IpcResult<{ folder: string; watching: boolean; updatedAt: number }>> => invoke('cairn:getLastSession'),
   clearLastSession: (): Promise<IpcResult<void>> => invoke('cairn:clearLastSession'),
   getOnboardingState: (): Promise<IpcResult<{ completed: boolean; completedAt?: number }>> => invoke('cairn:getOnboardingState'),
