@@ -203,20 +203,46 @@
   padding: 20px 28px;
 }
 
-.project {
+.brand {
+  align-items: flex-start;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: inherit;
+  cursor: pointer;
   display: flex;
   min-width: 0;
   flex-shrink: 0;
   flex-direction: column;
   gap: 3px;
+  margin: -4px -8px;
+  padding: 4px 8px;
+  text-align: left;
+  transition: background 0.15s;
 }
 
-.project-name {
+.brand:hover {
+  background: var(--bg-2);
+}
+
+.brand-name {
+  align-items: center;
   color: var(--text-0);
+  display: flex;
   font-size: 14px;
   font-weight: 600;
+  gap: 6px;
   letter-spacing: -0.01em;
   line-height: 1.2;
+}
+
+.brand-chevron {
+  color: var(--text-2);
+  transition: color 0.15s;
+}
+
+.brand:hover .brand-chevron {
+  color: var(--text-0);
 }
 
 .project-path {

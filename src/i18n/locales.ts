@@ -219,6 +219,7 @@ export const zh = {
   relocate: '重新定位',
   noProjects: '还没有项目',
   noProjectsDesc: '添加项目开始使用。',
+  switchProject: '切换项目',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -439,6 +440,7 @@ export const en: Record<keyof typeof zh, string> = {
   relocate: 'Relocate',
   noProjects: 'No projects yet',
   noProjectsDesc: 'Add a project to get started.',
+  switchProject: 'Switch project',
 }
 
 export type TranslationKey = keyof typeof zh

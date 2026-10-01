@@ -1,5 +1,7 @@
+import { ChevronDown } from 'lucide-react'
+
 import { useTranslation } from '@/i18n'
-import type { WatchStatus } from '@/store/appStore'
+import { useAppStore, type WatchStatus } from '@/store/appStore'
 
 interface TopBarProps {
   folder: string
@@ -20,13 +22,23 @@ function getProjectName(folder: string): string {
 
 export function TopBar({ folder, opCount, roomCode, status }: TopBarProps) {
   const { t } = useTranslation()
+  const setActiveView = useAppStore((state) => state.setActiveView)
 
   return (
     <header className="topbar">
-      <div className="project">
-        <span className="project-name">{getProjectName(folder)}</span>
+      <button
+        aria-label={t('switchProject')}
+        className="brand"
+        title={t('switchProject')}
+        type="button"
+        onClick={() => setActiveView('home')}
+      >
+        <span className="brand-name">
+          {getProjectName(folder)}
+          <ChevronDown aria-hidden="true" className="brand-chevron" size={14} strokeWidth={1.8} />
+        </span>
         <span className="project-path" title={folder}>{folder || '—'}</span>
-      </div>
+      </button>
       <div className="topbar-spacer" />
       <div className="status-chip" title={t(statusKeys[status])}>
         <span className="status-dot" data-status={status} />

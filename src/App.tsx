@@ -85,35 +85,51 @@ export function App() {
         const sessionResult = await window.cairn.getLastSession()
         if (!sessionResult.ok) throw sessionResult.error
 
-        await restoreLastSession(window.cairn, {
-          replaceOps: (recentOps) => {
-            if (!disposed) {
-              replaceOps(recentOps)
-            }
-          },
-          setFolder: (savedFolder) => {
-            if (!disposed) {
-              setFolder(savedFolder)
-            }
-          },
-          setStatus: (savedStatus) => {
-            if (!disposed) {
-              setStatus(savedStatus)
-            }
-          },
-          setUnavailable: (value) => {
-            if (!disposed) {
-              setLastFolderUnavailable(value)
-            }
-          },
-        })
+        const session = sessionResult.data
+        const settingsResult = await window.cairn.getSettings()
+        if (!settingsResult.ok) throw settingsResult.error
 
-        // 已保存过项目的用户直接恢复工作区，不再覆盖为首次引导。
-        if (!sessionResult.data.folder) {
-          const onboardingResult = await window.cairn.getOnboardingState()
-          if (!onboardingResult.ok) throw onboardingResult.error
-          if (!onboardingResult.data.completed && !disposed) {
-            setShowOnboarding(true)
+        if (settingsResult.data.rememberLastFolder && session.folder) {
+          const folderResult = await window.cairn.checkFolder(session.folder)
+          if (!folderResult.ok) throw folderResult.error
+
+          if (folderResult.data) {
+            await restoreLastSession(window.cairn, {
+              replaceOps: (recentOps) => {
+                if (!disposed) replaceOps(recentOps)
+              },
+              setFolder: (savedFolder) => {
+                if (!disposed) setFolder(savedFolder)
+              },
+              setStatus: (savedStatus) => {
+                if (!disposed) setStatus(savedStatus)
+              },
+              setUnavailable: (value) => {
+                if (!disposed) setLastFolderUnavailable(value)
+              },
+            })
+            if (!disposed) setActiveView('activity')
+          } else if (!disposed) {
+            // 保留历史记录以便 Home 视图展示缺失项目，而非清空用户选择。
+            setLastFolderUnavailable(true)
+            setActiveView('home')
+          }
+        } else {
+          const projectsResult = await window.cairn.listProjects()
+          if (!projectsResult.ok) throw projectsResult.error
+
+          if (projectsResult.data.length > 0) {
+            if (!disposed) setActiveView('home')
+          } else {
+            const onboardingResult = await window.cairn.getOnboardingState()
+            if (!onboardingResult.ok) throw onboardingResult.error
+            if (!disposed) {
+              if (!onboardingResult.data.completed) {
+                setShowOnboarding(true)
+              } else {
+                setActiveView('home')
+              }
+            }
           }
         }
         if (!disposed) {
@@ -172,30 +188,7 @@ export function App() {
       unsubscribePeers()
       unsubscribeConflict()
     }
-  }, [addConflict, prependOp, replaceOps, setFolder, setGithubConfigured, setPeers, setStatus, t])
-
-  const handleSelectFolder = async (): Promise<void> => {
-    try {
-      const selectedFolder = getIpcData(await window.cairn.selectFolder())
-      if (selectedFolder === '') {
-        return
-      }
-
-      getIpcData(await window.cairn.stopWatching())
-      setPeers([])
-      setIsHost(false)
-      setRoomCode('')
-      getIpcData(await window.cairn.startWatching(selectedFolder))
-      setFolder(selectedFolder)
-      setStatus('watching')
-      setLastFolderUnavailable(false)
-      replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
-    } catch (error) {
-      setStatus('stopped')
-      console.error('[cairn] 无法开始监控', error)
-      setToast(normalizeError(error, t))
-    }
-  }
+  }, [addConflict, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeers, setStatus, t])
 
   const handleOpenDifferentProject = async (): Promise<void> => {
     try {
@@ -306,7 +299,7 @@ export function App() {
             <ActivityView
               emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}
               ops={ops}
-              onChangeFolder={handleSelectFolder}
+              onChangeFolder={async () => setActiveView('home')}
             />
           )}
           {activeView === 'room' && (
