@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { readFile } from 'node:fs/promises'
-import { extname, isAbsolute, relative, sep, win32 } from 'node:path'
+import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { basename, dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { userInfo } from 'node:os'
 
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -31,6 +31,20 @@ const IGNORED_DIRECTORIES = new Set([
 ])
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.html', '.css', '.scss', '.yml', '.yaml', '.toml', '.xml', '.svg', '.vue', '.svelte', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h', '.sh', '.sql'])
 const BINARY_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff', '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar', '.mp3', '.mp4', '.wav', '.mov', '.avi', '.mkv', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite'])
+
+/** 不同步常见密钥与凭据；.env.example 仍可作为团队模板共享。 */
+export function isSensitiveFile(relativePath: string): boolean {
+  const fileName = basename(relativePath).toLowerCase()
+  return fileName === '.env'
+    || (fileName.startsWith('.env.') && fileName !== '.env.example')
+    || fileName.endsWith('.pem')
+    || fileName.endsWith('.key')
+    || fileName === 'id_rsa'
+    || fileName === 'id_ed25519'
+    || fileName === '.npmrc'
+    || fileName === '.netrc'
+    || fileName === 'credentials.json'
+}
 
 /** 以扩展名优先、NUL 字节兜底的方式判断文件是否为 binary。 */
 export async function isBinaryFile(
@@ -195,10 +209,10 @@ export class ProjectWatcher extends EventEmitter {
     console.info(`[cairn:watcher] 已停止监控 ${this.projectRoot}`)
   }
 
-  async applyRemoteChange(relativePath: string, content: string): Promise<void> {
+  async applyRemoteChange(relativePath: string, content: string, deleted = false): Promise<void> {
     const normalizedPath = this.assertSafeRelativePath(relativePath)
     const snapshotHash = writeSnapshot(this.projectRoot, normalizedPath, content)
-    if (content === '') {
+    if (deleted) {
       this.baseline.delete(normalizedPath)
       return
     }
@@ -208,6 +222,10 @@ export class ProjectWatcher extends EventEmitter {
   private async captureBaseline(absolutePath: string, run: number): Promise<void> {
     try {
       const relativePath = this.toRelativePath(absolutePath)
+      if (!await this.isSafeExistingPath(absolutePath)) {
+        console.warn(`[cairn:watcher] 跳过指向项目外的符号链接：${relativePath}`)
+        return
+      }
       if (await this.isBinaryFile(absolutePath, relativePath)) return
       const content = await readFile(absolutePath, 'utf8')
       const snapshotHash = writeSnapshot(this.projectRoot, relativePath, content)
@@ -287,17 +305,20 @@ export class ProjectWatcher extends EventEmitter {
       return
     }
 
-    if (await this.isBinaryFile(absolutePath, relativePath)) {
-      console.debug(`[cairn:watcher] 跳过 binary 文件：${relativePath}`)
-      // v2-C 暂不为 binary 生成 op，因此也不会触发影子 Git 提交。
-      return
-    }
-
     const previous = this.baseline.get(relativePath)
     let content = ''
     let deleted = false
 
     try {
+      if (!await this.isSafeExistingPath(absolutePath)) {
+        console.warn(`[cairn:watcher] 跳过指向项目外的符号链接：${relativePath}`)
+        return
+      }
+      if (await this.isBinaryFile(absolutePath, relativePath)) {
+        console.debug(`[cairn:watcher] 跳过 binary 文件：${relativePath}`)
+        // v2-C 暂不为 binary 生成 op，因此也不会触发影子 Git 提交。
+        return
+      }
       content = await readFile(absolutePath, 'utf8')
     } catch (error) {
       if (!this.isMissingFile(error)) {
@@ -347,6 +368,9 @@ export class ProjectWatcher extends EventEmitter {
       else this.baseline.set(relativePath, nextBaseline)
 
     } catch (error) {
+      if (deleted) {
+        await this.restoreDeletedFile(absolutePath, oldContent)
+      }
       if (previous) {
         this.baseline.set(relativePath, previous)
       } else {
@@ -381,13 +405,39 @@ export class ProjectWatcher extends EventEmitter {
       return false
     }
 
-    return relativePath
+    return isSensitiveFile(relativePath) || relativePath
       .split(sep)
       .some((segment) => IGNORED_DIRECTORIES.has(segment))
   }
 
+  /** 删除进入废纸篓后的后续步骤失败时，尽力恢复基线内容，绝不继续广播删除。 */
+  private async restoreDeletedFile(absolutePath: string, content: string): Promise<void> {
+    try {
+      await access(absolutePath)
+      return
+    } catch {
+      // 文件仍不存在，继续恢复。
+    }
+
+    try {
+      await mkdir(dirname(absolutePath), { recursive: true })
+      await writeFile(absolutePath, content, 'utf8')
+      console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${absolutePath}`)
+    } catch (restoreError) {
+      console.error(`[cairn:watcher] 删除处理失败且无法恢复文件：${absolutePath}`, restoreError)
+    }
+  }
+
   private async isBinaryFile(absolutePath: string, relativePath: string): Promise<boolean> {
     return isBinaryFile(absolutePath, relativePath, this.binaryByExtension)
+  }
+
+  /** 允许项目内链接，拒绝任何解析后离开项目根目录的路径。 */
+  private async isSafeExistingPath(absolutePath: string): Promise<boolean> {
+    const [root, target] = await Promise.all([realpath(this.projectRoot), realpath(absolutePath)])
+    const normalizedRoot = resolve(root)
+    const normalizedTarget = resolve(target)
+    return normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}${sep}`)
   }
 
   private toRelativePath(absolutePath: string): string {

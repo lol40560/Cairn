@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
+import { access, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import * as git from 'isomorphic-git'
 
@@ -34,11 +34,38 @@ export interface ShadowGit {
   close(): void
 }
 
-function safeProjectPath(projectRoot: string, filePath: string): string {
-  const root = resolve(projectRoot)
-  const target = resolve(root, filePath)
+async function safeProjectPath(projectRoot: string, filePath: string): Promise<string> {
+  const normalized = filePath.replaceAll('\\', '/')
+  const segments = normalized.split('/')
+  if (
+    normalized.length === 0
+    || isAbsolute(normalized)
+    || win32.isAbsolute(normalized)
+    || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+  ) {
+    throw new Error(`影子 Git 文件路径越界：${filePath}`)
+  }
+
+  const root = await realpath(projectRoot)
+  const target = resolve(root, ...segments)
   if (!target.startsWith(`${root}${sep}`)) {
     throw new Error(`影子 Git 文件路径越界：${filePath}`)
+  }
+
+  let currentPath = root
+  for (const segment of segments) {
+    currentPath = join(currentPath, segment)
+    try {
+      const resolvedPath = await realpath(currentPath)
+      if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${sep}`)) {
+        throw new Error(`影子 Git 文件路径通过符号链接越界：${filePath}`)
+      }
+    } catch (error) {
+      if (isMissingPath(error)) {
+        break
+      }
+      throw error
+    }
   }
   return target
 }
@@ -50,6 +77,10 @@ async function fileExists(path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 class IsomorphicShadowGit implements ShadowGit {
@@ -81,8 +112,8 @@ class IsomorphicShadowGit implements ShadowGit {
 
   async commitOp(op: Op, projectRoot: string): Promise<string> {
     await this.init()
-    const sourcePath = safeProjectPath(projectRoot, op.filePath)
-    const targetPath = safeProjectPath(this.workDir, op.filePath)
+    const sourcePath = await safeProjectPath(projectRoot, op.filePath)
+    const targetPath = await safeProjectPath(this.workDir, op.filePath)
     const fs = await import('node:fs')
     if (!(await fileExists(sourcePath))) {
       if (!(await fileExists(targetPath))) {
@@ -156,7 +187,7 @@ class IsomorphicShadowGit implements ShadowGit {
     await rm(this.workDir, { force: true, recursive: true })
     await mkdir(this.workDir, { recursive: true })
     for (const file of files) {
-      const targetPath = safeProjectPath(this.workDir, file.path)
+      const targetPath = await safeProjectPath(this.workDir, file.path)
       await mkdir(dirname(targetPath), { recursive: true })
       await writeFile(targetPath, file.content, 'utf8')
       await git.add({ dir: this.workDir, filepath: file.path, fs, gitdir: this.gitDir })

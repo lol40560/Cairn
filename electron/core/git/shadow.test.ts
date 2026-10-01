@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -94,6 +94,19 @@ describe('ShadowGit', () => {
 
     await expect(shadow.commitOp(createOp('c'.repeat(64)), root)).resolves.toBe('')
     await expect(shadow.listCommits()).resolves.toHaveLength(2)
+  })
+
+  it('拒绝项目外符号链接，并允许项目内符号链接', async () => {
+    const root = await createProject()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-shadow-outside-'))
+    roots.push(outside)
+    await writeFile(join(outside, 'secret.ts'), 'export const secret = true\n', 'utf8')
+    await symlink(join(outside, 'secret.ts'), join(root, 'external-link.ts'))
+    await symlink(join(root, 'sample.ts'), join(root, 'internal-link.ts'))
+    const shadow = createShadowGit(root)
+
+    await expect(shadow.commitOp({ ...createOp('d'.repeat(64)), filePath: 'external-link.ts' }, root)).rejects.toThrow('符号链接越界')
+    await expect(shadow.commitOp({ ...createOp('e'.repeat(64)), filePath: 'internal-link.ts' }, root)).resolves.toMatch(/[a-f0-9]{40}/)
   })
 
   it('远端配置可往返读取', async () => {

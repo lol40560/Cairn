@@ -1,7 +1,8 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
+import { Socket } from 'node:net'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
@@ -9,7 +10,7 @@ import { createTwoFilesPatch } from 'diff'
 import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../oplog'
 import { decodeMessages, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
-import { Transport } from './transport'
+import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
 
 const roots: string[] = []
 const transports: Transport[] = []
@@ -176,6 +177,58 @@ describe('transport', () => {
       { hash: 'kept', type: 'have' },
     ])
     expect(connectSpy).not.toHaveBeenCalled()
+  })
+
+  it('分块传输中文和 emoji 时保持 UTF-8 完整', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', () => resolve())
+      client.connect(port, '127.0.0.1')
+    })
+    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
+    await waitForEvent<[string]>(receiver, 'connect')
+    const received = waitForEvent<[string, SyncMessage]>(receiver, 'message')
+    const message = encodeMessage({
+      type: 'seeder-available',
+      projectName: '中文 😀',
+      size: 1,
+      snapshotId: 'snapshot',
+    })
+    const bytes = Buffer.from(message)
+    const splitAt = bytes.indexOf(Buffer.from('中')) + 1
+    client.write(bytes.subarray(0, splitAt))
+    client.write(bytes.subarray(splitAt))
+
+    await expect(received).resolves.toEqual(['sender', {
+      type: 'seeder-available',
+      projectName: '中文 😀',
+      size: 1,
+      snapshotId: 'snapshot',
+    }])
+    client.destroy()
+  })
+
+  it('拒绝超过大小上限的单条同步消息', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', () => resolve())
+      client.connect(port, '127.0.0.1')
+    })
+    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
+    await waitForEvent<[string]>(receiver, 'connect')
+    const failure = waitForEvent<[Error]>(receiver, 'error')
+    client.write(`{"type":"have","hash":"${'a'.repeat(MAX_SYNC_MESSAGE_BYTES + 1)}"}\n`)
+
+    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('超过') })])
+    client.destroy()
   })
 })
 
@@ -459,6 +512,75 @@ describe('Sync', () => {
     await sync.stop()
   })
 
+  it('创建空文件不会被当作删除', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    const input = {
+      ...createOp('empty-created'),
+      diff: createTwoFilesPatch('empty.ts', 'empty.ts', '', ''),
+      filePath: 'empty.ts',
+      kind: 'created' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const moveRemoteDeletionToTrash = vi.fn(async () => undefined)
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const writeFile = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        moveRemoteDeletionToTrash,
+        readFile: async () => '',
+        writeFile,
+      },
+    )
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await remoteOp
+
+    expect(moveRemoteDeletionToTrash).not.toHaveBeenCalled()
+    expect(applyRemoteChange).toHaveBeenCalledWith('empty.ts', '')
+    expect(writeFile).toHaveBeenCalledWith('empty.ts', '')
+    await sync.stop()
+  })
+
+  it('拒绝通过符号链接写入项目外文件', async () => {
+    const target = await createTestOplog()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-sync-outside-'))
+    roots.push(outside)
+    await writeFile(join(outside, 'secret.ts'), 'export const secret = true\n', 'utf8')
+    await symlink(join(outside, 'secret.ts'), join(target.root, 'external-link.ts'))
+    const transport = new MockTransport()
+    const input = {
+      ...createOp('unsafe-link'),
+      diff: createTwoFilesPatch('external-link.ts', 'external-link.ts', '', 'changed\n'),
+      filePath: 'external-link.ts',
+      kind: 'created' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const readFile = vi.fn(async () => '')
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        readFile,
+        writeFile: vi.fn(async () => undefined),
+      },
+    )
+    const failure = waitForEvent<[Error]>(sync, 'error')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+
+    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('符号链接越界') })])
+    expect(readFile).not.toHaveBeenCalled()
+    await sync.stop()
+  })
+
   it('空基线无法应用修改操作时保存 pending，并在后续基线操作到达后自动重试', async () => {
     const target = await createTestOplog()
     const transport = new MockTransport()
@@ -518,6 +640,7 @@ describe('Sync', () => {
       ...createOp('delete'),
       diff: createTwoFilesPatch('deleted.ts', 'deleted.ts', 'before\n', ''),
       filePath: 'deleted.ts',
+      kind: 'deleted' as const,
     }
     const remote = { ...input, hash: computeHash(input) }
     const writeFile = vi.fn(async () => undefined)
@@ -538,7 +661,7 @@ describe('Sync', () => {
     await remoteOp
 
     expect(moveRemoteDeletionToTrash).toHaveBeenCalledWith('deleted.ts', remote.author, remote.hash)
-    expect(applyRemoteChange).toHaveBeenCalledWith('deleted.ts', '')
+    expect(applyRemoteChange).toHaveBeenCalledWith('deleted.ts', '', true)
     expect(writeFile).not.toHaveBeenCalled()
     await sync.stop()
   })

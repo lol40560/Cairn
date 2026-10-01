@@ -2,6 +2,14 @@
 
 All notable changes to Cairn.
 
+## [1.0.1] - 2026-10-01
+
+### Fixed
+
+- Preserve empty files during sync and restore files if trash processing fails
+- Exclude sensitive files and block project-boundary escapes through symbolic links
+- Decode fragmented UTF-8 TCP messages safely and reject oversized messages
+
 ## [1.0.0] - 2026-10-01
 
 First public release.

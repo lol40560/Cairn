@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { realpath } from 'node:fs/promises'
+import { isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import { applyPatch } from 'diff'
 
 import type { Oplog } from '../oplog'
+import { isSensitiveFile } from '../watcher/watcher'
 import { Discovery } from './discovery'
 import { PendingOps } from './pending-ops'
 import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
@@ -21,7 +24,7 @@ export interface SyncStartOptions {
 }
 
 export interface SyncHooks {
-  applyRemoteChange(relativePath: string, content: string): Promise<void>
+  applyRemoteChange(relativePath: string, content: string, deleted?: boolean): Promise<void>
   readFile(relativePath: string): Promise<string>
   writeFile(relativePath: string, content: string): Promise<void>
   moveRemoteDeletionToTrash?(relativePath: string, author: string, opHash: string): Promise<void>
@@ -380,7 +383,18 @@ export class Sync extends EventEmitter {
       return false
     }
 
+    await this.assertSafeProjectPath(op.filePath)
+    if (isSensitiveFile(op.filePath)) {
+      throw new Error(`拒绝同步敏感文件：${op.filePath}`)
+    }
+
     const localContent = await this.hooks.readFile(op.filePath)
+    if (op.kind === 'deleted' && localContent === '') {
+      // 文件已不存在时，删除操作保持幂等，不留下永远无法重试的 pending。
+      await this.hooks.applyRemoteChange(op.filePath, '', true)
+      await this.completeRemoteOp(op, retryPending)
+      return true
+    }
     // 缺失文件和空文件都以空基线处理；创建操作可直接从 unified diff 重建。
     const nextContent = applyPatch(localContent === '' ? '' : localContent, op.diff)
     if (nextContent === false) {
@@ -394,20 +408,65 @@ export class Sync extends EventEmitter {
       return false
     }
 
-    if (nextContent === '') {
+    if (op.kind === 'deleted') {
       // 远端删除也先保存本地副本，避免同步操作绕过数据保护。
       await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
-      await this.hooks.applyRemoteChange(op.filePath, nextContent)
+      await this.hooks.applyRemoteChange(op.filePath, '', true)
     } else {
       await this.hooks.applyRemoteChange(op.filePath, nextContent)
       await this.hooks.writeFile(op.filePath, nextContent)
     }
 
+    await this.completeRemoteOp(op, retryPending)
+    return true
+  }
+
+  private async completeRemoteOp(op: import('../oplog').Op, retryPending: boolean): Promise<void> {
     await this.pendingOps?.remove(op.hash)
     if (retryPending) {
       await this.retryPendingOps()
     }
-    return true
+  }
+
+  /** 阻止通过项目内符号链接访问项目根目录以外的内容。 */
+  private async assertSafeProjectPath(relativePath: string): Promise<void> {
+    const projectRoot = this.options.projectRoot
+    if (!projectRoot) {
+      return
+    }
+
+    const normalized = relativePath.replaceAll('\\', '/')
+    const segments = normalized.split('/')
+    if (
+      normalized.length === 0
+      || isAbsolute(normalized)
+      || win32.isAbsolute(normalized)
+      || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+    ) {
+      throw new Error(`远端文件路径非法：${relativePath}`)
+    }
+
+    const root = await realpath(projectRoot)
+    const target = resolve(root, ...segments)
+    if (!target.startsWith(`${root}${sep}`)) {
+      throw new Error(`远端文件路径越界：${relativePath}`)
+    }
+
+    let currentPath = root
+    for (const segment of segments) {
+      currentPath = join(currentPath, segment)
+      try {
+        const resolvedPath = await realpath(currentPath)
+        if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${sep}`)) {
+          throw new Error(`远端文件路径通过符号链接越界：${relativePath}`)
+        }
+      } catch (error) {
+        if (isMissingPath(error)) {
+          break
+        }
+        throw error
+      }
+    }
   }
 
   private readonly handleError = (error: Error): void => {
@@ -421,4 +480,8 @@ export class Sync extends EventEmitter {
   private seederKey(peerId: string, snapshotId: string): string {
     return `${peerId}:${snapshotId}`
   }
+}
+
+function isMissingPath(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }

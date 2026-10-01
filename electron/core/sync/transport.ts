@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { createServer, Socket, type Server } from 'node:net'
+import { StringDecoder } from 'node:string_decoder'
 
 import { decodeMessages, encodeMessage, type SyncMessage } from './protocol'
+
+export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
 
 export class Transport extends EventEmitter {
   private readonly connections = new Map<string, Socket>()
@@ -112,21 +115,64 @@ export class Transport extends EventEmitter {
 
   private attachSocket(socket: Socket, shouldSendHello = true): void {
     let buffer = ''
+    const decoder = new StringDecoder('utf8')
     this.sockets.add(socket)
 
     socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf8')
-      const decoded = decodeMessages(buffer, (error) => this.emit('error', error))
-      buffer = decoded.rest
-      for (const message of decoded.messages) {
-        this.handleMessage(socket, message)
-      }
+      buffer += decoder.write(chunk)
+      this.processBuffer(socket, () => buffer, (next) => { buffer = next })
     })
     socket.on('error', (error) => this.emit('error', error))
-    socket.on('close', () => this.removeSocket(socket))
+    socket.on('close', () => {
+      buffer += decoder.end()
+      this.processBuffer(socket, () => buffer, (next) => { buffer = next }, true)
+      this.removeSocket(socket)
+    })
     if (shouldSendHello) {
       this.sendHello(socket)
     }
+  }
+
+  private processBuffer(
+    socket: Socket,
+    getBuffer: () => string,
+    setBuffer: (value: string) => void,
+    flush = false,
+  ): void {
+    const current = getBuffer()
+    const lines = current.split('\n')
+    const rest = lines.pop() ?? ''
+    if (Buffer.byteLength(rest, 'utf8') > MAX_SYNC_MESSAGE_BYTES) {
+      setBuffer('')
+      this.rejectOversizedMessage(socket)
+      return
+    }
+    if (flush && rest.length > 0) {
+      lines.push(rest)
+      setBuffer('')
+    } else {
+      setBuffer(rest)
+    }
+
+    for (const line of lines) {
+      if (line.length === 0) {
+        continue
+      }
+      if (Buffer.byteLength(line, 'utf8') > MAX_SYNC_MESSAGE_BYTES) {
+        setBuffer('')
+        this.rejectOversizedMessage(socket)
+        return
+      }
+      const decoded = decodeMessages(`${line}\n`, (error) => this.emit('error', error))
+      for (const message of decoded.messages) {
+        this.handleMessage(socket, message)
+      }
+    }
+  }
+
+  private rejectOversizedMessage(socket: Socket): void {
+    this.emit('error', new Error(`同步消息超过 ${MAX_SYNC_MESSAGE_BYTES} 字节上限`))
+    socket.destroy()
   }
 
   private sendHello(socket: Socket): void {

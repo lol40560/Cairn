@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -62,6 +62,41 @@ describe('exportProjectSnapshot', () => {
 
     expect(result.fileCount).toBe(1)
     expect(result.skippedCount).toBe(1)
+  })
+
+  it('跳过敏感文件，但保留 .env.example', async () => {
+    const root = await createProject()
+    await writeFile(join(root, '.env'), 'TOKEN=secret\n')
+    await writeFile(join(root, '.env.production'), 'TOKEN=secret\n')
+    await writeFile(join(root, 'deploy.key'), 'private key')
+    await writeFile(join(root, '.env.example'), 'TOKEN=replace-me\n')
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+    const archiveContents = (await readFile(result.filePath)).toString('utf8')
+
+    expect(result.fileCount).toBe(1)
+    expect(archiveContents).toContain('.env.example')
+    expect(archiveContents).not.toContain('.env.production')
+    expect(archiveContents).not.toContain('deploy.key')
+  })
+
+  it('拒绝项目外符号链接，但允许项目内文件链接', async () => {
+    const root = await createProject()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-export-outside-'))
+    roots.push(outside)
+    await writeFile(join(root, 'inside.ts'), 'export const inside = true\n')
+    await writeFile(join(outside, 'secret.txt'), 'do not share\n')
+    await symlink(join(root, 'inside.ts'), join(root, 'inside-link.ts'))
+    await symlink(join(outside, 'secret.txt'), join(root, 'outside-link.txt'))
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+    const archiveContents = (await readFile(result.filePath)).toString('utf8')
+
+    expect(result.fileCount).toBe(2)
+    expect(archiveContents).toContain('inside-link.ts')
+    expect(archiveContents).not.toContain('outside-link.txt')
   })
 
   it('超过大小上限时拒绝打包', async () => {

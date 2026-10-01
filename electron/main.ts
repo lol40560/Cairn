@@ -536,8 +536,8 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
     { oplog: project.oplog, projectRoot: project.root, roomCode },
     {},
     {
-      applyRemoteChange: (relativePath, content) =>
-        project.watcher.applyRemoteChange(relativePath, content),
+      applyRemoteChange: (relativePath, content, deleted) =>
+        project.watcher.applyRemoteChange(relativePath, content, deleted),
       readFile: async (relativePath) => {
         try {
           return await readFile(projectFilePath(project.root, relativePath), 'utf8')

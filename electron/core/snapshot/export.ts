@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { basename, join, relative, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import { Writable } from 'node:stream'
 
-import { isBinaryFile } from '../watcher/watcher'
+import { isBinaryFile, isSensitiveFile } from '../watcher/watcher'
 import { AppError } from '../errors'
 
 const require = createRequire(import.meta.url)
@@ -69,6 +69,7 @@ interface ExportFile {
 async function collectExportFiles(projectRoot: string): Promise<{ files: ExportFile[]; skippedCount: number }> {
   const files: ExportFile[] = []
   const binaryByExtension = new Map<string, boolean>()
+  const resolvedRoot = await realpath(projectRoot)
   let skippedCount = 0
 
   const visit = async (directory: string): Promise<void> => {
@@ -76,9 +77,27 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
 
     for (const entry of entries) {
       const absolutePath = join(directory, entry.name)
+      let sourcePath = absolutePath
+      let sourceSize: number | undefined
       if (entry.isSymbolicLink()) {
-        skippedCount += 1
-        continue
+        try {
+          const resolvedPath = await realpath(absolutePath)
+          if (!isWithinProject(resolvedRoot, resolvedPath)) {
+            skippedCount += 1
+            continue
+          }
+          const targetStats = await stat(resolvedPath)
+          // 不跟随目录链接，避免循环遍历；项目内文件链接可安全保留内容。
+          if (!targetStats.isFile()) {
+            skippedCount += 1
+            continue
+          }
+          sourcePath = resolvedPath
+          sourceSize = targetStats.size
+        } catch {
+          skippedCount += 1
+          continue
+        }
       }
 
       if (entry.isDirectory()) {
@@ -89,26 +108,32 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
         continue
       }
 
-      if (!entry.isFile()) {
+      if (!entry.isFile() && !entry.isSymbolicLink()) {
         continue
       }
 
       const relativePath = relative(projectRoot, absolutePath).split(sep).join('/')
-      if (await isBinaryFile(absolutePath, relativePath, binaryByExtension)) {
+      if (isSensitiveFile(relativePath) || await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
         skippedCount += 1
         continue
       }
 
       files.push({
-        absolutePath,
+        absolutePath: sourcePath,
         relativePath,
-        size: (await stat(absolutePath)).size,
+        size: sourceSize ?? (await stat(sourcePath)).size,
       })
     }
   }
 
   await visit(projectRoot)
   return { files, skippedCount }
+}
+
+function isWithinProject(projectRoot: string, targetPath: string): boolean {
+  const root = resolve(projectRoot)
+  const target = resolve(targetPath)
+  return target === root || target.startsWith(`${root}${sep}`)
 }
 
 function formatMegabytes(bytes: number): string {

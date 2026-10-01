@@ -1,18 +1,19 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createOplog } from '../oplog'
 import type { Oplog, Op } from '../oplog'
 import { snapshotExists, writeSnapshot } from './snapshot'
 import { ProjectWatcher } from './watcher'
+import { TrashManager } from '../trash'
 
 const roots: string[] = []
 const resources: Array<{ oplog: Oplog; watcher: ProjectWatcher }> = []
 
-async function createFixture(options: { debounceMs?: number } = {}): Promise<{
+async function createFixture(options: { debounceMs?: number; trash?: TrashManager } = {}): Promise<{
   projectRoot: string
   oplog: Oplog
   watcher: ProjectWatcher
@@ -22,7 +23,7 @@ async function createFixture(options: { debounceMs?: number } = {}): Promise<{
   const watcher = new ProjectWatcher(projectRoot, oplog, {
     author: 'watcher-test',
     debounceMs: options.debounceMs ?? 50,
-  })
+  }, options.trash)
 
   roots.push(projectRoot)
   resources.push({ oplog, watcher })
@@ -176,6 +177,30 @@ describe('ProjectWatcher', () => {
     await expectNoOp(watcher)
   })
 
+  it('忽略敏感文件，但允许共享 .env.example 模板', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    await watcher.start()
+
+    await writeFile(join(projectRoot, '.env'), 'API_TOKEN=secret\n', 'utf8')
+    await expectNoOp(watcher)
+
+    const template = waitForOp(watcher)
+    await writeFile(join(projectRoot, '.env.example'), 'API_TOKEN=replace-me\n', 'utf8')
+    await expect(template).resolves.toMatchObject({ filePath: '.env.example', kind: 'created' })
+  })
+
+  it('不读取指向项目外的符号链接', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-watcher-outside-'))
+    roots.push(outside)
+    await writeFile(join(outside, 'secret.ts'), 'export const secret = true\n', 'utf8')
+    await watcher.start()
+
+    await symlink(join(outside, 'secret.ts'), join(projectRoot, 'external-link.ts'))
+
+    await expectNoOp(watcher)
+  })
+
   it('stop 后不再接收文件变更事件', async () => {
     const { projectRoot, watcher } = await createFixture()
     await watcher.start()
@@ -216,6 +241,40 @@ describe('ProjectWatcher', () => {
     await expect(readFile(join(projectRoot, '.cairn', 'trash', entries[0]!.trashId, 'content'), 'utf8')).resolves.toBe('keep me\n')
     await expectNoOp(watcher)
     expect(oplog.listRecent(200)).toHaveLength(1)
+  })
+
+  it('废纸篓写入失败时恢复文件且不生成删除 op', async () => {
+    const failingTrash = {
+      moveToTrash: vi.fn(async () => {
+        throw new Error('磁盘写入失败')
+      }),
+    } as unknown as TrashManager
+    const { projectRoot, watcher } = await createFixture({ trash: failingTrash })
+    const path = join(projectRoot, 'recover.ts')
+    await writeFile(path, 'keep this\n', 'utf8')
+    await watcher.start()
+
+    const failure = new Promise<Error>((resolve) => watcher.once('error', resolve))
+    await rm(path)
+    await expect(failure).resolves.toMatchObject({ message: expect.stringContaining('写入变更失败') })
+    await expect(readFile(path, 'utf8')).resolves.toBe('keep this\n')
+    await expectNoOp(watcher)
+    expect(failingTrash.moveToTrash).toHaveBeenCalledOnce()
+  })
+
+  it('远端空文件建立空基线，后续修改仍为 modified', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    const path = join(projectRoot, 'empty.ts')
+    await writeFile(path, '', 'utf8')
+    await watcher.start()
+
+    await watcher.applyRemoteChange('empty.ts', '', false)
+    await writeFile(path, '', 'utf8')
+    await expectNoOp(watcher)
+
+    const changed = waitForOp(watcher)
+    await writeFile(path, 'export {}\n', 'utf8')
+    await expect(changed).resolves.toMatchObject({ kind: 'modified' })
   })
 
   it('新建、修改、删除会产生三条无 parent 的 op', async () => {
