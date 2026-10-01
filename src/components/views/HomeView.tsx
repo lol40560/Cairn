@@ -62,14 +62,18 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
     return () => window.clearTimeout(timer)
   }, [refreshProjects])
 
+  const activateProject = async (projectPath: string): Promise<void> => {
+    getIpcData(await window.cairn.startWatching(projectPath))
+    setFolder(projectPath)
+    setStatus('watching')
+    replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
+    setActiveView('activity')
+    await refreshProjects()
+  }
+
   const openProject = async (project: AvailableProjectEntry): Promise<void> => {
     try {
-      getIpcData(await window.cairn.startWatching(project.path))
-      setFolder(project.path)
-      setStatus('watching')
-      replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
-      setActiveView('activity')
-      await refreshProjects()
+      await activateProject(project.path)
     } catch (error) {
       console.error('[cairn:home] 无法打开项目', error)
       setToast(normalizeError(error, t))
@@ -82,6 +86,7 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
       if (!selectedFolder) return
       getIpcData(await window.cairn.addProject(selectedFolder))
       await refreshProjects()
+      await activateProject(selectedFolder)
     } catch (error) {
       console.error('[cairn:home] 无法添加项目', error)
       setToast(normalizeError(error, t))
@@ -106,6 +111,7 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
       getIpcData(await window.cairn.addProject(selectedFolder))
       getIpcData(await window.cairn.removeProject(project.id))
       await refreshProjects()
+      await activateProject(selectedFolder)
     } catch (error) {
       console.error('[cairn:home] 无法重新定位项目', error)
       setToast(normalizeError(error, t))
