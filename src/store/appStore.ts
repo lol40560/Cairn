@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { LocalEndpoint, Op, PeerInfo, SeederInfo, TrashEntry } from '../types/cairn'
+import type { AvailableProjectEntry, LocalEndpoint, Op, PeerInfo, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ActiveView = 'activity' | 'room' | 'conflicts' | 'trash'
+export type ViewType = 'home' | 'activity' | 'room' | 'conflicts' | 'trash'
+export type ActiveView = ViewType
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
 
 export interface DownloadProgress {
@@ -17,6 +18,7 @@ export interface DownloadProgress {
 export interface AppState {
   folder: string
   activeView: ActiveView
+  projects: AvailableProjectEntry[]
   locale: Locale
   status: WatchStatus
   ops: Op[]
@@ -40,6 +42,7 @@ export interface AppState {
   githubConfigured: boolean
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
+  setProjects(projects: AvailableProjectEntry[]): void
   setLocale(locale: Locale): void
   setStatus(status: WatchStatus): void
   setRoomCode(code: string): void
@@ -70,6 +73,7 @@ export interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   folder: '',
   activeView: 'activity',
+  projects: [],
   locale: detectLocale(),
   status: 'idle',
   ops: [],
@@ -93,6 +97,7 @@ export const useAppStore = create<AppState>((set) => ({
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
+  setProjects: (projects) => set({ projects }),
   setLocale: (locale) => {
     persistLocale(locale)
     set({ locale })

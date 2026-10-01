@@ -8,6 +8,7 @@ import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
 import { ConflictsView } from '@/components/views/ConflictsView'
+import { HomeView } from '@/components/views/HomeView'
 import { RoomView } from '@/components/views/RoomView'
 import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
@@ -300,6 +301,7 @@ export function App() {
       <section className="shell">
         <TopBar folder={folder} opCount={ops.length} roomCode={roomCode} status={status} />
         <div className="content">
+          {activeView === 'home' && <HomeView />}
           {activeView === 'activity' && (
             <ActivityView
               emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}

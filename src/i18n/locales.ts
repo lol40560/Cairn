@@ -18,6 +18,8 @@ export const zh = {
   hoursAgo: '{n} 小时前',
   dayAgo: '{n} 天前',
   daysAgo: '{n} 天前',
+  monthAgo: '1 个月前',
+  monthsAgo: '{n} 个月前',
   activityLast24h: '最近 24 小时',
   activityAll: '全部变更',
   activitySummary: '{changes} 项变更 · {files} 个文件',
@@ -209,6 +211,14 @@ export const zh = {
   startupFolderTooLarge: '该文件夹有超过 2000 个文件，请选择更小的文件夹。',
   openDifferentProject: '打开其他项目',
   hintChooseSmallerFolder: '请选择更小的文件夹或子目录。',
+  home: '主页',
+  recentProjects: '最近的项目',
+  addProject: '添加项目',
+  folderNotFound: '文件夹不存在',
+  remove: '移除',
+  relocate: '重新定位',
+  noProjects: '还没有项目',
+  noProjectsDesc: '添加项目开始使用。',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -229,6 +239,8 @@ export const en: Record<keyof typeof zh, string> = {
   hoursAgo: '{n} hours ago',
   dayAgo: '1 day ago',
   daysAgo: '{n} days ago',
+  monthAgo: '1 month ago',
+  monthsAgo: '{n} months ago',
   activityLast24h: 'LAST 24 HOURS',
   activityAll: 'ALL CHANGES',
   activitySummary: '{changes} changes · {files} files',
@@ -419,6 +431,14 @@ export const en: Record<keyof typeof zh, string> = {
   startupFolderTooLarge: 'This folder has more than 2,000 files. Choose a smaller folder.',
   openDifferentProject: 'Open different project',
   hintChooseSmallerFolder: 'Choose a smaller folder or a subdirectory.',
+  home: 'Home',
+  recentProjects: 'Recent projects',
+  addProject: 'Add project',
+  folderNotFound: 'Folder not found',
+  remove: 'Remove',
+  relocate: 'Relocate',
+  noProjects: 'No projects yet',
+  noProjectsDesc: 'Add a project to get started.',
 }
 
 export type TranslationKey = keyof typeof zh

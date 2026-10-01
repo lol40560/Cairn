@@ -53,6 +53,7 @@
   --bg-hover: #1A1A1E;
   --line: #26262B;
   --line-soft: #1D1D22;
+  --border-strong: #44444D;
   --text-0: #E8E8EB;
   --text-1: #9595A0;
   --text-2: #5E5E68;
@@ -316,6 +317,119 @@
 
 .view-spacer {
   flex: 1;
+}
+
+.home-section-label {
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.home-empty .btn {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.home-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  padding: 8px 0;
+}
+
+.project-card {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  min-height: 140px;
+  padding: 20px;
+  position: relative;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.project-card:hover {
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+}
+
+.project-card.active {
+  border-color: var(--red);
+}
+
+.project-card:focus-visible {
+  outline: 2px solid var(--red-line);
+  outline-offset: 2px;
+}
+
+.project-card.missing {
+  border-style: dashed;
+  cursor: default;
+  opacity: 0.6;
+}
+
+.project-card.add {
+  align-items: center;
+  border-style: dashed;
+  color: var(--text-2);
+  font-size: 13px;
+  gap: 8px;
+  justify-content: center;
+}
+
+.project-card.add:hover {
+  border-color: var(--border-strong);
+  color: var(--text-1);
+}
+
+.project-card-name {
+  color: var(--text-0);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-path {
+  color: var(--text-3);
+  direction: rtl;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  margin: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-meta {
+  color: var(--text-2);
+  font-size: 11px;
+  margin: auto 0 0;
+  padding-top: 12px;
+}
+
+.project-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.project-card-favorite {
+  color: var(--red);
+  position: absolute;
+  right: 16px;
+  top: 16px;
 }
 
 .view-action {
