@@ -20,7 +20,7 @@ describe('SettingsDialog', () => {
     }))
 
     expect(html).toContain('About')
-    expect(html).toContain('0.1.0')
+    expect(html).toContain('1.0.0')
   })
 
   it('Esc 按下后会触发关闭条件', () => {

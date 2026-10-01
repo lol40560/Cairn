@@ -19,6 +19,12 @@ When multiple people (and their AI agents like Cursor or Claude Code) edit the s
 - Export to GitHub PR
 - Works with any editor
 
+## Screenshots
+
+![Cairn main view](./docs/screenshots/main.png)
+
+_Coming soon — screenshots will be added after v1.0 release._
+
 ## Download
 
 ### macOS
@@ -32,6 +38,39 @@ When multiple people (and their AI agents like Cursor or Claude Code) edit the s
 1. Download the latest `Cairn-Setup-*.exe` from [Releases](https://github.com/lol40560/Cairn/releases)
 2. Double-click to install
 3. If SmartScreen warns: More info → Run anyway (app is not code-signed yet)
+
+## Requirements
+
+Cairn works over your **local network**. All teammates must be on the same WiFi or the same hotspot.
+
+If automatic discovery doesn't work, use the **Direct connection** feature:
+
+1. The host opens Team view
+2. Scroll down to find "Direct connection" showing something like `192.168.1.5:49500`
+3. Copy that address
+4. Teammates enter it in the "Join a team" input box
+
+## Common issues
+
+**"Cairn.app is damaged and can't be opened" (macOS)**
+
+The app is not code-signed yet. After downloading, run:
+
+```bash
+xattr -cr /Applications/Cairn.app
+```
+
+Then open the app normally.
+
+**Windows: SmartScreen blocks the app**
+
+Click "More info" → "Run anyway".
+
+**Teammates can't find each other**
+
+- Make sure you're on the same WiFi or hotspot
+- Try the Direct connection feature (see above)
+- If on a corporate or campus WiFi, AP isolation may block device-to-device traffic — use a phone hotspot instead
 
 ## Quick Start
 
