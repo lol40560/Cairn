@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { AvailableProjectEntry, ConflictRecord, LocalEndpoint, Op, PeerInfo, SeederInfo, TrashEntry } from '../types/cairn'
+import type { AvailableProjectEntry, ConflictRecord, LocalEndpoint, Op, PeerInfo, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ViewType = 'home' | 'activity' | 'room' | 'conflicts' | 'trash'
+export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'trash'
 export type ActiveView = ViewType
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
 
@@ -19,6 +19,9 @@ export interface AppState {
   folder: string
   activeView: ActiveView
   projects: AvailableProjectEntry[]
+  projectFiles: ProjectFileEntry[]
+  selectedFilePath: string | undefined
+  fileFilter: string
   locale: Locale
   status: WatchStatus
   ops: Op[]
@@ -43,6 +46,9 @@ export interface AppState {
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
   setProjects(projects: AvailableProjectEntry[]): void
+  setProjectFiles(files: ProjectFileEntry[]): void
+  setSelectedFilePath(path: string | undefined): void
+  setFileFilter(filter: string): void
   setLocale(locale: Locale): void
   setStatus(status: WatchStatus): void
   setRoomCode(code: string): void
@@ -75,6 +81,9 @@ export const useAppStore = create<AppState>((set) => ({
   folder: '',
   activeView: 'activity',
   projects: [],
+  projectFiles: [],
+  selectedFilePath: undefined,
+  fileFilter: '',
   locale: detectLocale(),
   status: 'idle',
   ops: [],
@@ -99,6 +108,9 @@ export const useAppStore = create<AppState>((set) => ({
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
   setProjects: (projects) => set({ projects }),
+  setProjectFiles: (projectFiles) => set({ projectFiles }),
+  setSelectedFilePath: (selectedFilePath) => set({ selectedFilePath }),
+  setFileFilter: (fileFilter) => set({ fileFilter }),
   setLocale: (locale) => {
     persistLocale(locale)
     set({ locale })

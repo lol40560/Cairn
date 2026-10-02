@@ -42,6 +42,20 @@ export interface AvailableProjectEntry extends ProjectEntry {
   available: boolean
 }
 
+export interface ProjectFileEntry {
+  path: string
+  name: string
+  size: number
+  mtime: number
+}
+
+export interface ProjectFileContent {
+  path: string
+  content: string
+  size: number
+  mtime: number
+}
+
 export interface OnboardingState {
   completed: boolean
   completedAt?: number
@@ -139,6 +153,8 @@ export interface CairnApi {
   startWatching(folder: string): Promise<IpcResult<void>>
   stopWatching(): Promise<IpcResult<void>>
   listRecentOps(limit: number): Promise<IpcResult<Op[]>>
+  listProjectFiles(): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>>
+  readProjectFile(path: string): Promise<IpcResult<ProjectFileContent>>
   onOp(callback: (op: Op) => void): () => void
   createRoom(): Promise<IpcResult<string>>
   joinRoom(roomCode: string): Promise<IpcResult<void>>

@@ -1,4 +1,4 @@
-import { Activity, House, Settings, Trash2, TriangleAlert, UsersRound } from 'lucide-react'
+import { Activity, FileText, House, Settings, Trash2, TriangleAlert, UsersRound } from 'lucide-react'
 
 import { useTranslation } from '@/i18n'
 import type { ActiveView } from '@/store/appStore'
@@ -13,6 +13,7 @@ interface DockProps {
 const viewItems = [
   { icon: House, labelKey: 'home', view: 'home' },
   { icon: Activity, labelKey: 'activity', view: 'activity' },
+  { icon: FileText, labelKey: 'files', view: 'files' },
   { icon: UsersRound, labelKey: 'room', view: 'room' },
   { icon: TriangleAlert, labelKey: 'conflicts', view: 'conflicts' },
   { icon: Trash2, labelKey: 'trash', view: 'trash' },

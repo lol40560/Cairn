@@ -236,6 +236,12 @@ export const zh = {
   noProjects: '还没有项目',
   noProjectsDesc: '添加项目开始使用。',
   switchProject: '切换项目',
+  files: '文件',
+  filesSearchPlaceholder: '搜索文件...',
+  filesEmpty: '没有可显示的文件。',
+  filesTooMany: '仅显示前 {n} 个文件。',
+  fileTooLarge: '文件过大，无法显示（超过 1 MB）。',
+  fileSelectHint: '选择文件查看',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -473,6 +479,12 @@ export const en: Record<keyof typeof zh, string> = {
   noProjects: 'No projects yet',
   noProjectsDesc: 'Add a project to get started.',
   switchProject: 'Switch project',
+  files: 'Files',
+  filesSearchPlaceholder: 'Search files...',
+  filesEmpty: 'No files to show.',
+  filesTooMany: 'Showing first {n} files.',
+  fileTooLarge: 'File too large to display (>1 MB).',
+  fileSelectHint: 'Select a file to view',
 }
 
 export type TranslationKey = keyof typeof zh

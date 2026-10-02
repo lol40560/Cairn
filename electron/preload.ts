@@ -9,6 +9,7 @@ import type { DiscoveryStatus } from './core/sync/discovery'
 import type { TrashEntry } from './core/trash'
 import type { ProjectEntry } from './core/projects'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
+import type { ProjectFileContent, ProjectFileEntry } from './main'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -21,6 +22,10 @@ const cairn = {
   stopWatching: (): Promise<IpcResult<void>> => invoke('cairn:stopWatching'),
   listRecentOps: (limit: number): Promise<IpcResult<Op[]>> =>
     invoke('cairn:listRecentOps', limit),
+  listProjectFiles: (): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>> =>
+    invoke('cairn:listProjectFiles'),
+  readProjectFile: (filePath: string): Promise<IpcResult<ProjectFileContent>> =>
+    invoke('cairn:readProjectFile', filePath),
   onOp: (callback: (op: Op) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, op: Op): void => callback(op)
     ipcRenderer.on('cairn:op', listener)

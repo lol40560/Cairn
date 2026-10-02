@@ -21,7 +21,7 @@ interface BaselineEntry {
   snapshotHash: string
 }
 
-const IGNORED_DIRECTORIES = new Set([
+export const IGNORED_DIRECTORIES = new Set([
   '.git',
   '.vibeswarm',
   '.cairn',

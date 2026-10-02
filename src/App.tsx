@@ -9,6 +9,7 @@ import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
 import { ConflictsView } from '@/components/views/ConflictsView'
+import { FilesView } from '@/components/views/FilesView'
 import { HomeView } from '@/components/views/HomeView'
 import { RoomView } from '@/components/views/RoomView'
 import { TrashView } from '@/components/views/TrashView'
@@ -329,6 +330,7 @@ export function App() {
               onChangeFolder={async () => setActiveView('home')}
             />
           )}
+          {activeView === 'files' && <FilesView />}
           {activeView === 'room' && (
             <RoomView
               hasOps={ops.length > 0}

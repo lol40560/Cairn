@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
-import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomInt } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import Database from 'better-sqlite3'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron'
@@ -23,6 +23,7 @@ import type { Oplog, Op } from './core/oplog'
 import { TrashManager } from './core/trash'
 import type { TrashEntry } from './core/trash'
 import { ProjectWatcher } from './core/watcher'
+import { IGNORED_DIRECTORIES, isBinaryFile, isSensitiveFile } from './core/watcher/watcher'
 import {
   SnapshotDownloader,
   SnapshotSeeder,
@@ -59,6 +60,20 @@ export interface OnboardingState {
   completedAt?: number
 }
 
+export interface ProjectFileEntry {
+  path: string
+  name: string
+  size: number
+  mtime: number
+}
+
+export interface ProjectFileContent {
+  path: string
+  content: string
+  size: number
+  mtime: number
+}
+
 let activeProject: ActiveProject | undefined
 let activeShadow: ShadowGit | undefined
 let activeRoom: { roomCode: string; sync: Sync } | undefined
@@ -72,6 +87,8 @@ let mainWindow: BrowserWindow | undefined
 let startWatchingPromise: Promise<void> | undefined
 
 const MAX_WATCHED_FILES = 2_000
+const MAX_PROJECT_FILES = 5_000
+const MAX_PROJECT_FILE_BYTES = 1_024 * 1_024
 const FILE_COUNT_IGNORED_DIRECTORIES = new Set([
   '.cairn', '.git', '.next', '.nuxt', '.turbo', '.vibeswarm', '.cache', '.vscode',
   'build', 'coverage', 'dist', 'node_modules', 'target',
@@ -129,6 +146,47 @@ function validateFolder(folder: string): void {
   if (!stats.isDirectory()) {
     throw new Error(`项目路径必须是目录：${folder}`)
   }
+}
+
+/**
+ * 验证 renderer 请求的相对文件路径，且拒绝通过符号链接逃逸项目根目录。
+ * 文件浏览只读取已存在的普通文件，因此不存在的路径直接视为无效。
+ */
+async function safeActiveProjectFilePath(filePath: string): Promise<string> {
+  const projectRoot = activeProject?.root
+  if (!projectRoot) {
+    throw new AppError('请先选择项目', 'config')
+  }
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    throw new AppError('文件路径不能为空', 'config')
+  }
+
+  const normalized = filePath.replaceAll('\\', '/')
+  const segments = normalized.split('/')
+  if (
+    isAbsolute(normalized)
+    || win32.isAbsolute(normalized)
+    || normalized.startsWith('/')
+    || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+  ) {
+    throw new AppError('文件路径必须位于当前项目内', 'permission')
+  }
+
+  const root = await realpath(projectRoot)
+  const candidate = resolve(root, ...segments)
+  if (!candidate.startsWith(`${root}${sep}`)) {
+    throw new AppError('文件路径必须位于当前项目内', 'permission')
+  }
+
+  const target = await realpath(candidate)
+  if (!target.startsWith(`${root}${sep}`)) {
+    throw new AppError('文件路径通过符号链接越出项目目录', 'permission')
+  }
+  const metadata = await lstat(candidate)
+  if (!metadata.isFile() || metadata.isSymbolicLink()) {
+    throw new AppError('只能查看项目中的普通文件', 'config')
+  }
+  return candidate
 }
 
 /** 在启动监控前快速统计文件数，到达上限即停止遍历。 */
@@ -891,6 +949,75 @@ export async function listRecentOps(limit: number): Promise<Op[]> {
   return activeProject ? activeProject.oplog.listRecent(limit) : []
 }
 
+/** 列出当前项目中安全、可作为 UTF-8 文本预览的文件。 */
+export async function listProjectFiles(): Promise<{ files: ProjectFileEntry[]; truncated: boolean }> {
+  const projectRoot = activeProject?.root
+  if (!projectRoot) {
+    return { files: [], truncated: false }
+  }
+
+  const files: ProjectFileEntry[] = []
+  const stack = ['']
+  const binaryByExtension = new Map<string, boolean>()
+
+  // 多读一条即可准确判断是否截断，避免把恰好 5000 个文件误报为截断。
+  while (stack.length > 0 && files.length <= MAX_PROJECT_FILES) {
+    const relativeDirectory = stack.pop()
+    if (relativeDirectory === undefined) continue
+    const absoluteDirectory = join(projectRoot, relativeDirectory)
+    let entries
+    try {
+      entries = await readdir(absoluteDirectory, { encoding: 'utf8', withFileTypes: true })
+    } catch (error) {
+      console.warn(`[cairn:files] 无法读取目录 ${relativeDirectory || '.'}`, error)
+      continue
+    }
+
+    for (const entry of entries) {
+      if (files.length > MAX_PROJECT_FILES) break
+      if (IGNORED_DIRECTORIES.has(entry.name) || entry.isSymbolicLink()) continue
+      const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name
+      const absolutePath = join(projectRoot, relativePath)
+      if (entry.isDirectory()) {
+        stack.push(relativePath)
+        continue
+      }
+      if (!entry.isFile() || isSensitiveFile(relativePath)) continue
+
+      try {
+        if (await isBinaryFile(absolutePath, relativePath, binaryByExtension)) continue
+        const metadata = await stat(absolutePath)
+        files.push({ name: entry.name, path: relativePath, size: metadata.size, mtime: metadata.mtimeMs })
+      } catch (error) {
+        console.warn(`[cairn:files] 跳过无法读取的文件 ${relativePath}`, error)
+      }
+    }
+  }
+
+  return {
+    files: files.slice(0, MAX_PROJECT_FILES).sort((left, right) => left.path.localeCompare(right.path)),
+    truncated: files.length > MAX_PROJECT_FILES,
+  }
+}
+
+/** 以受限大小读取项目文件，内容只能由受信任主进程提供给 renderer。 */
+export async function readProjectFile(filePath: string): Promise<ProjectFileContent> {
+  const absolutePath = await safeActiveProjectFilePath(filePath)
+  const metadata = await stat(absolutePath)
+  if (metadata.size > MAX_PROJECT_FILE_BYTES) {
+    throw new AppError('File too large to display', 'config', { code: 'FILE_TOO_LARGE' })
+  }
+  if (isSensitiveFile(filePath) || await isBinaryFile(absolutePath, filePath)) {
+    throw new AppError('该文件不能在 Cairn 中显示', 'permission')
+  }
+  return {
+    content: await readFile(absolutePath, 'utf8'),
+    mtime: metadata.mtimeMs,
+    path: filePath,
+    size: metadata.size,
+  }
+}
+
 /** 返回当前项目中可恢复的已删除文件。 */
 export async function listTrash(): Promise<TrashEntry[]> {
   // 未打开项目时，废纸篓视图应自然显示为空状态。
@@ -964,6 +1091,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:startWatching', wrapIpcHandler((folder: string) => startWatching(folder)))
   ipcMain.handle('cairn:stopWatching', wrapIpcHandler(() => stopWatching()))
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
+  ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
+  ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
   ipcMain.handle('cairn:createRoom', wrapIpcHandler(createRoom))
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))

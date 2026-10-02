@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -319,6 +319,56 @@ describe('IPC bridge', () => {
     await expect(main.checkFolder(file)).resolves.toBe(false)
   })
 
+  it('文件浏览只列出项目内文本文件，并跳过内部、敏感与二进制文件', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await mkdir(join(root, 'src'), { recursive: true })
+    await mkdir(join(root, '.cairn'), { recursive: true })
+    await writeFile(join(root, 'src', 'visible.ts'), 'export const visible = true\n', 'utf8')
+    await writeFile(join(root, '.env'), 'TOKEN=secret\n', 'utf8')
+    await writeFile(join(root, 'image.png'), Buffer.from([0, 1, 2]))
+    await writeFile(join(root, '.cairn', 'internal.md'), 'internal\n', 'utf8')
+    await main.startWatching(root)
+
+    await expect(main.listProjectFiles()).resolves.toEqual({
+      files: [expect.objectContaining({ name: 'visible.ts', path: 'src/visible.ts' })],
+      truncated: false,
+    })
+  })
+
+  it('文件浏览在超过上限时截断，并拒绝越界、符号链接和过大的读取请求', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    const outside = await createDirectory()
+    await main.startWatching(root)
+    for (let index = 0; index <= 5_000; index += 1) {
+      await writeFile(join(root, `file-${index}.txt`), 'text\n', 'utf8')
+    }
+    await writeFile(join(root, 'large.txt'), 'a'.repeat(1_024 * 1_024 + 1), 'utf8')
+    await writeFile(join(outside, 'outside.txt'), 'private\n', 'utf8')
+    await symlink(join(outside, 'outside.txt'), join(root, 'linked.txt'))
+
+    const listed = await main.listProjectFiles()
+    expect(listed.files).toHaveLength(5_000)
+    expect(listed.truncated).toBe(true)
+    await expect(main.readProjectFile('../../outside.txt')).rejects.toThrow(/项目内/)
+    await expect(main.readProjectFile('linked.txt')).rejects.toThrow(/符号链接/)
+    await expect(main.readProjectFile('large.txt')).rejects.toThrow('File too large to display')
+  })
+
+  it('readProjectFile 返回只读预览所需的内容与元数据', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await writeFile(join(root, 'README.md'), '# Cairn\n', 'utf8')
+    await main.startWatching(root)
+
+    await expect(main.readProjectFile('README.md')).resolves.toMatchObject({
+      content: '# Cairn\n',
+      path: 'README.md',
+      size: 8,
+    })
+  })
+
   it('选择、开始与停止监控会更新 lastSession', async () => {
     const main = await loadMain()
     const projectRoot = await createDirectory()
@@ -463,6 +513,7 @@ describe('IPC bridge', () => {
       'cairn:leaveRoom',
       'cairn:listConflicts',
       'cairn:listPeers',
+      'cairn:listProjectFiles',
       'cairn:listProjects',
       'cairn:listRecentOps',
       'cairn:listSeeders',
@@ -470,6 +521,7 @@ describe('IPC bridge', () => {
       'cairn:openExternal',
       'cairn:openInFileManager',
       'cairn:purgeFromTrash',
+      'cairn:readProjectFile',
       'cairn:removeProject',
       'cairn:resetGithubConfig',
       'cairn:resetOnboarding',
@@ -837,6 +889,7 @@ describe('IPC bridge', () => {
       'leaveRoom',
       'listConflicts',
       'listPeers',
+      'listProjectFiles',
       'listProjects',
       'listRecentOps',
       'listSeeders',
@@ -848,6 +901,7 @@ describe('IPC bridge', () => {
       'openExternal',
       'openInFileManager',
       'purgeFromTrash',
+      'readProjectFile',
       'removeProject',
       'resetGithubConfig',
       'resetOnboarding',
