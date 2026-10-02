@@ -1827,9 +1827,8 @@
   border-radius: var(--r-full);
   background: var(--bg-1);
   box-shadow: 0 16px 32px rgb(0 0 0 / 40%);
-  padding: 6px;
+  padding: 5px;
   pointer-events: auto;
-  transition: gap 0.4s var(--ease);
 }
 
 .dock-item {
@@ -1872,17 +1871,17 @@
   max-width: 0;
   overflow: hidden;
   opacity: 0;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   transition: max-width 0.4s var(--ease), opacity 0.25s ease 0.1s;
 }
 
-.dock:hover .dock-item {
+.dock-item:hover {
   max-width: 160px;
   padding-right: 18px;
 }
 
-.dock:hover .dock-label {
+.dock-item:hover .dock-label {
   max-width: 120px;
   opacity: 1;
 }
