@@ -1018,6 +1018,29 @@ export async function readProjectFile(filePath: string): Promise<ProjectFileCont
   }
 }
 
+/** 保存编辑器修改；后续操作日志由 watcher 按普通磁盘改动生成。 */
+export async function saveProjectFile(
+  filePath: string,
+  content: string,
+): Promise<{ saved: true; mtime: number }> {
+  if (typeof content !== 'string') {
+    throw new AppError('Invalid arguments', 'config')
+  }
+
+  if (Buffer.byteLength(content, 'utf8') > MAX_PROJECT_FILE_BYTES) {
+    throw new AppError('File too large to save (>1 MB)', 'config', { code: 'FILE_TOO_LARGE' })
+  }
+
+  const absolutePath = await safeActiveProjectFilePath(filePath)
+  if (isSensitiveFile(filePath) || await isBinaryFile(absolutePath, filePath)) {
+    throw new AppError('该文件不能在 Cairn 中保存', 'permission')
+  }
+
+  await writeFile(absolutePath, content, 'utf8')
+  const metadata = await stat(absolutePath)
+  return { saved: true, mtime: metadata.mtimeMs }
+}
+
 /** 返回当前项目中可恢复的已删除文件。 */
 export async function listTrash(): Promise<TrashEntry[]> {
   // 未打开项目时，废纸篓视图应自然显示为空状态。
@@ -1093,6 +1116,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
   ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
   ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
+  ipcMain.handle(
+    'cairn:saveProjectFile',
+    wrapIpcHandler((filePath: string, content: string) => saveProjectFile(filePath, content)),
+  )
   ipcMain.handle('cairn:createRoom', wrapIpcHandler(createRoom))
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))

@@ -26,6 +26,8 @@ const cairn = {
     invoke('cairn:listProjectFiles'),
   readProjectFile: (filePath: string): Promise<IpcResult<ProjectFileContent>> =>
     invoke('cairn:readProjectFile', filePath),
+  saveProjectFile: (filePath: string, content: string): Promise<IpcResult<{ saved: boolean; mtime: number }>> =>
+    invoke('cairn:saveProjectFile', filePath, content),
   onOp: (callback: (op: Op) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, op: Op): void => callback(op)
     ipcRenderer.on('cairn:op', listener)

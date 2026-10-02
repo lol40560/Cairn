@@ -1953,6 +1953,17 @@
   width: min(260px, 40vw);
 }
 
+.files-status {
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: right;
+}
+
+.files-status-saving { color: var(--text-2); }
+.files-status-dirty { color: var(--amber); }
+.files-status-error { color: var(--red); }
+
 .files-search input {
   width: 100%;
   height: 32px;
@@ -2069,3 +2080,24 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
+
+.confirm-dialog-message {
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.confirm-dialog-actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--line-soft);
+  padding: 14px 26px;
+}
+
+.btn-danger {
+  border-color: var(--red);
+  background: var(--red);
+  color: white;
+}
+
+.btn-danger:hover { filter: brightness(1.08); }

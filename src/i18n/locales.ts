@@ -242,6 +242,16 @@ export const zh = {
   filesTooMany: '仅显示前 {n} 个文件。',
   fileTooLarge: '文件过大，无法显示（超过 1 MB）。',
   fileSelectHint: '选择文件查看',
+  filesSave: '保存',
+  filesSaving: '保存中...',
+  filesUnsaved: '未保存的修改',
+  filesSaveShortcut: '⌘S 保存',
+  filesSaveError: '保存失败',
+  filesDiscardConfirmTitle: '丢弃未保存的修改？',
+  filesDiscardConfirmMessage: '你有未保存的修改。切换文件将丢弃这些修改。',
+  filesDiscard: '丢弃',
+  filesCancel: '取消',
+  remoteChangeAvailable: '远端有新的修改。重新加载查看。',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -485,6 +495,16 @@ export const en: Record<keyof typeof zh, string> = {
   filesTooMany: 'Showing first {n} files.',
   fileTooLarge: 'File too large to display (>1 MB).',
   fileSelectHint: 'Select a file to view',
+  filesSave: 'Save',
+  filesSaving: 'Saving...',
+  filesUnsaved: 'Unsaved changes',
+  filesSaveShortcut: '⌘S to save',
+  filesSaveError: 'Failed to save',
+  filesDiscardConfirmTitle: 'Discard unsaved changes?',
+  filesDiscardConfirmMessage: 'You have unsaved changes. Switching files will discard them.',
+  filesDiscard: 'Discard',
+  filesCancel: 'Cancel',
+  remoteChangeAvailable: 'Remote changes arrived. Reload to see them.',
 }
 
 export type TranslationKey = keyof typeof zh

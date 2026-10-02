@@ -155,6 +155,7 @@ export interface CairnApi {
   listRecentOps(limit: number): Promise<IpcResult<Op[]>>
   listProjectFiles(): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>>
   readProjectFile(path: string): Promise<IpcResult<ProjectFileContent>>
+  saveProjectFile(path: string, content: string): Promise<IpcResult<{ saved: boolean; mtime: number }>>
   onOp(callback: (op: Op) => void): () => void
   createRoom(): Promise<IpcResult<string>>
   joinRoom(roomCode: string): Promise<IpcResult<void>>

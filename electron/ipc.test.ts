@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -369,6 +369,25 @@ describe('IPC bridge', () => {
     })
   })
 
+  it('saveProjectFile 只保存项目内、大小受限的普通文本文件', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await writeFile(join(root, 'README.md'), '# Before\n', 'utf8')
+    await writeFile(join(root, '.env'), 'TOKEN=secret\n', 'utf8')
+    await main.startWatching(root)
+
+    await expect(main.saveProjectFile('README.md', '# After\n')).resolves.toMatchObject({
+      saved: true,
+      mtime: expect.any(Number),
+    })
+    await expect(readFile(join(root, 'README.md'), 'utf8')).resolves.toBe('# After\n')
+    await expect(main.saveProjectFile('../outside.md', 'nope')).rejects.toThrow(/项目内/)
+    await expect(main.saveProjectFile('.env', 'TOKEN=changed')).rejects.toThrow(/不能在 Cairn 中保存/)
+    await expect(main.saveProjectFile('README.md', 'a'.repeat(1_024 * 1_024 + 1))).rejects.toThrow(
+      'File too large to save',
+    )
+  })
+
   it('选择、开始与停止监控会更新 lastSession', async () => {
     const main = await loadMain()
     const projectRoot = await createDirectory()
@@ -528,6 +547,7 @@ describe('IPC bridge', () => {
       'cairn:resolveConflict',
       'cairn:restoreFromTrash',
       'cairn:saveGithubConfig',
+      'cairn:saveProjectFile',
       'cairn:selectDownloadFolder',
       'cairn:selectFolder',
       'cairn:setActiveProject',
@@ -908,6 +928,7 @@ describe('IPC bridge', () => {
       'resolveConflict',
       'restoreFromTrash',
       'saveGithubConfig',
+      'saveProjectFile',
       'selectDownloadFolder',
       'selectFolder',
       'setActiveProject',
