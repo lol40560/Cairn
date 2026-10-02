@@ -34,7 +34,7 @@ export function TopBar({ folder, opCount, roomCode, status }: TopBarProps) {
         onClick={() => setActiveView('home')}
       >
         <span className="brand-name">
-          {getProjectName(folder)}
+          <span className="brand-name-text">{getProjectName(folder)}</span>
           <ChevronDown aria-hidden="true" className="brand-chevron" size={14} strokeWidth={1.8} />
         </span>
         <span className="project-path" title={folder}>{folder || '—'}</span>

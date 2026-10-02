@@ -1,7 +1,8 @@
 import { useState } from 'react'
 
-import { FolderOpen, SlidersHorizontal } from 'lucide-react'
+import { FolderOpen, SlidersHorizontal, Sparkles } from 'lucide-react'
 
+import { EmptyState } from '@/components/EmptyState'
 import { OpDiffDialog } from '@/components/OpDiffDialog'
 import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
@@ -92,27 +93,23 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
       )}
 
       {visibleOps.length === 0 ? (
-        <div className="empty">
-          {!folder ? (
-            <>
-              <p className="empty-title">{t('emptyNoProject')}</p>
-              <p className="empty-desc">{emptyMessage ?? t('emptyNoProjectDesc')}</p>
-              <div className="empty-actions">
-                <button className="btn btn-primary" type="button" onClick={() => void onChangeFolder()}>
-                  {t('chooseFolder')}
-                </button>
-                <button className="btn btn-ghost" type="button" onClick={() => setActiveView('room')}>
-                  {t('joinTeam')}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="empty-title">{t('emptyNoChanges')}</p>
-              <p className="empty-desc">{remoteOnly ? t('remoteChangesEmpty') : t('emptyNoChangesDesc')}</p>
-            </>
-          )}
-        </div>
+        !folder ? (
+          <EmptyState
+            actions={[
+              { label: t('chooseFolder'), onClick: () => void onChangeFolder(), variant: 'primary' },
+              { label: t('joinTeam'), onClick: () => setActiveView('room'), variant: 'ghost' },
+            ]}
+            description={emptyMessage ?? t('emptyNoProjectDesc')}
+            icon={FolderOpen}
+            title={t('emptyNoProject')}
+          />
+        ) : (
+          <EmptyState
+            description={remoteOnly ? t('remoteChangesEmpty') : t('emptyNoChangesDesc')}
+            icon={Sparkles}
+            title={t('emptyNoChanges')}
+          />
+        )
       ) : (
         <div className="op-list">
           {visibleOps.map((op) => {

@@ -1,4 +1,7 @@
+import { CheckCircle2 } from 'lucide-react'
+
 import { ConflictCard } from '@/components/ConflictDialog'
+import { EmptyState } from '@/components/EmptyState'
 import { useTranslation } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
 import type { ConflictRecord } from '@/types/cairn'
@@ -24,10 +27,11 @@ export function ConflictsView({ conflicts: conflictsOverride, onResolve }: Confl
       </div>
 
       {!hasConflicts ? (
-        <div className="empty">
-          <p className="empty-title">{t('conflictsEmpty')}</p>
-          <p className="empty-desc">{t('conflictsEmptyDesc2')}</p>
-        </div>
+        <EmptyState
+          description={t('conflictsEmptyDesc2')}
+          icon={CheckCircle2}
+          title={t('conflictsEmpty')}
+        />
       ) : (
         <div className="conflict-list conflict-view-list">
           {conflicts.map((conflict) => (

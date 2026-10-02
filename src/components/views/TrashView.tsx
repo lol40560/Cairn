@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
+import { Trash2 } from 'lucide-react'
+
+import { EmptyState } from '@/components/EmptyState'
 import { useTranslation } from '@/i18n'
 import type { TranslateFn } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
@@ -101,10 +104,11 @@ export function TrashView() {
       {error && <p className="modal-error">{error.message}</p>}
 
       {trash.length === 0 ? (
-        <div className="empty">
-          <div className="empty-title">{t('trashEmpty')}</div>
-          <div className="empty-desc">{t('trashEmptyDesc2').replace('{days}', String(retentionDays))}</div>
-        </div>
+        <EmptyState
+          description={t('trashEmptyDesc2').replace('{days}', String(retentionDays))}
+          icon={Trash2}
+          title={t('trashEmpty')}
+        />
       ) : (
         <div className="trash-list">
           {trash.map((entry) => (

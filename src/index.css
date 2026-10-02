@@ -231,18 +231,20 @@
   display: flex;
   font-size: 14px;
   font-weight: 600;
-  gap: 6px;
+  gap: 4px;
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
 .brand-chevron {
   color: var(--text-2);
-  transition: color 0.15s;
+  flex-shrink: 0;
+  transition: color 0.15s, transform 0.15s var(--ease);
 }
 
 .brand:hover .brand-chevron {
   color: var(--text-0);
+  transform: translateY(1px);
 }
 
 .project-path {
@@ -352,13 +354,6 @@
   letter-spacing: 0.1em;
   margin: 0 0 8px;
   text-transform: uppercase;
-}
-
-.home-empty .btn {
-  align-items: center;
-  display: inline-flex;
-  gap: 6px;
-  margin-top: 8px;
 }
 
 .home-grid {
@@ -532,27 +527,46 @@
   border-color: transparent;
 }
 
-.empty {
-  padding: 60px 12px;
+.btn-lg {
+  height: 40px;
+  padding: 0 20px;
 }
 
-.empty-title {
+.empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 40px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  margin-bottom: 4px;
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
+.empty-state-title {
   color: var(--text-1);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
-  margin-bottom: 8px;
+  line-height: 1.4;
 }
 
-.empty-desc {
-  color: var(--text-2);
-  font-size: 13px;
-  line-height: 1.7;
+.empty-state-desc {
+  max-width: 320px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.empty-actions {
+.empty-state-actions {
   display: flex;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 8px;
 }
 
 .op-list {
@@ -1269,7 +1283,7 @@
 
 .modal-section {
   border: 0;
-  margin: 0 0 28px;
+  margin: 0 0 24px;
   min-width: 0;
   padding: 0;
 }
@@ -1281,6 +1295,11 @@
   letter-spacing: 0.1em;
   margin-bottom: 12px;
   text-transform: uppercase;
+}
+
+.modal-section + .modal-section {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 24px;
 }
 
 .field {
@@ -2060,35 +2079,6 @@
   min-height: 0;
   flex: 1;
   background: #1e1e1e;
-}
-
-.files-empty {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 40px;
-}
-
-.files-empty-icon {
-  color: var(--text-3);
-  opacity: 0.6;
-}
-
-.files-empty-title {
-  color: var(--text-1);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.files-empty-desc {
-  max-width: 280px;
-  color: var(--text-3);
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
 }
 
 .file-tree-node {

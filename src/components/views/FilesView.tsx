@@ -4,6 +4,7 @@ import { Editor } from '@monaco-editor/react'
 import { FileCode2, Search } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { EmptyState } from '@/components/EmptyState'
 import { FileTree } from '@/components/FileTree'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { useTranslation } from '@/i18n'
@@ -232,11 +233,11 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
               />
             </div>
           ) : (
-            <div className="files-empty">
-              <div className="files-empty-icon"><FileCode2 aria-hidden="true" size={40} strokeWidth={1.2} /></div>
-              <div className="files-empty-title">{t('fileSelectHint')}</div>
-              <div className="files-empty-desc">{t('fileSelectHintDesc')}</div>
-            </div>
+            <EmptyState
+              description={t('fileSelectHintDesc')}
+              icon={FileCode2}
+              title={t('fileSelectHint')}
+            />
           )}
         </div>
       </div>

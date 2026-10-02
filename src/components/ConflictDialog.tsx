@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 
-import { X } from 'lucide-react'
+import { CheckCircle2, X } from 'lucide-react'
 
+import { EmptyState } from '@/components/EmptyState'
 import { MonacoDiff } from '@/components/MonacoDiff'
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { detectLanguage } from '@/lib/detect-language'
@@ -91,7 +92,7 @@ export function ConflictDialog({ open, conflicts, onClose, onResolve }: Conflict
         </header>
         <div className="modal-body conflict-modal-body">
           {conflicts.length === 0 ? (
-            <p className="empty-desc">{t('conflictNone')}</p>
+            <EmptyState icon={CheckCircle2} title={t('conflictNone')} />
           ) : conflicts.map((conflict) => (
             <ConflictCard key={conflict.opHash} conflict={conflict} onResolve={onResolve} />
           ))}

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { Users } from 'lucide-react'
+
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
+import { EmptyState } from '@/components/EmptyState'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { useAppStore } from '@/store/appStore'
@@ -617,10 +620,11 @@ export function RoomView({
                 </div>
               </div>
             ) : (
-              <div className="sharing-empty">
-                <div className="sharing-empty-title">{t('waitingForHost')}</div>
-                <div className="sharing-empty-desc">{t('waitingForHostDesc')}</div>
-              </div>
+              <EmptyState
+                description={t('waitingForHostDesc')}
+                icon={Users}
+                title={t('waitingForHost')}
+              />
             )}
             {lastDownloadPath && (
               <div className="download-result">

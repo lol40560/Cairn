@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { FolderPlus, Plus } from 'lucide-react'
+import { FolderOpen, Plus } from 'lucide-react'
 
+import { EmptyState } from '@/components/EmptyState'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
@@ -125,14 +126,12 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
       </div>
 
       {projects.length === 0 ? (
-        <div className="empty home-empty">
-          <p className="empty-title">{t('noProjects')}</p>
-          <p className="empty-desc">{t('noProjectsDesc')}</p>
-          <button className="btn btn-primary" type="button" onClick={() => void addProject()}>
-            <FolderPlus size={15} strokeWidth={1.8} />
-            {t('addProject')}
-          </button>
-        </div>
+        <EmptyState
+          actions={[{ label: t('addProject'), onClick: () => void addProject(), variant: 'primary' }]}
+          description={t('noProjectsDesc')}
+          icon={FolderOpen}
+          title={t('noProjects')}
+        />
       ) : (
         <>
           <p className="home-section-label">{t('recentProjects')}</p>
