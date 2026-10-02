@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { Dock } from '@/components/Dock'
+import { ConflictDialog } from '@/components/ConflictDialog'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
 import { Onboarding } from '@/components/Onboarding'
 import { SettingsDialog } from '@/components/SettingsDialog'
@@ -69,8 +70,11 @@ export function App() {
   const setPeers = useAppStore((state) => state.setPeers)
   const setRoomCode = useAppStore((state) => state.setRoomCode)
   const setStatus = useAppStore((state) => state.setStatus)
+  const setConflicts = useAppStore((state) => state.setConflicts)
+  const removeConflict = useAppStore((state) => state.removeConflict)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
   const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [restoring, setRestoring] = useState(true)
@@ -177,9 +181,9 @@ export function App() {
       }
     })
     const unsubscribePeers = window.cairn.onPeers(setPeers)
-    const unsubscribeConflict = window.cairn.onConflict((payload) => {
-      addConflict({ ...payload, timestamp: Date.now() })
-      console.warn('[cairn] 检测到冲突', payload)
+    const unsubscribeConflict = window.cairn.onConflict((conflict) => {
+      addConflict(conflict)
+      console.warn('[cairn] 检测到冲突', conflict)
     })
 
     return () => {
@@ -189,6 +193,16 @@ export function App() {
       unsubscribeConflict()
     }
   }, [addConflict, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeers, setStatus, t])
+
+  useEffect(() => {
+    let disposed = false
+    void window.cairn.listConflicts().then((result) => {
+      if (!disposed && result.ok) {
+        setConflicts(result.data)
+      }
+    }).catch((error) => console.error('[cairn] 无法读取冲突列表', error))
+    return () => { disposed = true }
+  }, [folder, setConflicts])
 
   const handleOpenDifferentProject = async (): Promise<void> => {
     try {
@@ -288,6 +302,18 @@ export function App() {
 
   const dismissToast = useCallback(() => setToast(null), [])
 
+  const handleResolveConflict = async (
+    opHash: string,
+    resolution: 'local' | 'remote' | 'merged',
+  ): Promise<void> => {
+    const result = await window.cairn.resolveConflict(opHash, resolution)
+    if (!result.ok) {
+      setToast(normalizeError(result.error, t))
+      return
+    }
+    removeConflict(opHash)
+  }
+
   return (
     <>
       <main aria-label="Cairn" className="app">
@@ -298,6 +324,7 @@ export function App() {
           {activeView === 'activity' && (
             <ActivityView
               emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}
+              onReviewConflicts={() => setConflictDialogOpen(true)}
               ops={ops}
               onChangeFolder={async () => setActiveView('home')}
             />
@@ -314,7 +341,7 @@ export function App() {
               onLeaveRoom={handleLeaveRoom}
             />
           )}
-          {activeView === 'conflicts' && <ConflictsView />}
+          {activeView === 'conflicts' && <ConflictsView onResolve={handleResolveConflict} />}
           {activeView === 'trash' && <TrashView />}
         </div>
       </section>
@@ -339,6 +366,12 @@ export function App() {
           setSettingsOpen(true)
         }}
         onSubmit={exportPRSubmit}
+      />
+      <ConflictDialog
+        conflicts={conflicts}
+        open={conflictDialogOpen}
+        onClose={() => setConflictDialogOpen(false)}
+        onResolve={handleResolveConflict}
       />
       <Toast message={toast} onDismiss={dismissToast} />
       </main>

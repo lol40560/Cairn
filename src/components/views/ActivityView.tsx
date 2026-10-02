@@ -7,13 +7,15 @@ import { countDiff } from '@/lib/diffStats'
 import { formatLineCount } from '@/lib/lineCount'
 import { useAppStore } from '@/store/appStore'
 import type { TranslateFn } from '@/i18n'
-import type { Op } from '@/types/cairn'
+import type { ConflictRecord, Op } from '@/types/cairn'
 
 interface ActivityViewProps {
   emptyMessage?: string
   folder?: string
   ops: Op[]
   onChangeFolder(): Promise<void>
+  onReviewConflicts?(): void
+  conflicts?: ConflictRecord[]
 }
 
 function formatTime(timestamp: number, locale: 'zh' | 'en'): string {
@@ -43,11 +45,13 @@ function formatRelativeTime(timestamp: number, t: TranslateFn): string {
   return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
 }
 
-export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChangeFolder }: ActivityViewProps) {
+export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChangeFolder, onReviewConflicts, conflicts: conflictsOverride }: ActivityViewProps) {
   const { locale, t } = useTranslation()
   const storedFolder = useAppStore((state) => state.folder)
   const folder = folderOverride ?? storedFolder
   const setActiveView = useAppStore((state) => state.setActiveView)
+  const storedConflicts = useAppStore((state) => state.conflicts)
+  const conflicts = conflictsOverride ?? storedConflicts
   const [remoteOnly, setRemoteOnly] = useState(false)
   const visibleOps = remoteOnly ? ops.filter((op) => op.source === 'remote') : ops
   const fileCount = new Set(ops.map((op) => op.filePath)).size
@@ -72,6 +76,18 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
           {t('changeFolder')}
         </button>
       </div>
+
+      {conflicts.length > 0 && (
+        <div className="conflict-banner" role="status">
+          <span aria-hidden="true" className="conflict-banner-icon">⚠</span>
+          <span className="conflict-banner-text">
+            {t('conflictBanner').replace('{n}', String(conflicts.length))}
+          </span>
+          <button className="btn btn-sm" type="button" onClick={onReviewConflicts}>
+            {t('conflictReview')}
+          </button>
+        </div>
+      )}
 
       {visibleOps.length === 0 ? (
         <div className="empty">

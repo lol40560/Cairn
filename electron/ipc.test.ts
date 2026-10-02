@@ -987,14 +987,14 @@ describe('IPC bridge', () => {
 
     mocks.watchers[0]?.emit('op', { ...op, source: 'local' })
     sync?.emit('remoteOp', op)
-    sync?.emit('conflict', op, 'local content')
+    const conflict = {
+      author: 'bob', filePath: op.filePath, localContent: 'local content',
+      opHash: op.hash, remoteContent: 'remote content', timestamp: 4,
+    }
+    sync?.emit('conflictRecord', conflict)
 
     expect(sync?.announceLocalOp).toHaveBeenCalledWith({ ...op, source: 'local' })
     expect(mocks.window.webContents.send).toHaveBeenCalledWith('cairn:op', op)
-    expect(mocks.window.webContents.send).toHaveBeenCalledWith('cairn:conflict', {
-      localContent: 'local content',
-      op,
-      source: 'remote',
-    })
+    expect(mocks.window.webContents.send).toHaveBeenCalledWith('cairn:conflict', conflict)
   })
 })

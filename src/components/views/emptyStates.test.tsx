@@ -8,6 +8,8 @@ import { createRoomAndStartSharing, RoomView } from './RoomView'
 import { TrashView } from './TrashView'
 import { useAppStore, type AppState } from '@/store/appStore'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
+import { ConflictDialog } from '@/components/ConflictDialog'
+import { Dock } from '@/components/Dock'
 import { Onboarding } from '@/components/Onboarding'
 
 const initialState = useAppStore.getState()
@@ -39,6 +41,17 @@ beforeEach(() => resetState())
 afterEach(() => useAppStore.setState(initialState, true))
 
 describe('引导式空状态', () => {
+  const conflicts = [
+    {
+      author: 'alice', filePath: 'src/auth.ts', localContent: 'local\n',
+      opHash: 'a'.repeat(64), remoteContent: 'remote\n', timestamp: Date.now(),
+    },
+    {
+      author: 'bob', filePath: 'src/api.ts', localContent: 'left\n',
+      opHash: 'b'.repeat(64), remoteContent: 'right\n', timestamp: Date.now(),
+    },
+  ]
+
   it('Activity 未选项目时显示打开项目引导', () => {
     const html = renderToStaticMarkup(<ActivityView ops={[]} onChangeFolder={async () => undefined} />)
 
@@ -58,6 +71,41 @@ describe('引导式空状态', () => {
 
     expect(html).toContain("Everything&#x27;s in sync")
     expect(html).toContain("Nothing gets lost.")
+  })
+
+  it('Same-file edits 有冲突时显示双方内容和解决操作', () => {
+    const html = renderToStaticMarkup(<ConflictsView conflicts={conflicts} />)
+
+    expect(html).toContain('src/auth.ts')
+    expect(html).toContain('Keep mine')
+    expect(html).toContain('Keep theirs')
+  })
+
+  it('Changes 有冲突时显示处理横幅', () => {
+    const html = renderToStaticMarkup(<ActivityView conflicts={conflicts} ops={[]} onChangeFolder={async () => undefined} />)
+
+    expect(html).toContain('2 changes need your attention')
+    expect(html).toContain('Review')
+  })
+
+  it('ConflictDialog 显示两个冲突以及双方对比内容', () => {
+    const html = renderToStaticMarkup(
+      <ConflictDialog open conflicts={conflicts} onClose={() => undefined} onResolve={async () => undefined} />,
+    )
+
+    expect(html).toContain('src/auth.ts')
+    expect(html).toContain('src/api.ts')
+    expect(html).toContain('Keep mine')
+    expect(html).toContain('Keep theirs')
+  })
+
+  it('Dock 在有冲突时显示数量徽章', () => {
+    const html = renderToStaticMarkup(
+      <Dock activeView="activity" conflictCount={2} onOpenSettings={() => undefined} onViewChange={() => undefined} />,
+    )
+
+    expect(html).toContain('dock-badge-count')
+    expect(html).toContain('>2</span>')
   })
 
   it('Deleted files 空状态说明可恢复期限', () => {

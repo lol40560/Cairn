@@ -607,8 +607,8 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
     },
   )
   sync.on('remoteOp', (op: Op) => { sendToWindow('cairn:op', op); void activeShadow?.commitOp(op, project.root).catch((error) => console.error(`[cairn:shadow] ${error.message}`)) })
-  sync.on('conflict', (op: Op, localContent: string) =>
-    sendToWindow('cairn:conflict', { op, localContent, source: 'remote' }),
+  sync.on('conflictRecord', (conflict: ConflictRecord) =>
+    sendToWindow('cairn:conflict', conflict),
   )
   sync.on('peerJoined', broadcastPeers)
   sync.on('peerLeft', broadcastPeers)

@@ -148,7 +148,7 @@ export interface CairnApi {
   connectToAddress(input: LocalEndpoint & { roomCode: string }): Promise<IpcResult<void>>
   getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
-  onConflict(callback: (payload: { op: Op; localContent: string; source: 'remote' }) => void): () => void
+  onConflict(callback: (conflict: ConflictRecord) => void): () => void
   saveGithubConfig(config: { token?: string; owner: string; repo: string }): Promise<IpcResult<void>>
   getGithubConfig(): Promise<IpcResult<{ owner: string; repo: string; hasToken: boolean }>>
   clearGithubConfig(): Promise<IpcResult<void>>

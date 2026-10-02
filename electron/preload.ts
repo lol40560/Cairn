@@ -48,11 +48,8 @@ const cairn = {
       ipcRenderer.removeListener('cairn:peers', listener)
     }
   },
-  onConflict: (callback: (payload: { op: Op; localContent: string; source: 'remote' }) => void): (() => void) => {
-    const listener = (
-      _event: IpcRendererEvent,
-      payload: { op: Op; localContent: string; source: 'remote' },
-    ): void => callback(payload)
+  onConflict: (callback: (conflict: ConflictRecord) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, conflict: ConflictRecord): void => callback(conflict)
     ipcRenderer.on('cairn:conflict', listener)
 
     return () => {

@@ -39,7 +39,9 @@ export function Dock({ activeView, conflictCount, onOpenSettings, onViewChange }
           >
             <span className="dock-icon"><Icon size={16} strokeWidth={1.8} /></span>
             <span className="dock-label">{label}</span>
-            {view === 'conflicts' && conflictCount > 0 && <span className="dock-badge" />}
+            {view === 'conflicts' && conflictCount > 0 && (
+              <span aria-label={`${conflictCount} ${label}`} className="dock-badge-count">{conflictCount}</span>
+            )}
           </button>
           )
         })}
