@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Editor } from '@monaco-editor/react'
+import { FileCode2, Search } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FileTree } from '@/components/FileTree'
@@ -19,16 +20,19 @@ function getIpcData<T>(result: IpcResult<T>): T {
 interface FilesViewProps {
   /** 静态渲染测试可传入文件快照；运行时读取 store。 */
   files?: ProjectFileEntry[]
+  /** 静态渲染测试可传入当前选择；运行时读取 store。 */
+  selectedPath?: string
 }
 
 /** 项目文本文件浏览与编辑器；所有读取和保存均经受限 IPC。 */
-export function FilesView({ files: filesOverride }: FilesViewProps) {
+export function FilesView({ files: filesOverride, selectedPath: selectedPathOverride }: FilesViewProps) {
   const { t } = useTranslation()
   const folder = useAppStore((state) => state.folder)
   const fileFilter = useAppStore((state) => state.fileFilter)
   const storedProjectFiles = useAppStore((state) => state.projectFiles)
   const projectFiles = filesOverride ?? storedProjectFiles
-  const selectedFilePath = useAppStore((state) => state.selectedFilePath)
+  const storedSelectedFilePath = useAppStore((state) => state.selectedFilePath)
+  const selectedFilePath = selectedPathOverride ?? storedSelectedFilePath
   const setFileFilter = useAppStore((state) => state.setFileFilter)
   const setProjectFiles = useAppStore((state) => state.setProjectFiles)
   const setSelectedFilePath = useAppStore((state) => state.setSelectedFilePath)
@@ -150,79 +154,92 @@ export function FilesView({ files: filesOverride }: FilesViewProps) {
 
   return (
     <section className="view active files-view">
-      <div className="view-header files-view-header">
-        <h1 className="view-title">{t('files')}</h1>
-        <span className="view-spacer" />
-        <div className="files-status" aria-live="polite">
-          {saving ? <span className="files-status-saving">{t('filesSaving')}</span> : null}
-          {!saving && isDirty ? (
-            <span className="files-status-dirty">{t('filesUnsaved')} · {t('filesSaveShortcut')}</span>
-          ) : null}
-          {!saving && !isDirty && lastSaveError ? <span className="files-status-error">{lastSaveError}</span> : null}
-        </div>
-        <button className="btn btn-ghost btn-sm" disabled={!isDirty || saving} type="button" onClick={() => void handleSave()}>
-          {t('filesSave')}
-        </button>
-        <label className="files-search">
-          <span className="sr-only">{t('filesSearchPlaceholder')}</span>
-          <input
-            placeholder={t('filesSearchPlaceholder')}
-            type="search"
-            value={fileFilter}
-            onChange={(event) => setFileFilter(event.target.value)}
-          />
-        </label>
-      </div>
-      {projectFiles.length === 0 ? (
-        <div className="empty files-empty">
-          <p className="empty-title">{t('filesEmpty')}</p>
-        </div>
-      ) : (
-        <div className="files-layout">
-          <aside className="files-sidebar">
-            <FileTree
-              files={projectFiles}
-              filter={fileFilter}
-              selectedPath={selectedFilePath}
-              onSelect={selectFile}
+      <header className="files-header">
+        <h1 className="files-header-title">{t('files')}</h1>
+        {selectedFilePath ? (
+          <nav aria-label={selectedFilePath} className="files-breadcrumb">
+            {selectedFilePath.split('/').map((part, index, parts) => (
+              <span key={`${part}-${index}`}>
+                {part}
+                {index < parts.length - 1 ? <span aria-hidden="true" className="files-breadcrumb-sep">/</span> : null}
+              </span>
+            ))}
+          </nav>
+        ) : null}
+        <div className="files-header-actions">
+          <label className="files-search">
+            <Search aria-hidden="true" size={13} />
+            <span className="sr-only">{t('filesSearchPlaceholder')}</span>
+            <input
+              placeholder={t('filesSearchPlaceholder')}
+              type="search"
+              value={fileFilter}
+              onChange={(event) => setFileFilter(event.target.value)}
             />
-          </aside>
-          <div className="files-main">
-            {selectedFile ? (
-              <>
-                <div className="files-main-title" title={selectedFile.path}>{selectedFile.path}</div>
-                <div className="files-editor">
-                  <Editor
-                    height="100%"
-                    language={detectLanguage(selectedFile.path)}
-                    options={{
-                      automaticLayout: true,
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: 13,
-                      minimap: { enabled: false },
-                      readOnly: false,
-                      renderLineHighlight: 'all',
-                      scrollBeyondLastLine: false,
-                      scrollbar: { horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
-                    }}
-                    onChange={(value) => {
-                      const content = value ?? ''
-                      setEditorContent(content)
-                      setIsDirty(content !== savedContent)
-                    }}
-                    onMount={handleEditorMount}
-                    path={`inmemory://cairn/files/${encodeURIComponent(selectedFile.path)}`}
-                    theme="vs-dark"
-                    value={editorContent}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="files-main-empty">{t('fileSelectHint')}</div>
-            )}
+          </label>
+          <div className="files-status" aria-live="polite">
+            {saving ? <span className="files-status-saving">{t('filesSaving')}</span> : null}
+            {!saving && isDirty ? <span className="files-status-dirty">{t('filesUnsaved')}</span> : null}
+            {!saving && !isDirty && lastSaveError ? <span className="files-status-error">{lastSaveError}</span> : null}
           </div>
+          {selectedFilePath ? (
+            <button
+              className={`btn btn-sm ${isDirty ? 'btn-primary' : ''}`}
+              disabled={!isDirty || saving}
+              type="button"
+              onClick={() => void handleSave()}
+            >
+              {saving ? t('filesSaving') : t('filesSave')}
+              {!saving ? <span className="files-shortcut">⌘S</span> : null}
+            </button>
+          ) : null}
         </div>
-      )}
+      </header>
+      <div className="files-layout">
+        <aside className="files-sidebar">
+          <FileTree
+            files={projectFiles}
+            filter={fileFilter}
+            selectedPath={selectedFilePath}
+            onSelect={selectFile}
+          />
+        </aside>
+        <div className="files-main">
+          {selectedFile ? (
+            <div className="files-editor">
+              <Editor
+                height="100%"
+                language={detectLanguage(selectedFile.path)}
+                options={{
+                  automaticLayout: true,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 13,
+                  minimap: { enabled: false },
+                  readOnly: false,
+                  renderLineHighlight: 'all',
+                  scrollBeyondLastLine: false,
+                  scrollbar: { horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
+                }}
+                onChange={(value) => {
+                  const content = value ?? ''
+                  setEditorContent(content)
+                  setIsDirty(content !== savedContent)
+                }}
+                onMount={handleEditorMount}
+                path={`inmemory://cairn/files/${encodeURIComponent(selectedFile.path)}`}
+                theme="vs-dark"
+                value={editorContent}
+              />
+            </div>
+          ) : (
+            <div className="files-empty">
+              <div className="files-empty-icon"><FileCode2 aria-hidden="true" size={40} strokeWidth={1.2} /></div>
+              <div className="files-empty-title">{t('fileSelectHint')}</div>
+              <div className="files-empty-desc">{t('fileSelectHintDesc')}</div>
+            </div>
+          )}
+        </div>
+      </div>
       <ConfirmDialog
         cancelLabel={t('filesCancel')}
         confirmLabel={t('filesDiscard')}
