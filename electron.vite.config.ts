@@ -36,6 +36,9 @@ export default defineConfig({
       },
     },
     plugins: [react(), tailwindcss()],
+    optimizeDeps: {
+      exclude: ['monaco-editor'],
+    },
     build: {
       rollupOptions: {
         input: resolve(__dirname, 'index.html'),

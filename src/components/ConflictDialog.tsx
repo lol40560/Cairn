@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
 
-import { diffLines } from 'diff'
 import { X } from 'lucide-react'
 
+import { MonacoDiff } from '@/components/MonacoDiff'
 import { useTranslation, type TranslateFn } from '@/i18n'
+import { detectLanguage } from '@/lib/detect-language'
 import type { ConflictRecord } from '@/types/cairn'
 
 type Resolution = 'local' | 'remote' | 'merged'
@@ -20,11 +21,6 @@ interface ConflictCardProps {
   onResolve(opHash: string, resolution: Resolution): Promise<void>
 }
 
-interface DisplayLine {
-  text: string
-  type: 'same' | 'local-only' | 'remote-only'
-}
-
 function formatConflictRelativeTime(timestamp: number, t: TranslateFn): string {
   const minutes = Math.floor(Math.max(0, Date.now() - timestamp) / 60_000)
   if (minutes < 1) return t('justNow')
@@ -35,48 +31,8 @@ function formatConflictRelativeTime(timestamp: number, t: TranslateFn): string {
   return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
 }
 
-/** 用行级差异让双方内容在不引入编辑器的前提下易于比对。 */
-function highlightDiff(local: string, remote: string): {
-  localLines: DisplayLine[]
-  remoteLines: DisplayLine[]
-} {
-  const localLines: DisplayLine[] = []
-  const remoteLines: DisplayLine[] = []
-  for (const part of diffLines(local, remote)) {
-    const lines = part.value.split('\n')
-    if (lines.at(-1) === '') lines.pop()
-    if (part.removed) {
-      localLines.push(...lines.map((text) => ({ text, type: 'local-only' as const })))
-    } else if (part.added) {
-      remoteLines.push(...lines.map((text) => ({ text, type: 'remote-only' as const })))
-    } else {
-      const same = lines.map((text) => ({ text, type: 'same' as const }))
-      localLines.push(...same)
-      remoteLines.push(...same)
-    }
-  }
-  return { localLines, remoteLines }
-}
-
-function DiffColumn({ label, lines }: { label: string; lines: DisplayLine[] }) {
-  return (
-    <div className="conflict-column">
-      <div className="conflict-column-label">{label}</div>
-      <pre className="conflict-column-content">
-        {lines.map((line, index) => (
-          <span key={`${index}-${line.text}`} className={`conflict-line conflict-line-${line.type}`}>
-            {line.text || ' '}
-            {'\n'}
-          </span>
-        ))}
-      </pre>
-    </div>
-  )
-}
-
 export function ConflictCard({ conflict, onResolve }: ConflictCardProps) {
   const { t } = useTranslation()
-  const { localLines, remoteLines } = highlightDiff(conflict.localContent, conflict.remoteContent ?? '')
 
   return (
     <article className="conflict-card">
@@ -88,10 +44,15 @@ export function ConflictCard({ conflict, onResolve }: ConflictCardProps) {
           </p>
         </div>
       </header>
-      <div className="conflict-diff">
-        <DiffColumn label={t('conflictLocal')} lines={localLines} />
-        <DiffColumn label={t('conflictRemote').replace('{author}', conflict.author)} lines={remoteLines} />
-      </div>
+      <MonacoDiff
+        height="320px"
+        language={detectLanguage(conflict.filePath)}
+        modelId={conflict.opHash}
+        modified={conflict.localContent}
+        modifiedLabel={t('conflictLocal')}
+        original={conflict.remoteContent ?? ''}
+        originalLabel={t('conflictRemote').replace('{author}', conflict.author)}
+      />
       <div className="conflict-actions">
         <button className="btn btn-ghost btn-sm" type="button" onClick={() => void onResolve(conflict.opHash, 'local')}>
           {t('conflictKeepMine')}

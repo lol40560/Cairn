@@ -2,6 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@monaco-editor/react', () => ({
+  DiffEditor: ({ original, modified }: { original: string; modified: string }) => (
+    <div data-testid="monaco-diff">{original}|{modified}</div>
+  ),
+  Editor: ({ value }: { value: string }) => <div data-testid="monaco-editor">{value}</div>,
+}))
+
 import { ConflictsView } from './ConflictsView'
 import { ActivityView } from './ActivityView'
 import { createRoomAndStartSharing, RoomView } from './RoomView'
@@ -10,6 +17,7 @@ import { useAppStore, type AppState } from '@/store/appStore'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
 import { ConflictDialog } from '@/components/ConflictDialog'
 import { Dock } from '@/components/Dock'
+import { OpDiffDialog } from '@/components/OpDiffDialog'
 import { Onboarding } from '@/components/Onboarding'
 
 const initialState = useAppStore.getState()
@@ -97,6 +105,19 @@ describe('引导式空状态', () => {
     expect(html).toContain('src/api.ts')
     expect(html).toContain('Keep mine')
     expect(html).toContain('Keep theirs')
+    expect(html).toContain('remote')
+    expect(html).toContain('local')
+  })
+
+  it('OpDiffDialog 仅在打开时显示操作的原始 diff', () => {
+    const op = {
+      author: 'alice', diff: '@@ -1 +1 @@\n-old\n+new\n', filePath: 'src/auth.ts',
+      hash: 'a'.repeat(64), id: 'op-1', parentHashes: [], timestamp: Date.now(),
+    }
+    expect(renderToStaticMarkup(<OpDiffDialog open={false} op={op} onClose={() => undefined} />)).toBe('')
+    const html = renderToStaticMarkup(<OpDiffDialog open op={op} onClose={() => undefined} />)
+    expect(html).toContain('src/auth.ts')
+    expect(html).toContain('+new')
   })
 
   it('Dock 在有冲突时显示数量徽章', () => {

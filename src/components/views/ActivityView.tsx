@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 
+import { OpDiffDialog } from '@/components/OpDiffDialog'
 import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
 import { formatLineCount } from '@/lib/lineCount'
@@ -53,6 +54,7 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   const storedConflicts = useAppStore((state) => state.conflicts)
   const conflicts = conflictsOverride ?? storedConflicts
   const [remoteOnly, setRemoteOnly] = useState(false)
+  const [selectedOp, setSelectedOp] = useState<Op | undefined>()
   const visibleOps = remoteOnly ? ops.filter((op) => op.source === 'remote') : ops
   const fileCount = new Set(ops.map((op) => op.filePath)).size
 
@@ -118,7 +120,20 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
             const dotClass = op.source === 'remote' ? 'remote' : ''
 
             return (
-              <article key={op.hash} className="op-row">
+              <article
+                key={op.hash}
+                aria-label={op.filePath}
+                className="op-row op-row-clickable"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedOp(op)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    setSelectedOp(op)
+                  }
+                }}
+              >
                 <span aria-label={op.source === 'remote' ? 'Remote change' : 'Local change'} className={`op-dot ${dotClass}`} />
                 <time className="op-time">{formatTime(op.timestamp, locale)}</time>
                 <div className="op-file">
@@ -152,6 +167,7 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
           })}
         </div>
       )}
+      <OpDiffDialog open={selectedOp !== undefined} op={selectedOp} onClose={() => setSelectedOp(undefined)} />
     </section>
   )
 }
