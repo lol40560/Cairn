@@ -75,6 +75,7 @@ export function RoomView({
 }: RoomViewProps) {
   const { t } = useTranslation()
   const [joinCode, setJoinCode] = useState('')
+  const [directAddressInput, setDirectAddressInput] = useState('')
   const [copied, setCopied] = useState(false)
   const [exportingSnapshot, setExportingSnapshot] = useState(false)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
@@ -217,18 +218,26 @@ export function RoomView({
   }, [downloadStatus, pendingAutoDownload, seeders, setPendingAutoDownload, setShowDownloadPrompt])
 
   const handleJoin = async (): Promise<void> => {
-    const value = joinCode.trim()
-    if (/^[A-Z0-9]{6}$/i.test(value)) {
-      await onJoinRoom(value.toUpperCase())
-      // App 的加入回调会在成功时同步写入房间状态；失败时不启动下载等待。
-      if (useAppStore.getState().roomCode === value.toUpperCase()) {
-        setPendingAutoDownload(true)
-      }
+    const roomCodeInput = joinCode.trim().toUpperCase()
+    if (!/^[A-Z0-9]{6}$/i.test(roomCodeInput)) {
+      setToast({ message: t('wrongRoom'), tone: 'error' })
+      return
+    }
+
+    // 先进入房间，确保 mDNS 与直连都使用同一份邀请码认证。
+    await onJoinRoom(roomCodeInput)
+    if (useAppStore.getState().roomCode !== roomCodeInput) {
+      return
+    }
+
+    const directAddressValue = directAddressInput.trim()
+    if (!directAddressValue) {
+      setPendingAutoDownload(true)
       setJoinCode('')
       return
     }
 
-    const address = value.match(/^([\d.]+):(\d+)$/)
+    const address = directAddressValue.match(/^([\d.]+):(\d+)$/)
     if (!address) {
       setToast({ message: t('invalidRoomCodeOrAddress'), tone: 'error' })
       return
@@ -237,14 +246,16 @@ export function RoomView({
     const host = address[1]
     const port = Number.parseInt(address[2]!, 10)
     try {
-      const result = await window.cairn.connectToAddress({ host, port })
+      const result = await window.cairn.connectToAddress({ host, port, roomCode: roomCodeInput })
       if (!result.ok) {
-        setToast(normalizeError(result.error, t))
+        setToast({ message: t('authFailed'), tone: 'error' })
         return
       }
       setDirectAddress(`${host}:${port}`)
       setIsHost(false)
       setJoinCode('')
+      setDirectAddressInput('')
+      setPendingAutoDownload(true)
     } catch (error) {
       console.error('[cairn] 无法建立直接连接', error)
       setToast(normalizeError(error, t))
@@ -499,11 +510,18 @@ export function RoomView({
               {t('createRoom')}
             </button>
             <input
-              aria-label={t('roomCode')}
+              aria-label={t('inviteCodeLabel')}
               className="input room-input"
-              placeholder={t('roomCodeOrAddress')}
+              placeholder={t('inviteCodeLabel')}
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value)}
+            />
+            <input
+              aria-label={t('directAddressLabel')}
+              className="input room-input"
+              placeholder={t('directAddressPlaceholder')}
+              value={directAddressInput}
+              onChange={(event) => setDirectAddressInput(event.target.value)}
             />
             <button className="btn" disabled={joinCode.trim() === ''} type="button" onClick={() => void handleJoin()}>
               {t('joinRoom')}

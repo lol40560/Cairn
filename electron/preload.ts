@@ -35,7 +35,7 @@ const cairn = {
   listPeers: (): Promise<IpcResult<PeerInfo[]>> => invoke('cairn:listPeers'),
   getLocalEndpoint: (): Promise<IpcResult<{ host: string; port: number } | undefined>> =>
     invoke('cairn:getLocalEndpoint'),
-  connectToAddress: (input: { host: string; port: number }): Promise<IpcResult<void>> =>
+  connectToAddress: (input: { host: string; port: number; roomCode: string }): Promise<IpcResult<void>> =>
     invoke('cairn:connectToAddress', input),
   getDiscoveryStatus: (): Promise<IpcResult<DiscoveryStatus>> =>
     invoke('cairn:getDiscoveryStatus'),

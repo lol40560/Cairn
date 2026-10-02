@@ -1,3 +1,5 @@
+import { createHash, createHmac } from 'node:crypto'
+
 import type { Op } from '../oplog'
 
 export interface PeerInfo {
@@ -14,8 +16,28 @@ export interface SeederInfo {
   size: number
 }
 
+/** 用于公开发现的短房间标识，绝不暴露邀请码本身。 */
+export function deriveRoomHash(roomCode: string): string {
+  return createHash('sha256').update(roomCode).digest('hex').slice(0, 16)
+}
+
+/** 仅在本地用于认证挑战响应的密钥，不能写入网络消息或日志。 */
+export function deriveAuthKey(roomCode: string): Buffer {
+  return createHash('sha256').update(`cairn-auth:${roomCode}`).digest()
+}
+
+/** 计算认证挑战的 HMAC，供传输层和单元测试共享。 */
+export function createAuthHmac(roomCode: string, nonce: string): string {
+  return createHmac('sha256', deriveAuthKey(roomCode)).update(nonce).digest('hex')
+}
+
 export type SyncMessage =
-  | { type: 'hello'; peerId: string; roomCode: string; version: 1 }
+  | { type: 'hello'; peerId: string; version: 1 }
+  | { type: 'auth-request'; roomHash: string; peerId: string }
+  | { type: 'auth-challenge'; nonce: string }
+  | { type: 'auth-response'; hmac: string }
+  | { type: 'auth-ok' }
+  | { type: 'auth-fail'; reason: string }
   | { type: 'have'; hash: string }
   | { type: 'want'; hash: string }
   | { type: 'data'; op: Op }
@@ -72,9 +94,18 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'hello':
       return (
         typeof candidate.peerId === 'string' &&
-        typeof candidate.roomCode === 'string' &&
         candidate.version === 1
       )
+    case 'auth-request':
+      return typeof candidate.peerId === 'string' && typeof candidate.roomHash === 'string'
+    case 'auth-challenge':
+      return typeof candidate.nonce === 'string'
+    case 'auth-response':
+      return typeof candidate.hmac === 'string'
+    case 'auth-ok':
+      return true
+    case 'auth-fail':
+      return typeof candidate.reason === 'string'
     case 'have':
     case 'want':
       return typeof candidate.hash === 'string'

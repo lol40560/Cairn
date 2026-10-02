@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../oplog'
-import { decodeMessages, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
+import { createAuthHmac, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
 
@@ -22,6 +22,31 @@ function waitForEvent<T extends unknown[]>(
   return new Promise((resolve) => {
     emitter.once(event, (...args: T) => resolve(args))
   })
+}
+
+/** 让裸 TCP 客户端完成与 Transport 相同的认证握手，供边界测试使用。 */
+async function authenticateRawClient(
+  receiver: Transport,
+  client: Socket,
+  peerId = 'sender',
+  roomCode = '',
+): Promise<void> {
+  let buffer = ''
+  client.on('data', (chunk: Buffer) => {
+    const decoded = decodeMessages(buffer + chunk.toString('utf8'))
+    buffer = decoded.rest
+    for (const message of decoded.messages) {
+      if (message.type === 'auth-challenge') {
+        client.write(encodeMessage({ type: 'auth-response', hmac: createAuthHmac(roomCode, message.nonce) }))
+      }
+      if (message.type === 'auth-ok') {
+        client.write(encodeMessage({ type: 'hello', peerId, version: 1 }))
+      }
+    }
+  })
+  const connected = waitForEvent<[string]>(receiver, 'connect')
+  client.write(encodeMessage({ type: 'auth-request', peerId, roomHash: deriveRoomHash(roomCode) }))
+  await connected
 }
 
 async function createTestOplog(): Promise<{ oplog: Oplog; root: string }> {
@@ -112,6 +137,15 @@ describe('sync protocol', () => {
       rest: '',
     })
   })
+
+  it('为同一邀请码稳定派生公开 hash 与 32 字节认证密钥', () => {
+    expect(deriveRoomHash('ABCDEF')).toHaveLength(16)
+    expect(deriveRoomHash('ABCDEF')).toBe(deriveRoomHash('ABCDEF'))
+    expect(deriveRoomHash('ABCDEF')).not.toBe(deriveRoomHash('GHIJKL'))
+    expect(deriveAuthKey('ABCDEF')).toHaveLength(32)
+    expect(createAuthHmac('ABCDEF', 'nonce')).toMatch(/^[a-f0-9]{64}$/)
+    expect(createAuthHmac('ABCDEF', 'nonce')).not.toBe(createAuthHmac('GHIJKL', 'nonce'))
+  })
 })
 
 describe('transport', () => {
@@ -196,8 +230,7 @@ describe('transport', () => {
       client.once('connect', () => resolve())
       client.connect(port, '127.0.0.1')
     })
-    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
-    await waitForEvent<[string]>(receiver, 'connect')
+    await authenticateRawClient(receiver, client)
     const received = waitForEvent<[string, SyncMessage]>(receiver, 'message')
     const message = encodeMessage({
       type: 'seeder-available',
@@ -229,8 +262,7 @@ describe('transport', () => {
       client.once('connect', () => resolve())
       client.connect(port, '127.0.0.1')
     })
-    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
-    await waitForEvent<[string]>(receiver, 'connect')
+    await authenticateRawClient(receiver, client)
     const failure = waitForEvent<[Error]>(receiver, 'error')
     client.write(`{"type":"have","hash":"${'a'.repeat(MAX_SYNC_MESSAGE_BYTES + 1)}"}\n`)
 
@@ -255,8 +287,7 @@ describe('transport', () => {
       client.once('connect', resolve)
       client.connect(port, '127.0.0.1')
     })
-    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
-    await waitForEvent<[string]>(receiver, 'connect')
+    await authenticateRawClient(receiver, client)
     client.write(encodeMessage({ type: 'ping' }))
 
     await expect(pong).resolves.toBeUndefined()
@@ -273,11 +304,70 @@ describe('transport', () => {
       client.once('connect', resolve)
       client.connect(port, '127.0.0.1')
     })
-    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
-    await waitForEvent<[string]>(receiver, 'connect')
+    await authenticateRawClient(receiver, client)
     const disconnected = waitForEvent<[string]>(receiver, 'disconnect')
 
     await expect(disconnected).resolves.toEqual(['sender'])
+    client.destroy()
+  })
+
+  it('错误邀请码会被认证层拒绝', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', resolve)
+      client.connect(port, '127.0.0.1')
+    })
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('GHIJKL') }))
+
+    expect((await failed)[0].message).toBe('wrong-room')
+    client.destroy()
+  })
+
+  it('无效 HMAC 会被认证层拒绝', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    client.on('data', (chunk: Buffer) => {
+      const decoded = decodeMessages(chunk.toString('utf8'))
+      if (decoded.messages.some((message) => message.type === 'auth-challenge')) {
+        client.write(encodeMessage({ type: 'auth-response', hmac: '0'.repeat(64) }))
+      }
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', resolve)
+      client.connect(port, '127.0.0.1')
+    })
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('ABCDEF') }))
+
+    expect((await failed)[0].message).toBe('认证失败')
+    client.destroy()
+  })
+
+  it('未在有效期内响应 challenge 会被拒绝', async () => {
+    const receiver = new Transport('receiver', { authTimeoutMs: 5 })
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', resolve)
+      client.connect(port, '127.0.0.1')
+    })
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('ABCDEF') }))
+
+    expect((await failed)[0].message).toBe('认证超时')
     client.destroy()
   })
 })
@@ -318,6 +408,33 @@ describe('Sync', () => {
     await expect(sync.connectToAddress(' ', 49500)).rejects.toThrow('直连地址不能为空')
     await expect(sync.connectToAddress('192.168.1.10', 0)).rejects.toThrow('直连端口必须在 1 到 65535 之间')
     await expect(sync.connectToAddress('192.168.1.10', 65_536)).rejects.toThrow('直连端口必须在 1 到 65535 之间')
+  })
+
+  it('不同邀请码的 Sync 无法通过直连建立连接', async () => {
+    const first = await createTestOplog()
+    const second = await createTestOplog()
+    const firstTransport = new Transport('first')
+    const secondTransport = new Transport('second')
+    transports.push(firstTransport, secondTransport)
+    const firstSync = new Sync(
+      { oplog: first.oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'first', transport: firstTransport },
+    )
+    const secondSync = new Sync(
+      { oplog: second.oplog, roomCode: 'GHIJKL' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'second', transport: secondTransport },
+    )
+    firstSync.on('error', () => undefined)
+    secondSync.on('error', () => undefined)
+    await firstSync.start({ discovery: false })
+    await secondSync.start({ discovery: false })
+
+    await expect(firstSync.connectToAddress('127.0.0.1', secondSync.getLocalPort()!, 'ABCDEF')).rejects.toThrow('wrong-room')
+    expect(firstSync.listPeers()).toEqual([])
+    expect(secondSync.listPeers()).toEqual([])
+
+    await firstSync.stop()
+    await secondSync.stop()
   })
 
   it('路由快照消息并维护远端 seeder 列表', async () => {

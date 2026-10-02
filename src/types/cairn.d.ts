@@ -131,7 +131,7 @@ export interface CairnApi {
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
   getLocalEndpoint(): Promise<IpcResult<LocalEndpoint | undefined>>
-  connectToAddress(input: LocalEndpoint): Promise<IpcResult<void>>
+  connectToAddress(input: LocalEndpoint & { roomCode: string }): Promise<IpcResult<void>>
   getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
   onConflict(callback: (payload: { op: Op; localContent: string; source: 'remote' }) => void): () => void

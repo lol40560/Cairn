@@ -23,6 +23,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
   const [step, setStep] = useState<OnboardingStep>('welcome')
   const [selectedFolder, setSelectedFolder] = useState('')
   const [inviteInput, setInviteInput] = useState('')
+  const [directAddressInput, setDirectAddressInput] = useState('')
   const [error, setError] = useState<NormalizedError | null>(null)
   const [busy, setBusy] = useState(false)
   const roomCode = useAppStore((state) => state.roomCode)
@@ -136,8 +137,12 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
       return
     }
 
-    const directAddress = parseDirectAddress(value)
-    if (!isInviteCode(value) && !directAddress) {
+    if (!isInviteCode(value)) {
+      setMessage(t('onboardingInvalidCode'))
+      return
+    }
+    const directAddress = directAddressInput.trim() ? parseDirectAddress(directAddressInput.trim()) : undefined
+    if (directAddressInput.trim() && !directAddress) {
       setMessage(t('onboardingInvalidCode'))
       return
     }
@@ -148,22 +153,22 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
       // Sync 依赖活动项目，因此必须先启动监控再加入团队。
       if (!await startWatchingFolder()) return
 
-      if (isInviteCode(value)) {
-        const result = await window.cairn.joinRoom(value.toUpperCase())
-        if (!result.ok) {
-          setError(normalizeError(result.error, t))
+      const roomCodeValue = value.toUpperCase()
+      const result = await window.cairn.joinRoom(roomCodeValue)
+      if (!result.ok) {
+        setError(normalizeError(result.error, t))
+        return
+      }
+      setRoomCode(roomCodeValue)
+      if (directAddress) {
+        const directResult = await window.cairn.connectToAddress({ ...directAddress, roomCode: roomCodeValue })
+        if (!directResult.ok) {
+          setError({ category: 'network', message: t('authFailed'), raw: directResult.error.raw })
           return
         }
-        setRoomCode(value.toUpperCase())
-        setDirectAddress(undefined)
+        setDirectAddress(`${directAddress.host}:${directAddress.port}`)
       } else {
-        const result = await window.cairn.connectToAddress(directAddress!)
-        if (!result.ok) {
-          setError(normalizeError(result.error, t))
-          return
-        }
-        setRoomCode('')
-        setDirectAddress(`${directAddress!.host}:${directAddress!.port}`)
+        setDirectAddress(undefined)
       }
 
       setIsHost(false)
@@ -240,8 +245,12 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
             <h1 id="onboarding-title" className="onboarding-title">{t('onboardingJoinTitle')}</h1>
             <p className="onboarding-subtitle">{t('onboardingJoinSubtitle')}</p>
             <label className="onboarding-field">
-              <span>{t('roomCodeOrAddress')}</span>
-              <input className="onboarding-input" placeholder={t('roomCodeOrAddress')} value={inviteInput} onChange={(event) => setInviteInput(event.target.value)} />
+              <span>{t('inviteCodeLabel')}</span>
+              <input className="onboarding-input" placeholder={t('inviteCodeLabel')} value={inviteInput} onChange={(event) => setInviteInput(event.target.value)} />
+            </label>
+            <label className="onboarding-field">
+              <span>{t('directAddressLabel')}</span>
+              <input className="onboarding-input" placeholder={t('directAddressPlaceholder')} value={directAddressInput} onChange={(event) => setDirectAddressInput(event.target.value)} />
             </label>
             <div className="onboarding-folder-row">
               <div>

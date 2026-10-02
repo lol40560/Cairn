@@ -3,7 +3,7 @@ import { isIP } from 'node:net'
 
 import Bonjour from 'bonjour-service'
 
-import type { PeerInfo } from './protocol'
+import { deriveRoomHash, type PeerInfo } from './protocol'
 
 interface BonjourService {
   addresses?: string[]
@@ -58,11 +58,12 @@ export class Discovery extends EventEmitter {
 
   publish(options: { roomCode: string; peerId: string; port: number }): void {
     this.stopPublish()
-    const publishedName = `cairn-${options.roomCode}-${options.peerId}`
+    const roomHash = deriveRoomHash(options.roomCode)
+    const publishedName = `cairn-${roomHash}-${options.peerId}`
     console.info('[cairn:discovery] mDNS publish requested', {
       peerId: options.peerId,
       port: options.port,
-      roomCode: options.roomCode,
+      roomHash,
     })
 
     try {
@@ -73,7 +74,7 @@ export class Discovery extends EventEmitter {
         type: 'cairn',
         txt: {
           peerId: options.peerId,
-          roomCode: options.roomCode,
+          roomHash,
           version: '1',
         },
       })
@@ -85,7 +86,7 @@ export class Discovery extends EventEmitter {
         peerId: options.peerId,
         port: options.port,
         publishedName,
-        roomCode: options.roomCode,
+        roomHash,
         service,
       })
     } catch (error) {
@@ -95,7 +96,7 @@ export class Discovery extends EventEmitter {
         error,
         peerId: options.peerId,
         port: options.port,
-        roomCode: options.roomCode,
+        roomHash,
       })
       throw error
     }
@@ -110,7 +111,8 @@ export class Discovery extends EventEmitter {
 
   startBrowse(roomCode: string, peerId = ''): void {
     this.stopBrowse()
-    console.info('[cairn:discovery] mDNS browse requested', { peerId, roomCode })
+    const roomHash = deriveRoomHash(roomCode)
+    console.info('[cairn:discovery] mDNS browse requested', { peerId, roomHash })
 
     let browser: BonjourBrowser
     try {
@@ -118,18 +120,18 @@ export class Discovery extends EventEmitter {
       this.browser = browser
       this.lastError = undefined
       this.updateDiagnosticStatus()
-      console.info('[cairn:discovery] mDNS browse started', { peerId, roomCode })
+      console.info('[cairn:discovery] mDNS browse started', { peerId, roomHash })
     } catch (error) {
       this.lastError = error instanceof Error ? (error.stack ?? error.message) : String(error)
       this.updateDiagnosticStatus()
-      console.error('[cairn:discovery] mDNS browse failed', { error, peerId, roomCode })
+      console.error('[cairn:discovery] mDNS browse failed', { error, peerId, roomHash })
       throw error
     }
 
     browser.on('error', (error: Error) => {
       this.lastError = error.stack ?? error.message
       this.updateDiagnosticStatus()
-      console.error('[cairn:discovery] mDNS browse error', { error, peerId, roomCode })
+      console.error('[cairn:discovery] mDNS browse error', { error, peerId, roomHash })
     })
 
     browser.on('up', (service: BonjourService) => {
@@ -140,7 +142,7 @@ export class Discovery extends EventEmitter {
     })
     browser.on('down', (service: BonjourService) => {
       const remotePeerId = service.txt?.peerId
-      if (service.txt?.roomCode === roomCode && remotePeerId && remotePeerId !== peerId) {
+      if (service.txt?.roomHash === roomHash && remotePeerId && remotePeerId !== peerId) {
         this.emit('peerLeft', remotePeerId)
       }
     })
@@ -177,7 +179,7 @@ export class Discovery extends EventEmitter {
     ownPeerId: string,
   ): PeerInfo | undefined {
     const peerId = service.txt?.peerId
-    if (service.txt?.roomCode !== roomCode || !peerId || peerId === ownPeerId) {
+    if (service.txt?.roomHash !== deriveRoomHash(roomCode) || !peerId || peerId === ownPeerId) {
       return undefined
     }
 

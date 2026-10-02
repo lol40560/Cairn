@@ -144,7 +144,7 @@ export class Sync extends EventEmitter {
   }
 
   /** 绕过 mDNS 直接连到已知的 TCP 端点，并等待 hello 握手完成。 */
-  async connectToAddress(host: string, port: number): Promise<void> {
+  async connectToAddress(host: string, port: number, roomCode = this.options.roomCode): Promise<void> {
     const normalizedHost = host.trim()
     if (!normalizedHost) {
       throw new Error('直连地址不能为空')
@@ -154,6 +154,9 @@ export class Sync extends EventEmitter {
     }
     if (!this.started) {
       throw new Error('同步服务尚未启动')
+    }
+    if (roomCode !== this.options.roomCode) {
+      throw new Error('直连邀请码与当前房间不一致')
     }
 
     this.pendingDirectEndpoint = { host: normalizedHost, port }
@@ -166,12 +169,18 @@ export class Sync extends EventEmitter {
         cleanup()
         resolve()
       }
+      const onAuthFailed = (error: Error): void => {
+        cleanup()
+        reject(error)
+      }
       const cleanup = (): void => {
         clearTimeout(timeout)
         this.off('connected', onConnected)
+        this.off('authFailed', onAuthFailed)
       }
 
       this.once('connected', onConnected)
+      this.once('authFailed', onAuthFailed)
       void this.transport.connect(normalizedHost, port).catch((error: unknown) => {
         cleanup()
         reject(error)
@@ -219,6 +228,7 @@ export class Sync extends EventEmitter {
     this.discovery.on('error', this.handleError)
     this.transport.on('connect', this.handleConnect)
     this.transport.on('disconnect', this.handleDisconnect)
+    this.transport.on('authFailed', this.handleAuthFailed)
     this.transport.on('message', this.handleMessage)
     this.transport.on('error', this.handleError)
   }
@@ -229,6 +239,7 @@ export class Sync extends EventEmitter {
     this.discovery.off('error', this.handleError)
     this.transport.off('connect', this.handleConnect)
     this.transport.off('disconnect', this.handleDisconnect)
+    this.transport.off('authFailed', this.handleAuthFailed)
     this.transport.off('message', this.handleMessage)
     this.transport.off('error', this.handleError)
   }
@@ -292,6 +303,11 @@ export class Sync extends EventEmitter {
   private readonly handleDisconnect = (peerId: string): void => {
     this.handlePeerLeft(peerId)
     this.downloader?.cancel(new Error('连接中断，请重试。'))
+  }
+
+  private readonly handleAuthFailed = (error: Error): void => {
+    this.emit('authFailed', error)
+    this.emitError(error)
   }
 
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {

@@ -507,12 +507,12 @@ describe('IPC bridge', () => {
 
     const projectRoot = await createDirectory()
     await main.startWatching(projectRoot)
-    await main.createRoom()
+    const roomCode = await main.createRoom()
     main.registerIpcHandlers()
     const handler = mocks.handlers.get('cairn:connectToAddress')
 
-    await expect(handler?.({}, { host: '192.168.1.10', port: 49500 })).resolves.toEqual({ data: undefined, ok: true })
-    expect(mocks.syncs[0]?.connectToAddress).toHaveBeenCalledWith('192.168.1.10', 49500)
+    await expect(handler?.({}, { host: '192.168.1.10', port: 49500, roomCode })).resolves.toEqual({ data: undefined, ok: true })
+    expect(mocks.syncs[0]?.connectToAddress).toHaveBeenCalledWith('192.168.1.10', 49500, roomCode)
     expect(main.getLocalEndpoint()).toMatchObject({ port: 49500 })
   })
 

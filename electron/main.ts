@@ -681,17 +681,20 @@ export function getLocalEndpoint(): { host: string; port: number } | undefined {
 }
 
 /** 在没有 mDNS 发现结果时，直接建立到队友端点的 TCP 连接。 */
-export async function connectToAddress(input: { host: string; port: number }): Promise<void> {
+export async function connectToAddress(input: { host: string; port: number; roomCode: string }): Promise<void> {
   if (!activeProject) {
     throw new Error('请先选择并开始监控一个项目')
   }
+  validateRoomCode(input.roomCode)
 
   if (!activeRoom) {
     // 直连会话仅启动 TCP 传输，不发布或浏览 mDNS 服务。
-    await startRoom('DIRECT', false)
+    await startRoom(input.roomCode, false)
+  } else if (activeRoom.roomCode !== input.roomCode) {
+    throw new Error('直连邀请码与当前房间不一致')
   }
 
-  await activeRoom!.sync.connectToAddress(input.host, input.port)
+  await activeRoom!.sync.connectToAddress(input.host, input.port, input.roomCode)
   broadcastPeers()
 }
 
