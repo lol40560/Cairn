@@ -11,6 +11,8 @@ permissions:
 
 jobs:
   build-mac:
+    env:
+      NODE_OPTIONS: --max-old-space-size=6144
     strategy:
       fail-fast: false
       matrix:
@@ -45,6 +47,8 @@ jobs:
           if-no-files-found: error
 
   build-win:
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
