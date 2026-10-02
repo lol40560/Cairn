@@ -11,6 +11,20 @@ permissions:
 
 jobs:
   build-mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            artifact_path: |
+              release/*-arm64.dmg
+              release/*-arm64-mac.zip
+          - arch: x64
+            artifact_path: |
+              release/*.dmg
+              release/*-mac.zip
+              !release/*-arm64.dmg
+              !release/*-arm64-mac.zip
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,16 +33,16 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - run: npm run dist:mac
+      - run: npm run build
+      - run: npx electron-builder --mac --${{ matrix.arch }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-artifacts
-          path: |
-            release/*.dmg
-            release/*.zip
+          name: mac-${{ matrix.arch }}-artifacts
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
 
   build-win:
     runs-on: windows-latest
@@ -56,7 +70,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: mac-artifacts
+          pattern: mac-*-artifacts
+          merge-multiple: true
           path: artifacts/mac
       - uses: actions/download-artifact@v4
         with:
