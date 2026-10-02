@@ -129,6 +129,7 @@
     "diff": "^8.0.2",
     "isomorphic-git": "^1.42.2",
     "lucide-react": "^1.47.0",
+    "node-diff3": "^3.2.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "tailwind-merge": "^3.3.1",

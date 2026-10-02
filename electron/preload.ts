@@ -8,6 +8,7 @@ import type { DownloadProgress, DownloadResult } from './core/sync/downloader'
 import type { DiscoveryStatus } from './core/sync/discovery'
 import type { TrashEntry } from './core/trash'
 import type { ProjectEntry } from './core/projects'
+import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -108,6 +109,12 @@ const cairn = {
   emptyTrash: (): Promise<IpcResult<void>> => invoke('cairn:emptyTrash'),
   getTrashRetentionDays: (): Promise<IpcResult<number>> => invoke('cairn:getTrashRetentionDays'),
   setTrashRetentionDays: (days: number): Promise<IpcResult<void>> => invoke('cairn:setTrashRetentionDays', days),
+  listConflicts: (): Promise<IpcResult<ConflictRecord[]>> => invoke('cairn:listConflicts'),
+  getConflict: (opHash: string): Promise<IpcResult<ConflictRecord | undefined>> =>
+    invoke('cairn:getConflict', opHash),
+  resolveConflict: (opHash: string, resolution: ConflictResolution, content?: string): Promise<IpcResult<void>> =>
+    invoke('cairn:resolveConflict', opHash, resolution, content),
+  deleteConflict: (opHash: string): Promise<IpcResult<void>> => invoke('cairn:deleteConflict', opHash),
 }
 
 contextBridge.exposeInMainWorld('cairn', cairn)

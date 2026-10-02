@@ -444,11 +444,13 @@ describe('IPC bridge', () => {
       'cairn:connectToAddress',
       'cairn:copyToClipboard',
       'cairn:createRoom',
+      'cairn:deleteConflict',
       'cairn:downloadProject',
       'cairn:emptyTrash',
       'cairn:exportPR',
       'cairn:exportSnapshot',
       'cairn:getActiveProject',
+      'cairn:getConflict',
       'cairn:getDefaultDownloadDir',
       'cairn:getDiscoveryStatus',
       'cairn:getGithubConfig',
@@ -459,6 +461,7 @@ describe('IPC bridge', () => {
       'cairn:getTrashRetentionDays',
       'cairn:joinRoom',
       'cairn:leaveRoom',
+      'cairn:listConflicts',
       'cairn:listPeers',
       'cairn:listProjects',
       'cairn:listRecentOps',
@@ -470,6 +473,7 @@ describe('IPC bridge', () => {
       'cairn:removeProject',
       'cairn:resetGithubConfig',
       'cairn:resetOnboarding',
+      'cairn:resolveConflict',
       'cairn:restoreFromTrash',
       'cairn:saveGithubConfig',
       'cairn:selectDownloadFolder',
@@ -732,6 +736,29 @@ describe('IPC bridge', () => {
     await expect(main.setTrashRetentionDays(366)).rejects.toThrow(/1\.\.365/)
   })
 
+  it('冲突 IPC 可列出、读取、解决和删除记录', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await main.startWatching(root)
+    const { ConflictsManager } = await import('./core/conflicts')
+    const manager = new ConflictsManager(root)
+    const opHash = 'd'.repeat(64)
+    await manager.save({
+      author: 'alice', filePath: 'src/file.ts', localContent: 'local',
+      opHash, remoteContent: 'remote', timestamp: Date.now(),
+    })
+    main.registerIpcHandlers()
+    const list = mocks.handlers.get('cairn:listConflicts')
+    const get = mocks.handlers.get('cairn:getConflict')
+    const resolve = mocks.handlers.get('cairn:resolveConflict')
+    const remove = mocks.handlers.get('cairn:deleteConflict')
+
+    await expect(list?.({})).resolves.toMatchObject({ ok: true, data: [expect.objectContaining({ opHash })] })
+    await expect(get?.({}, opHash)).resolves.toMatchObject({ ok: true, data: { opHash } })
+    await expect(resolve?.({}, opHash, 'local')).resolves.toEqual({ ok: true, data: undefined })
+    await expect(remove?.({}, opHash)).resolves.toEqual({ ok: true, data: undefined })
+  })
+
   it('watcher op 事件通过指定频道发送到窗口', async () => {
     const main = await loadMain()
     const root = await createDirectory()
@@ -791,11 +818,13 @@ describe('IPC bridge', () => {
       'connectToAddress',
       'copyToClipboard',
       'createRoom',
+      'deleteConflict',
       'downloadProject',
       'emptyTrash',
       'exportPR',
       'exportSnapshot',
       'getActiveProject',
+      'getConflict',
       'getDefaultDownloadDir',
       'getDiscoveryStatus',
       'getGithubConfig',
@@ -806,6 +835,7 @@ describe('IPC bridge', () => {
       'getTrashRetentionDays',
       'joinRoom',
       'leaveRoom',
+      'listConflicts',
       'listPeers',
       'listProjects',
       'listRecentOps',
@@ -821,6 +851,7 @@ describe('IPC bridge', () => {
       'removeProject',
       'resetGithubConfig',
       'resetOnboarding',
+      'resolveConflict',
       'restoreFromTrash',
       'saveGithubConfig',
       'selectDownloadFolder',

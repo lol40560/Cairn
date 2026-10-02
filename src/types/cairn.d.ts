@@ -8,6 +8,7 @@ export interface Op {
   diff: string
   /** 必须与 electron/core/oplog/types.ts 的 OpKind 保持一致。 */
   kind?: 'created' | 'deleted' | 'modified'
+  baseHash?: string
   source?: 'local' | 'remote'
 }
 
@@ -60,6 +61,19 @@ export interface TrashEntry {
   opHash: string
   sizeBytes: number
 }
+
+export interface ConflictRecord {
+  filePath: string
+  opHash: string
+  author: string
+  timestamp: number
+  baseContent?: string
+  localContent: string
+  remoteContent?: string
+  mergedWithMarkers?: string
+}
+
+export type ConflictResolution = 'local' | 'remote' | 'merged'
 
 export interface ExportSnapshotResult {
   filePath: string
@@ -172,6 +186,10 @@ export interface CairnApi {
   emptyTrash(): Promise<IpcResult<void>>
   getTrashRetentionDays(): Promise<IpcResult<number>>
   setTrashRetentionDays(days: number): Promise<IpcResult<void>>
+  listConflicts(): Promise<IpcResult<ConflictRecord[]>>
+  getConflict(opHash: string): Promise<IpcResult<ConflictRecord | undefined>>
+  resolveConflict(opHash: string, resolution: ConflictResolution, content?: string): Promise<IpcResult<void>>
+  deleteConflict(opHash: string): Promise<IpcResult<void>>
 }
 
 declare global {

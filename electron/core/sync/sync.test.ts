@@ -1,8 +1,9 @@
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { Socket } from 'node:net'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
@@ -11,6 +12,7 @@ import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../op
 import { createAuthHmac, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
+import { writeSnapshot } from '../watcher/snapshot'
 
 const roots: string[] = []
 const transports: Transport[] = []
@@ -871,7 +873,7 @@ describe('Sync', () => {
     await sync.stop()
   })
 
-  it('无法应用远端 diff 时不覆盖本地内容，也不重复报告冲突', async () => {
+  it('无法应用远端 diff 时不覆盖本地内容，并持久化冲突信号', async () => {
     const target = await createTestOplog()
     const discovery = new MockDiscovery()
     const transport = new MockTransport()
@@ -901,7 +903,159 @@ describe('Sync', () => {
 
     await remoteOp
     expect(writeFile).not.toHaveBeenCalled()
-    expect(conflict).not.toHaveBeenCalled()
+    expect(conflict).toHaveBeenCalledWith(expect.objectContaining({ hash: remote.hash }), content)
+    await sync.stop()
+  })
+
+  it('baseHash 匹配时直接应用远端 diff', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'base\n'
+    const input = {
+      ...createOp('base-match'),
+      baseHash: createHash('sha256').update(content).digest('hex'),
+      diff: createTwoFilesPatch('base-match.ts', 'base-match.ts', content, 'remote\n'),
+      filePath: 'base-match.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+    const applied = waitForEvent<[Op]>(sync, 'remoteOp')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await applied
+    expect(content).toBe('remote\n')
+    await sync.stop()
+  })
+
+  it('baseHash 不匹配时合并不重叠的本地和远端修改', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    const base = 'one\ntwo\nthree\n'
+    let content = 'LOCAL\ntwo\nthree\n'
+    await writeFile(join(target.root, 'merge.ts'), content, 'utf8')
+    const baseHash = writeSnapshot(target.root, 'merge.ts', base)
+    const input = {
+      ...createOp('merge-clean'),
+      baseHash,
+      diff: createTwoFilesPatch('merge.ts', 'merge.ts', base, 'one\ntwo\nREMOTE\n'),
+      filePath: 'merge.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+    const applied = waitForEvent<[Op]>(sync, 'remoteOp')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await applied
+    expect(content).toBe('LOCAL\ntwo\nREMOTE\n')
+    await sync.stop()
+  })
+
+  it('三方合并冲突时保留主文件并保存远端版本', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    const base = 'same\n'
+    let content = 'local\n'
+    await writeFile(join(target.root, 'conflict.ts'), content, 'utf8')
+    const baseHash = writeSnapshot(target.root, 'conflict.ts', base)
+    const input = {
+      ...createOp('merge-conflict'),
+      baseHash,
+      diff: createTwoFilesPatch('conflict.ts', 'conflict.ts', base, 'remote\n'),
+      filePath: 'conflict.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+    const conflict = waitForEvent<[Op, string]>(sync, 'conflict')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await conflict
+    expect(content).toBe('local\n')
+    await expect(readFile(join(target.root, 'conflict.ts.cairn-remote'), 'utf8')).resolves.toBe('remote\n')
+    await sync.stop()
+  })
+
+  it('缺少 base 快照时退回普通 patch', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'base\n'
+    const input = {
+      ...createOp('missing-snapshot'),
+      baseHash: 'f'.repeat(64),
+      diff: createTwoFilesPatch('missing.ts', 'missing.ts', content, 'after\n'),
+      filePath: 'missing.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+    const applied = waitForEvent<[Op]>(sync, 'remoteOp')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await applied
+    expect(content).toBe('after\n')
+    await sync.stop()
+  })
+
+  it('本地不存在时跳过删除操作，保持幂等', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    const input = {
+      ...createOp('missing-delete'),
+      diff: createTwoFilesPatch('gone.ts', 'gone.ts', 'before\n', ''),
+      filePath: 'gone.ts',
+      kind: 'deleted' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        fileExists: async () => false,
+        readFile: async () => '',
+        writeFile: vi.fn(async () => undefined),
+      },
+    )
+    const applied = waitForEvent<[Op]>(sync, 'remoteOp')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await applied
+    expect(applyRemoteChange).toHaveBeenCalledWith('gone.ts', '', true)
     await sync.stop()
   })
 })

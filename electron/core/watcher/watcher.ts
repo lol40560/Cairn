@@ -339,6 +339,8 @@ export class ProjectWatcher extends EventEmitter {
 
     let op: Op
     try {
+      // 同时保存旧内容，远端 baseHash 不匹配时可用于三方合并。
+      const baseHash = writeSnapshot(this.projectRoot, relativePath, oldContent)
       const input: NewOp = {
         id: randomUUID(),
         author: this.author,
@@ -347,6 +349,7 @@ export class ProjectWatcher extends EventEmitter {
         filePath: relativePath,
         diff: createTwoFilesPatch(relativePath, relativePath, oldContent, content),
         kind: deleted ? 'deleted' : previous ? 'modified' : 'created',
+        baseHash,
         source: 'local',
       }
       if (deleted) {

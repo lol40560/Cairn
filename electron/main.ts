@@ -8,6 +8,8 @@ import Database from 'better-sqlite3'
 import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron'
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
+import { ConflictsManager } from './core/conflicts'
+import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import { AppError, wrapIpcHandler } from './core/errors'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
@@ -37,6 +39,7 @@ interface ActiveProject {
   oplog: Oplog
   watcher: ProjectWatcher
   trash: TrashManager
+  conflicts: ConflictsManager
 }
 
 export interface LastSession {
@@ -589,6 +592,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
           throw error
         }
       },
+      fileExists: async (relativePath) => existsSync(projectFilePath(project.root, relativePath)),
       writeFile: async (relativePath, content) => {
         const targetPath = projectFilePath(project.root, relativePath)
         await mkdir(dirname(targetPath), { recursive: true })
@@ -831,6 +835,7 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
 
     const oplog = createOplog(folder)
     const trash = new TrashManager(folder)
+    const conflicts = new ConflictsManager(folder)
     const watcher = new ProjectWatcher(folder, oplog, {}, trash)
     const shadow = createShadowGit(folder)
 
@@ -850,7 +855,7 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
       if (cleaned > 0) {
         console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
       }
-      activeProject = { root: folder, oplog, watcher, trash }
+      activeProject = { root: folder, oplog, watcher, trash, conflicts }
       activeShadow = shadow
       await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
       // 项目索引失败不应撤销已成功启动的监控。
@@ -915,6 +920,29 @@ export async function emptyTrash(): Promise<void> {
   }
 }
 
+/** 未打开项目时返回空列表，方便冲突视图自然呈现空状态。 */
+export async function listConflicts(): Promise<ConflictRecord[]> {
+  return activeProject ? activeProject.conflicts.list() : []
+}
+
+export async function getConflict(opHash: string): Promise<ConflictRecord | undefined> {
+  return activeProject?.conflicts.get(opHash)
+}
+
+export async function resolveConflict(
+  opHash: string,
+  resolution: ConflictResolution,
+  content?: string,
+): Promise<void> {
+  if (!activeProject) return
+  await activeProject.conflicts.resolve(opHash, resolution, content)
+}
+
+export async function deleteConflict(opHash: string): Promise<void> {
+  if (!activeProject) return
+  await activeProject.conflicts.delete(opHash)
+}
+
 export async function getTrashRetentionDays(): Promise<number> {
   return (await getSettings()).trashRetentionDays
 }
@@ -977,6 +1005,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler((trashId: string) => restoreFromTrash(trashId)))
   ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler((trashId: string) => purgeFromTrash(trashId)))
   ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(emptyTrash))
+  ipcMain.handle('cairn:listConflicts', wrapIpcHandler(listConflicts))
+  ipcMain.handle('cairn:getConflict', wrapIpcHandler((opHash: string) => getConflict(opHash)))
+  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler((opHash: string, resolution: ConflictResolution, content?: string) => resolveConflict(opHash, resolution, content)))
+  ipcMain.handle('cairn:deleteConflict', wrapIpcHandler((opHash: string) => deleteConflict(opHash)))
   ipcMain.handle('cairn:getTrashRetentionDays', wrapIpcHandler(getTrashRetentionDays))
   ipcMain.handle('cairn:setTrashRetentionDays', wrapIpcHandler((days: number) => setTrashRetentionDays(days)))
 }

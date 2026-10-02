@@ -42,6 +42,7 @@ function canonicalize(input: NewOp): NewOp {
     filePath: input.filePath,
     diff: input.diff,
     kind: input.kind,
+    baseHash: input.baseHash,
     source: input.source,
   }
 }
@@ -249,6 +250,7 @@ class SqliteOplog implements Oplog {
     try {
       const storedOp: StoredOp = {
         author: op.author,
+        baseHash: op.baseHash,
         diff: op.diff,
         filePath: op.filePath,
         hash: op.hash,

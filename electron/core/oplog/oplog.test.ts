@@ -211,6 +211,17 @@ describe('oplog', () => {
     }
   })
 
+  it('baseHash 会持久化但不改变 op hash', async () => {
+    const { oplog } = await createFixture()
+    const input = newOp()
+    const baseHash = 'f'.repeat(64)
+
+    expect(computeHash({ ...input, baseHash })).toBe(computeHash(input))
+    const stored = oplog.putOp({ ...input, baseHash })
+    expect(stored).toMatchObject({ baseHash })
+    expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash })
+  })
+
   it('将对象写入正确的内容寻址路径', async () => {
     const { projectRoot, oplog } = await createFixture()
     const stored = oplog.putOp(newOp())

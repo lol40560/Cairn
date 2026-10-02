@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -98,6 +99,7 @@ describe('ProjectWatcher', () => {
     expect(op.diff).toContain('+export const value = 1')
     expect(op.parentHashes).toEqual([])
     expect(op.kind).toBe('created')
+    expect(op.baseHash).toBe(createHash('sha256').update('').digest('hex'))
   })
 
   it('applyRemoteChange 更新基线但不产生 op，后续本地修改仍会产生 op', async () => {
@@ -162,6 +164,7 @@ describe('ProjectWatcher', () => {
     expect(op.diff).toContain('+changed')
     expect(op.diff).not.toContain('-keep')
     expect(op.diff).not.toContain('+keep')
+    expect(op.baseHash).toBe(createHash('sha256').update('keep\nreplace\n').digest('hex'))
   })
 
   it('忽略目录中的文件不会产生 op', async () => {

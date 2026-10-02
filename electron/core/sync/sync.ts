@@ -1,11 +1,14 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { realpath } from 'node:fs/promises'
-import { isAbsolute, join, resolve, sep, win32 } from 'node:path'
+import { mkdir, realpath, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import { applyPatch } from 'diff'
+import { merge } from 'node-diff3'
 
+import { ConflictsManager, type ConflictRecord } from '../conflicts'
 import type { Oplog } from '../oplog'
+import { readSnapshot } from '../watcher/snapshot'
 import { isSensitiveFile } from '../watcher/watcher'
 import { Discovery } from './discovery'
 import { PendingOps } from './pending-ops'
@@ -25,6 +28,7 @@ export interface SyncStartOptions {
 
 export interface SyncHooks {
   applyRemoteChange(relativePath: string, content: string, deleted?: boolean): Promise<void>
+  fileExists?(relativePath: string): Promise<boolean>
   readFile(relativePath: string): Promise<string>
   writeFile(relativePath: string, content: string): Promise<void>
   moveRemoteDeletionToTrash?(relativePath: string, author: string, opHash: string): Promise<void>
@@ -61,6 +65,7 @@ export class Sync extends EventEmitter {
   private pendingDirectEndpoint: { host: string; port: number } | undefined
   private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly pendingOps: PendingOps | undefined
+  private readonly conflicts: ConflictsManager | undefined
   private retryingPending = false
   private started = false
 
@@ -74,6 +79,7 @@ export class Sync extends EventEmitter {
     this.discovery = dependencies.discovery ?? new Discovery()
     this.transport = dependencies.transport ?? new Transport(this.peerId)
     this.pendingOps = options.projectRoot ? new PendingOps(options.projectRoot) : undefined
+    this.conflicts = options.projectRoot ? new ConflictsManager(options.projectRoot) : undefined
   }
 
   async start(startOptions: SyncStartOptions = {}): Promise<void> {
@@ -414,36 +420,99 @@ export class Sync extends EventEmitter {
     }
 
     const localContent = await this.hooks.readFile(op.filePath)
+    const exists = this.hooks.fileExists
+      ? await this.hooks.fileExists(op.filePath)
+      : localContent !== ''
     if (op.kind === 'deleted' && localContent === '') {
       // 文件已不存在时，删除操作保持幂等，不留下永远无法重试的 pending。
       await this.hooks.applyRemoteChange(op.filePath, '', true)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
-    // 缺失文件和空文件都以空基线处理；创建操作可直接从 unified diff 重建。
-    const nextContent = applyPatch(localContent === '' ? '' : localContent, op.diff)
-    if (nextContent === false) {
-      console.error('[cairn:sync] 无法应用远端操作，已存入待重试队列', {
-        diffPreview: op.diff.slice(0, 300),
-        filePath: op.filePath,
-        kind: op.kind ?? 'modified',
-        localContentLength: localContent.length,
-      })
+    // 新建操作基于空内容，允许完整重建空文件或普通文本文件。
+    if (!exists && op.kind === 'created') {
+      const created = applyPatch('', op.diff)
+      if (created !== false) return this.writeAndCompleteRemoteOp(op, created, retryPending)
+    }
+
+    if (!exists) {
       await this.pendingOps?.add(op)
       return false
     }
 
-    if (op.kind === 'deleted') {
-      // 远端删除也先保存本地副本，避免同步操作绕过数据保护。
-      await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
-      await this.hooks.applyRemoteChange(op.filePath, '', true)
-    } else {
-      await this.hooks.applyRemoteChange(op.filePath, nextContent)
-      await this.hooks.writeFile(op.filePath, nextContent)
+    if (!op.baseHash || contentHash(localContent) === op.baseHash) {
+      const nextContent = applyPatch(localContent, op.diff)
+      if (nextContent !== false) return this.writeAndCompleteRemoteOp(op, nextContent, retryPending)
+      await this.handleConflict(op, localContent)
+      return false
     }
 
+    const projectRoot = this.options.projectRoot
+    const baseContent = projectRoot ? readSnapshot(projectRoot, op.baseHash, op.filePath) : undefined
+    if (baseContent === undefined) {
+      const fallback = applyPatch(localContent, op.diff)
+      if (fallback !== false) return this.writeAndCompleteRemoteOp(op, fallback, retryPending)
+      await this.handleConflict(op, localContent)
+      return false
+    }
+
+    const remoteContent = applyPatch(baseContent, op.diff)
+    if (remoteContent === false) {
+      await this.handleConflict(op, localContent, { baseContent })
+      return false
+    }
+    // node-diff3 以数组元素为最小合并单位；按保留换行符的行拆分，避免逐字符合并丢失换行。
+    const merged = merge(splitLines(localContent), splitLines(baseContent), splitLines(remoteContent), {
+      label: { a: 'LOCAL', b: 'REMOTE' },
+    })
+    const mergedContent = merged.result.join('')
+    if (!merged.conflict) {
+      return this.writeAndCompleteRemoteOp(op, mergedContent, retryPending)
+    }
+
+    await this.handleConflict(op, localContent, { baseContent, remoteContent, mergedWithMarkers: mergedContent })
+    return false
+  }
+
+  private async writeAndCompleteRemoteOp(
+    op: import('../oplog').Op,
+    content: string,
+    retryPending: boolean,
+  ): Promise<boolean> {
+    if (op.kind === 'deleted') {
+      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      await this.hooks!.applyRemoteChange(op.filePath, '', true)
+    } else {
+      await this.hooks!.applyRemoteChange(op.filePath, content)
+      await this.hooks!.writeFile(op.filePath, content)
+    }
     await this.completeRemoteOp(op, retryPending)
     return true
+  }
+
+  /** 保存冲突双方，永远保留用户正在编辑的主文件。 */
+  private async handleConflict(
+    op: import('../oplog').Op,
+    localContent: string,
+    threeWay: Partial<Pick<ConflictRecord, 'baseContent' | 'remoteContent' | 'mergedWithMarkers'>> = {},
+  ): Promise<void> {
+    const record: ConflictRecord = {
+      author: op.author,
+      filePath: op.filePath,
+      localContent,
+      opHash: op.hash,
+      timestamp: Date.now(),
+      ...threeWay,
+    }
+    if (record.remoteContent !== undefined && this.options.projectRoot) {
+      const remotePath = resolve(this.options.projectRoot, `${op.filePath}.cairn-remote`)
+      await mkdir(dirname(remotePath), { recursive: true })
+      await writeFile(remotePath, record.remoteContent, 'utf8')
+    }
+    await this.conflicts?.save(record)
+    this.emit('conflictRecord', record)
+    // 兼容现有 renderer 事件；C2 会改为从持久化记录读取详情。
+    this.emit('conflict', op, localContent)
   }
 
   private async completeRemoteOp(op: import('../oplog').Op, retryPending: boolean): Promise<void> {
@@ -509,4 +578,12 @@ export class Sync extends EventEmitter {
 
 function isMissingPath(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function contentHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex')
+}
+
+function splitLines(content: string): string[] {
+  return content.match(/.*(?:\n|$)/g)?.filter((line) => line.length > 0) ?? []
 }
