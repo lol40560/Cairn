@@ -20,6 +20,7 @@ class FakeSync {
   readonly broadcasts: SyncMessage[] = []
   readonly sent: Array<{ peerId: string; message: SyncMessage }> = []
   readonly retryPendingOps = vi.fn(async () => undefined)
+  onWantChunk: ((message: Extract<SyncMessage, { type: 'want-chunk' }>) => void) | undefined
 
   broadcast(message: SyncMessage): void {
     this.broadcasts.push(message)
@@ -31,6 +32,10 @@ class FakeSync {
   send(peerId: string, message: SyncMessage): void {
     this.sent.push({ peerId, message })
     if (message.type === 'want-chunk' && this.downloader) {
+      if (this.onWantChunk) {
+        this.onWantChunk(message)
+        return
+      }
       const chunk = this.chunks[message.index]
       queueMicrotask(() => {
         if (chunk) {
@@ -168,5 +173,61 @@ describe('SnapshotDownloader', () => {
     expect(progress.map((item) => item.status)).toContain('downloading')
     expect(progress.map((item) => item.status)).toContain('done')
     expect(progress.some((item) => item.receivedChunks === item.totalChunks && item.totalChunks > 0)).toBe(true)
+  })
+
+  it('分块超时后重试，并在后续成功时继续下载', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const retry = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync, {
+      chunkTimeoutMs: 5,
+      retryDelayMs: 1,
+    })
+    sync.downloader = downloader
+    let requests = 0
+    sync.onWantChunk = (message) => {
+      requests += 1
+      if (requests === 2) {
+        const chunk = sync.chunks[message.index]!
+        queueMicrotask(() => downloader.handleChunk('seed-peer', {
+          type: 'chunk', snapshotId: message.snapshotId, index: message.index, data: chunk.toString('base64'),
+        }))
+      }
+    }
+
+    await expect(downloader.startDownload(snapshotId, target)).resolves.toMatchObject({ extractedFiles: 1 })
+    expect(requests).toBe(2)
+  })
+
+  it('分块连续三次超时后失败', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const timeout = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync, {
+      chunkTimeoutMs: 2,
+      maxChunkRetries: 3,
+      retryDelayMs: 1,
+    })
+    sync.downloader = downloader
+    sync.onWantChunk = () => undefined
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('Chunk 0 failed after 3 retries')
+  })
+
+  it('取消时中止正在等待的分块请求', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const cancel = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+    sync.onWantChunk = () => downloader.cancel()
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('项目下载已取消')
   })
 })

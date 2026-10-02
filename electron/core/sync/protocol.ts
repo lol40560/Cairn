@@ -26,6 +26,8 @@ export type SyncMessage =
   | { type: 'want-chunk'; snapshotId: string; index: number }
   | { type: 'chunk'; snapshotId: string; index: number; data: string }
   | { type: 'snapshot-done'; snapshotId: string }
+  | { type: 'ping' }
+  | { type: 'pong' }
 
 export function encodeMessage(message: SyncMessage): string {
   return `${JSON.stringify(message)}\n`
@@ -88,6 +90,9 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'want-snapshot':
     case 'snapshot-done':
       return typeof candidate.snapshotId === 'string'
+    case 'ping':
+    case 'pong':
+      return true
     case 'snapshot-meta':
       return (
         typeof candidate.snapshotId === 'string' &&

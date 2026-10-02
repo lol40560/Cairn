@@ -12,10 +12,18 @@ const require = createRequire(import.meta.url)
 const yauzl = require('yauzl') as typeof import('yauzl')
 const META_TIMEOUT_MS = 10_000
 const MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024
+export const CHUNK_TIMEOUT_MS = 5_000
+export const MAX_CHUNK_RETRIES = 3
 
 export interface SnapshotDownloaderOptions {
   /** 默认 10 秒；仅用于受控环境下的测试。 */
   metaTimeoutMs?: number
+  /** 单个分块的等待时长；仅用于受控环境下的测试。 */
+  chunkTimeoutMs?: number
+  /** 单个分块的最大请求次数；仅用于受控环境下的测试。 */
+  maxChunkRetries?: number
+  /** 分块重试间隔；仅用于受控环境下的测试。 */
+  retryDelayMs?: number
 }
 
 export interface DownloadProgress {
@@ -43,7 +51,12 @@ interface DownloadSession {
   reject: (error: Error) => void
   resolveMeta: () => void
   rejectMeta: (error: Error) => void
-  pendingChunk: { index: number; resolve: () => void; reject: (error: Error) => void } | undefined
+  pendingChunk: {
+    index: number
+    resolve: () => void
+    reject: (error: Error) => void
+    timeout: NodeJS.Timeout
+  } | undefined
   onProgress: ((progress: DownloadProgress) => void) | undefined
   settled: boolean
 }
@@ -142,12 +155,12 @@ export class SnapshotDownloader extends EventEmitter {
     })
   }
 
-  cancel(): void {
+  cancel(reason: Error = new Error('项目下载已取消')): void {
     const session = this.session
     if (!session || session.settled) {
       return
     }
-    this.fail(session, new Error('项目下载已取消'))
+    this.fail(session, reason)
   }
 
   handleSnapshotMeta(peerId: string, message: Extract<SyncMessage, { type: 'snapshot-meta' }>): void {
@@ -200,22 +213,61 @@ export class SnapshotDownloader extends EventEmitter {
     }
     session.chunks[message.index] = chunk
     session.pendingChunk = undefined
+    clearTimeout(pending.timeout)
     session.progress.receivedChunks += 1
     session.progress.receivedBytes += chunk.length
     this.publishProgress(session)
     pending.resolve()
   }
 
-  private requestChunk(
+  private async requestChunk(
     session: DownloadSession,
     index: number,
   ): Promise<void> {
+    const maxRetries = this.options.maxChunkRetries ?? MAX_CHUNK_RETRIES
+    for (let attempt = 0; attempt < maxRetries; attempt += 1) {
+      try {
+        await this.waitForChunk(session, index)
+        return
+      } catch (error) {
+        if (session.settled) {
+          throw error
+        }
+        if (attempt === maxRetries - 1) {
+          throw new Error(`Chunk ${index} failed after ${maxRetries} retries`, { cause: error })
+        }
+        await new Promise<void>((resolveDelay) => {
+          setTimeout(resolveDelay, this.options.retryDelayMs ?? 500)
+        })
+      }
+    }
+  }
+
+  private waitForChunk(session: DownloadSession, index: number): Promise<void> {
     return new Promise<void>((resolveChunk, rejectChunk) => {
       if (!session.peerId || session.settled) {
         rejectChunk(new Error('下载已取消'))
         return
       }
-      session.pendingChunk = { index, resolve: resolveChunk, reject: rejectChunk }
+      const pending = {
+        index,
+        reject: (error: Error): void => {
+          clearTimeout(pending.timeout)
+          rejectChunk(error)
+        },
+        resolve: (): void => {
+          clearTimeout(pending.timeout)
+          resolveChunk()
+        },
+        timeout: undefined as unknown as NodeJS.Timeout,
+      }
+      pending.timeout = setTimeout(() => {
+        if (session.pendingChunk === pending) {
+          session.pendingChunk = undefined
+          rejectChunk(new Error(`等待分块 ${index} 超时`))
+        }
+      }, this.options.chunkTimeoutMs ?? CHUNK_TIMEOUT_MS)
+      session.pendingChunk = pending
       this.sync.send(session.peerId, { type: 'want-chunk', snapshotId: session.progress.snapshotId, index })
       this.publishProgress(session)
     })
@@ -239,6 +291,10 @@ export class SnapshotDownloader extends EventEmitter {
     if (session.metaTimeout) {
       clearTimeout(session.metaTimeout)
     }
+    if (session.pendingChunk) {
+      clearTimeout(session.pendingChunk.timeout)
+      session.pendingChunk = undefined
+    }
     session.settled = true
     if (this.session === session) {
       this.session = undefined
@@ -253,11 +309,16 @@ export class SnapshotDownloader extends EventEmitter {
       clearTimeout(session.metaTimeout)
     }
     session.settled = true
-    session.pendingChunk?.reject(error)
+    if (session.pendingChunk) {
+      const pending = session.pendingChunk
+      session.pendingChunk = undefined
+      pending.reject(error)
+    }
     session.rejectMeta(error)
     session.progress.status = 'failed'
     session.progress.error = error.message
     this.publishProgress(session)
+    this.emit('downloadError', error)
     if (this.session === session) {
       this.session = undefined
     }

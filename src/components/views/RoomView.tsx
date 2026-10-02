@@ -79,6 +79,7 @@ export function RoomView({
   const [exportingSnapshot, setExportingSnapshot] = useState(false)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
   const canceledDownload = useRef(false)
+  const downloadFailureHandled = useRef(false)
   const directAddress = useAppStore((state) => state.directAddress)
   const localEndpoint = useAppStore((state) => state.localEndpoint)
   const joinedByRoomCode = roomCode !== ''
@@ -161,6 +162,15 @@ export function RoomView({
           totalChunks: progress.totalChunks,
         })
         setDownloadStatus(progress.status)
+        if (progress.status === 'failed' && !canceledDownload.current) {
+          downloadFailureHandled.current = true
+          const isConnectionLost = /连接中断|connection\s+lost/i.test(progress.error ?? '')
+          setToast({
+            message: isConnectionLost ? t('downloadConnectionLost') : t('downloadChunkTimeout'),
+            tone: 'error',
+          })
+          resetDownload()
+        }
       }
     })
 
@@ -169,7 +179,7 @@ export function RoomView({
       window.clearInterval(pollTimer)
       unsubscribeProgress()
     }
-  }, [joined, resetDownload, setDownloadProgress, setDownloadStatus, setDownloadTargetDir, setIsSharing, setMySnapshotId, setSeeders])
+  }, [joined, resetDownload, setDownloadProgress, setDownloadStatus, setDownloadTargetDir, setIsSharing, setMySnapshotId, setSeeders, t])
 
   useEffect(() => {
     if (!joinedByRoomCode || !isHost) {
@@ -346,6 +356,7 @@ export function RoomView({
       }
 
       canceledDownload.current = false
+      downloadFailureHandled.current = false
       clearLastDownloadResult()
       setDownloadProgress(undefined)
       setDownloadStatus('waiting-meta')
@@ -354,8 +365,10 @@ export function RoomView({
         return
       }
       if (!result.ok) {
-        setToast(normalizeError(result.error, t))
-        resetDownload()
+        if (!downloadFailureHandled.current) {
+          setToast(normalizeError(result.error, t))
+          resetDownload()
+        }
         return
       }
 
@@ -375,8 +388,10 @@ export function RoomView({
     } catch (error) {
       if (!canceledDownload.current) {
         console.error('[cairn] 无法下载项目', error)
-        setToast(normalizeError(error, t))
-        resetDownload()
+        if (!downloadFailureHandled.current) {
+          setToast(normalizeError(error, t))
+          resetDownload()
+        }
       }
     }
   }

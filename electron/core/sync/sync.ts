@@ -44,6 +44,7 @@ export interface SnapshotSeederHandler {
 }
 
 export interface SnapshotDownloaderHandler {
+  cancel(reason?: Error): void
   handleSnapshotMeta(peerId: string, message: Extract<SyncMessage, { type: 'snapshot-meta' }>): void
   handleChunk(peerId: string, message: Extract<SyncMessage, { type: 'chunk' }>): void
 }
@@ -217,6 +218,7 @@ export class Sync extends EventEmitter {
     this.discovery.on('peerLeft', this.handlePeerLeft)
     this.discovery.on('error', this.handleError)
     this.transport.on('connect', this.handleConnect)
+    this.transport.on('disconnect', this.handleDisconnect)
     this.transport.on('message', this.handleMessage)
     this.transport.on('error', this.handleError)
   }
@@ -226,6 +228,7 @@ export class Sync extends EventEmitter {
     this.discovery.off('peerLeft', this.handlePeerLeft)
     this.discovery.off('error', this.handleError)
     this.transport.off('connect', this.handleConnect)
+    this.transport.off('disconnect', this.handleDisconnect)
     this.transport.off('message', this.handleMessage)
     this.transport.off('error', this.handleError)
   }
@@ -283,6 +286,12 @@ export class Sync extends EventEmitter {
       this.send(peerId, { hash, type: 'have' })
     }
     this.seeder?.announceToPeer?.(peerId)
+  }
+
+  /** 连接意外断开时，停止当前下载，避免界面无限等待分块。 */
+  private readonly handleDisconnect = (peerId: string): void => {
+    this.handlePeerLeft(peerId)
+    this.downloader?.cancel(new Error('连接中断，请重试。'))
   }
 
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {

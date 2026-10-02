@@ -5,15 +5,29 @@ import { StringDecoder } from 'node:string_decoder'
 import { decodeMessages, encodeMessage, type SyncMessage } from './protocol'
 
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
+export const HEARTBEAT_INTERVAL_MS = 30_000
+export const HEARTBEAT_TIMEOUT_MS = 60_000
+
+export interface TransportOptions {
+  /** 仅用于受控环境下的测试。 */
+  heartbeatIntervalMs?: number
+  /** 仅用于受控环境下的测试。 */
+  heartbeatTimeoutMs?: number
+}
 
 export class Transport extends EventEmitter {
   private readonly connections = new Map<string, Socket>()
   private readonly socketPeerIds = new Map<Socket, string>()
+  private readonly socketHeartbeats = new Map<Socket, NodeJS.Timeout>()
+  private readonly socketLastSeen = new Map<Socket, number>()
   private readonly sockets = new Set<Socket>()
   private roomCode = ''
   private server: Server | undefined
 
-  constructor(private readonly peerId: string) {
+  constructor(
+    private readonly peerId: string,
+    private readonly options: TransportOptions = {},
+  ) {
     super()
   }
 
@@ -56,6 +70,7 @@ export class Transport extends EventEmitter {
 
   async close(): Promise<void> {
     for (const socket of this.sockets) {
+      this.stopHeartbeat(socket)
       socket.destroy()
     }
     this.connections.clear()
@@ -117,6 +132,7 @@ export class Transport extends EventEmitter {
     let buffer = ''
     const decoder = new StringDecoder('utf8')
     this.sockets.add(socket)
+    this.socketLastSeen.set(socket, Date.now())
 
     socket.on('data', (chunk: Buffer) => {
       buffer += decoder.write(chunk)
@@ -196,6 +212,15 @@ export class Transport extends EventEmitter {
       return
     }
 
+    this.socketLastSeen.set(socket, Date.now())
+    if (message.type === 'ping') {
+      this.send(remotePeerId, { type: 'pong' })
+      return
+    }
+    if (message.type === 'pong') {
+      return
+    }
+
     this.emit('message', remotePeerId, message)
   }
 
@@ -217,11 +242,45 @@ export class Transport extends EventEmitter {
 
     this.socketPeerIds.set(socket, remotePeerId)
     this.connections.set(remotePeerId, socket)
+    this.startHeartbeat(socket)
     this.emit('connect', remotePeerId)
   }
 
+  /** 通过轻量 ping/pong 识别静默失效的 TCP 长连接。 */
+  private startHeartbeat(socket: Socket): void {
+    this.stopHeartbeat(socket)
+    const interval = this.options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS
+    const timeout = this.options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS
+    const timer = setInterval(() => {
+      if (socket.destroyed) {
+        this.stopHeartbeat(socket)
+        return
+      }
+      const lastSeen = this.socketLastSeen.get(socket) ?? 0
+      if (Date.now() - lastSeen > timeout) {
+        socket.destroy()
+        return
+      }
+      const peerId = this.socketPeerIds.get(socket)
+      if (peerId) {
+        this.send(peerId, { type: 'ping' })
+      }
+    }, interval)
+    this.socketHeartbeats.set(socket, timer)
+  }
+
+  private stopHeartbeat(socket: Socket): void {
+    const timer = this.socketHeartbeats.get(socket)
+    if (timer) {
+      clearInterval(timer)
+      this.socketHeartbeats.delete(socket)
+    }
+  }
+
   private removeSocket(socket: Socket): void {
+    this.stopHeartbeat(socket)
     this.sockets.delete(socket)
+    this.socketLastSeen.delete(socket)
     const remotePeerId = this.socketPeerIds.get(socket)
     this.socketPeerIds.delete(socket)
     if (!remotePeerId || this.connections.get(remotePeerId) !== socket) {

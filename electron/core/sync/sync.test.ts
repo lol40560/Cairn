@@ -105,6 +105,13 @@ describe('sync protocol', () => {
     expect(report).toHaveBeenCalledOnce()
     expect(report.mock.calls[0]?.[0]).toBeInstanceOf(Error)
   })
+
+  it('识别心跳消息', () => {
+    expect(decodeMessages(`${encodeMessage({ type: 'ping' })}${encodeMessage({ type: 'pong' })}`)).toEqual({
+      messages: [{ type: 'ping' }, { type: 'pong' }],
+      rest: '',
+    })
+  })
 })
 
 describe('transport', () => {
@@ -230,6 +237,49 @@ describe('transport', () => {
     await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('超过') })])
     client.destroy()
   })
+
+  it('收到 ping 时回复 pong', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    let received = ''
+    const pong = new Promise<void>((resolve) => {
+      client.on('data', (chunk: Buffer) => {
+        received += chunk.toString('utf8')
+        if (received.includes('"pong"')) resolve()
+      })
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', resolve)
+      client.connect(port, '127.0.0.1')
+    })
+    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
+    await waitForEvent<[string]>(receiver, 'connect')
+    client.write(encodeMessage({ type: 'ping' }))
+
+    await expect(pong).resolves.toBeUndefined()
+    client.destroy()
+  })
+
+  it('心跳超时会主动关闭静默连接', async () => {
+    const receiver = new Transport('receiver', { heartbeatIntervalMs: 5, heartbeatTimeoutMs: 15 })
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = new Socket()
+    await new Promise<void>((resolve, reject) => {
+      client.once('error', reject)
+      client.once('connect', resolve)
+      client.connect(port, '127.0.0.1')
+    })
+    client.write(encodeMessage({ type: 'hello', peerId: 'sender', roomCode: 'ABCDEF', version: 1 }))
+    await waitForEvent<[string]>(receiver, 'connect')
+    const disconnected = waitForEvent<[string]>(receiver, 'disconnect')
+
+    await expect(disconnected).resolves.toEqual(['sender'])
+    client.destroy()
+  })
 })
 
 describe('Sync', () => {
@@ -284,6 +334,7 @@ describe('Sync', () => {
       handleWantSnapshot: vi.fn(),
     }
     const downloader = {
+      cancel: vi.fn(),
       handleChunk: vi.fn(),
       handleSnapshotMeta: vi.fn(),
     }
@@ -321,6 +372,43 @@ describe('Sync', () => {
     expect(downloader.handleSnapshotMeta).toHaveBeenCalledOnce()
     expect(downloader.handleChunk).toHaveBeenCalledOnce()
 
+    await sync.stop()
+  })
+
+  it('连接断开时取消活动下载器', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    const downloader = {
+      cancel: vi.fn(),
+      handleChunk: vi.fn(),
+      handleSnapshotMeta: vi.fn(),
+    }
+    sync.registerDownloader(downloader)
+    await sync.start({ discovery: false })
+
+    transport.emit('disconnect', 'peer-a')
+
+    expect((downloader.cancel.mock.calls[0]?.[0] as Error).message).toContain('连接中断')
+    await sync.stop()
+  })
+
+  it('重连成功后重新通告本地已有操作', async () => {
+    const { oplog } = await createTestOplog()
+    const localOp = oplog.putOp(createOp('after-reconnect'))
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    await sync.start({ discovery: false })
+
+    transport.emit('connect', 'peer-a')
+
+    expect(transport.send).toHaveBeenCalledWith('peer-a', { hash: localOp.hash, type: 'have' })
     await sync.stop()
   })
 
