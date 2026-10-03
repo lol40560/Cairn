@@ -14,7 +14,7 @@ export interface TrashEntry {
   sizeBytes: number
 }
 
-/** 管理项目内可恢复的已删除文本文件。 */
+/** 管理项目内可恢复的已删除文件。 */
 export class TrashManager {
   private readonly projectRoot: string
   private readonly trashRoot: string
@@ -33,7 +33,7 @@ export class TrashManager {
     absolutePath: string,
     author: string,
     opHash: string,
-    baselineContent?: string,
+    baselineContent?: string | Buffer,
   ): Promise<string> {
     const originalPath = this.assertSafeRelativePath(relativePath)
     const expectedSourcePath = this.projectPath(originalPath)
@@ -50,7 +50,7 @@ export class TrashManager {
       if (existsSync(absolutePath)) {
         await rename(absolutePath, contentPath)
       } else if (baselineContent !== undefined) {
-        await writeFile(contentPath, baselineContent, 'utf8')
+        await writeFile(contentPath, baselineContent)
       } else {
         throw new Error(`无法移入废纸篓，原始文件不存在：${originalPath}`)
       }

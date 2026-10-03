@@ -100,6 +100,7 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
       }
 
       if (await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
+        // TODO(v1.4-B): 可同步圖片與字型會改由 blob 傳輸，此階段仍不納入 snapshot ZIP。
         skippedCount += 1
         continue
       }

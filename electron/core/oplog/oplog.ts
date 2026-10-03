@@ -28,9 +28,11 @@ const CREATE_SCHEMA = `
     id TEXT NOT NULL,
     author TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
-    file_path TEXT NOT NULL
+    file_path TEXT NOT NULL,
+    blob_hash TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_ops_timestamp ON ops(timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_ops_blob_hash ON ops(blob_hash);
 `
 
 function canonicalize(input: NewOp): NewOp {
@@ -43,6 +45,8 @@ function canonicalize(input: NewOp): NewOp {
     diff: input.diff,
     kind: input.kind,
     baseHash: input.baseHash,
+    blobHash: input.blobHash,
+    size: input.size,
     source: input.source,
   }
 }
@@ -74,6 +78,7 @@ class SqliteOplog implements Oplog {
     mkdirSync(this.objectsRoot, { recursive: true })
     this.database = new Database(join(dataRoot, 'oplog.db'))
     this.database.exec(CREATE_SCHEMA)
+    this.migrateBlobHashColumn()
   }
 
   putOp(input: NewOp | Op): Op {
@@ -102,10 +107,10 @@ class SqliteOplog implements Oplog {
 
     this.database
       .prepare(
-        `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(op.hash, op.id, op.author, op.timestamp, op.filePath)
+      .run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null)
 
     return op
   }
@@ -207,6 +212,16 @@ class SqliteOplog implements Oplog {
     return rows.map(({ hash }) => hash)
   }
 
+  listBlobs(): Op[] {
+    this.assertOpen('listBlobs')
+
+    const rows = this.database
+      .prepare('SELECT hash FROM ops WHERE blob_hash IS NOT NULL ORDER BY timestamp ASC, hash ASC')
+      .all() as HashRow[]
+
+    return rows.map(({ hash }) => this.readObject(hash))
+  }
+
   close(): void {
     if (this.closed) {
       return
@@ -224,6 +239,16 @@ class SqliteOplog implements Oplog {
 
   private objectPath(hash: string): string {
     return join(this.objectsRoot, hash.slice(0, 2), hash)
+  }
+
+  private migrateBlobHashColumn(): void {
+    try {
+      this.database.exec('ALTER TABLE ops ADD COLUMN blob_hash TEXT')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes('duplicate column name')) throw error
+    }
+    this.database.exec('CREATE INDEX IF NOT EXISTS idx_ops_blob_hash ON ops(blob_hash)')
   }
 
   private readObject(hash: string): Op {
@@ -251,12 +276,14 @@ class SqliteOplog implements Oplog {
       const storedOp: StoredOp = {
         author: op.author,
         baseHash: op.baseHash,
+        blobHash: op.blobHash,
         diff: op.diff,
         filePath: op.filePath,
         hash: op.hash,
         id: op.id,
         kind: op.kind,
         parentHashes: op.parentHashes,
+        size: op.size,
         timestamp: op.timestamp,
       }
       writeFileSync(descriptor, JSON.stringify(storedOp), 'utf8')

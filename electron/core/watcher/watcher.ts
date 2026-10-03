@@ -8,6 +8,7 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, type NewOp, type Oplog, type Op } from '../oplog'
+import { BlobStore } from '../blobs'
 import { DEFAULT_IGNORE_PATTERNS, IgnoreMatcher } from '../ignore'
 import { TrashManager } from '../trash'
 import { writeSnapshot } from './snapshot'
@@ -20,6 +21,7 @@ export interface ProjectWatcherOptions {
 interface BaselineEntry {
   content: string
   snapshotHash: string
+  blobHash?: string
 }
 
 /** 相容既有檔案瀏覽 API；監控本身改由 IgnoreMatcher 判斷。 */
@@ -29,6 +31,11 @@ export const IGNORED_DIRECTORIES = new Set(
 )
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.html', '.css', '.scss', '.yml', '.yaml', '.toml', '.xml', '.svg', '.vue', '.svelte', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h', '.sh', '.sql'])
 const BINARY_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff', '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar', '.mp3', '.mp4', '.wav', '.mov', '.avi', '.mkv', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite'])
+export const SYNCABLE_BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff', '.svg',
+  '.ttf', '.otf', '.woff', '.woff2', '.eot',
+])
+export const MAX_SYNCABLE_BINARY_SIZE = 5 * 1024 * 1024
 
 export { isSensitiveFile } from '../ignore'
 
@@ -67,6 +74,7 @@ export class ProjectWatcher extends EventEmitter {
   private readonly author: string
   private readonly baseline = new Map<string, BaselineEntry>()
   private readonly binaryByExtension = new Map<string, boolean>()
+  private readonly blobStore: BlobStore
   private readonly debounceMs: number
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly fileQueues = new Map<string, Promise<void>>()
@@ -92,6 +100,7 @@ export class ProjectWatcher extends EventEmitter {
     this.debounceMs = options.debounceMs ?? 300
     this.author = options.author ?? userInfo().username
     this.trash = trash
+    this.blobStore = new BlobStore(projectRoot)
     this.ignoreMatcher = new IgnoreMatcher(projectRoot)
   }
 
@@ -218,6 +227,18 @@ export class ProjectWatcher extends EventEmitter {
         console.warn(`[cairn:watcher] 跳过指向项目外的符号链接：${relativePath}`)
         return
       }
+      if (this.isSyncableBinary(relativePath)) {
+        const content = await readFile(absolutePath)
+        if (content.length > MAX_SYNCABLE_BINARY_SIZE) {
+          console.warn(`[cairn:watcher] 跳过超大 binary：${relativePath} (${content.length} bytes)`)
+          return
+        }
+        const blobHash = await this.blobStore.put(content)
+        if (this.isRunActive(run)) {
+          this.baseline.set(relativePath, { content: '', snapshotHash: '', blobHash })
+        }
+        return
+      }
       if (await this.isBinaryFile(absolutePath, relativePath)) return
       const content = await readFile(absolutePath, 'utf8')
       const snapshotHash = writeSnapshot(this.projectRoot, relativePath, content)
@@ -294,6 +315,11 @@ export class ProjectWatcher extends EventEmitter {
     run: number,
   ): Promise<void> {
     if (!this.isRunActive(run)) {
+      return
+    }
+
+    if (this.isSyncableBinary(relativePath)) {
+      await this.processBinaryChange(absolutePath, relativePath, run)
       return
     }
 
@@ -386,6 +412,86 @@ export class ProjectWatcher extends EventEmitter {
     }
   }
 
+  /** 將可同步的圖片與字型以 blob 內容定址，op 本身不攜帶二進制內容。 */
+  private async processBinaryChange(
+    absolutePath: string,
+    relativePath: string,
+    run: number,
+  ): Promise<void> {
+    const previous = this.baseline.get(relativePath)
+    let content: Buffer | undefined
+    let deleted = false
+
+    try {
+      if (!await this.isSafeExistingPath(absolutePath)) {
+        console.warn(`[cairn:watcher] 跳过指向项目外的符号链接：${relativePath}`)
+        return
+      }
+      content = await readFile(absolutePath)
+    } catch (error) {
+      if (!this.isMissingFile(error)) {
+        this.reportError(this.toError(`读取 binary 文件失败：${relativePath}`, error))
+        return
+      }
+      deleted = true
+    }
+
+    if (!this.isRunActive(run) || (deleted && !previous)) return
+    if (content && content.length > MAX_SYNCABLE_BINARY_SIZE) {
+      console.warn(`[cairn:watcher] 跳过超大 binary：${relativePath} (${content.length} bytes)`)
+      return
+    }
+
+    let blobHash: string | undefined
+    try {
+      if (content) blobHash = await this.blobStore.put(content)
+      const previousBlobHash = previous?.blobHash
+      if (!deleted && previous && previousBlobHash === blobHash) return
+
+      const input: NewOp = {
+        id: randomUUID(),
+        author: this.author,
+        parentHashes: [],
+        timestamp: Date.now(),
+        filePath: relativePath,
+        diff: '',
+        kind: deleted ? 'deleted' : previous ? 'modified' : 'created',
+        baseHash: previousBlobHash,
+        // 刪除仍帶著舊 blob，讓後續同步與診斷可定位被刪除的內容。
+        blobHash: deleted ? previousBlobHash : blobHash,
+        size: content?.length ?? 0,
+        source: 'local',
+      }
+
+      if (deleted) {
+        const previousContent = previousBlobHash ? await this.blobStore.get(previousBlobHash) : undefined
+        if (!previousContent) throw new Error(`找不到待刪除 binary 的 blob：${relativePath}`)
+        await this.trash.moveToTrash(
+          relativePath,
+          absolutePath,
+          this.author,
+          computeHash(input),
+          previousContent,
+        )
+      }
+
+      if (!this.isRunActive(run)) return
+      const op = this.oplog.putOp(input)
+      if (deleted) this.baseline.delete(relativePath)
+      else if (blobHash) this.baseline.set(relativePath, { content: '', snapshotHash: '', blobHash })
+
+      this.emit('op', op)
+    } catch (error) {
+      if (deleted) {
+        const previousContent = previous?.blobHash ? await this.blobStore.get(previous.blobHash) : undefined
+        if (previousContent) await this.restoreDeletedFile(absolutePath, previousContent)
+      }
+      if (previous) this.baseline.set(relativePath, previous)
+      else this.baseline.delete(relativePath)
+      this.reportError(this.toError(`写入 binary 变更失败：${relativePath}`, error))
+    }
+  }
+
   private isActive(watcher: FSWatcher, run: number): boolean {
     return this.watcher === watcher && this.isRunActive(run)
   }
@@ -411,7 +517,7 @@ export class ProjectWatcher extends EventEmitter {
   }
 
   /** 删除进入废纸篓后的后续步骤失败时，尽力恢复基线内容，绝不继续广播删除。 */
-  private async restoreDeletedFile(absolutePath: string, content: string): Promise<void> {
+  private async restoreDeletedFile(absolutePath: string, content: string | Buffer): Promise<void> {
     try {
       await access(absolutePath)
       return
@@ -421,7 +527,7 @@ export class ProjectWatcher extends EventEmitter {
 
     try {
       await mkdir(dirname(absolutePath), { recursive: true })
-      await writeFile(absolutePath, content, 'utf8')
+      await writeFile(absolutePath, content)
       console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${absolutePath}`)
     } catch (restoreError) {
       console.error(`[cairn:watcher] 删除处理失败且无法恢复文件：${absolutePath}`, restoreError)
@@ -430,6 +536,10 @@ export class ProjectWatcher extends EventEmitter {
 
   private async isBinaryFile(absolutePath: string, relativePath: string): Promise<boolean> {
     return isBinaryFile(absolutePath, relativePath, this.binaryByExtension)
+  }
+
+  private isSyncableBinary(relativePath: string): boolean {
+    return SYNCABLE_BINARY_EXTENSIONS.has(extname(relativePath).toLowerCase())
   }
 
   /** 允许项目内链接，拒绝任何解析后离开项目根目录的路径。 */

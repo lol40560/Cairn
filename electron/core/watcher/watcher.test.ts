@@ -352,11 +352,75 @@ describe('ProjectWatcher', () => {
     await expect(watcher.stop()).resolves.toBeUndefined()
   })
 
-  it.each(['image.png', 'document.pdf'])('binary 扩展名 %s 不产生 op', async (fileName) => {
+  it.each(['document.pdf', 'archive.zip'])('不在白名单的 binary 扩展名 %s 不产生 op', async (fileName) => {
     const { projectRoot, watcher } = await createFixture()
     await watcher.start()
     await writeFile(join(projectRoot, fileName), Buffer.from([0, 1, 2, 3]))
     await expectNoOp(watcher)
+  })
+
+  it('创建 PNG 会产生带 blobHash 的 op', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    await watcher.start()
+
+    const opPromise = waitForOp(watcher)
+    await mkdir(join(projectRoot, 'assets'), { recursive: true })
+    await writeFile(join(projectRoot, 'assets', 'logo.png'), Buffer.from([137, 80, 78, 71]))
+
+    await expect(opPromise).resolves.toMatchObject({
+      filePath: 'assets/logo.png',
+      kind: 'created',
+      diff: '',
+      blobHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      size: 4,
+    })
+  })
+
+  it('创建 OTF 会产生 blob op，但 PDF 仍被跳过', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    await watcher.start()
+
+    const fontOp = waitForOp(watcher)
+    await writeFile(join(projectRoot, 'font.otf'), Buffer.from([0, 1, 2]))
+    await expect(fontOp).resolves.toMatchObject({ filePath: 'font.otf', blobHash: expect.any(String) })
+
+    await writeFile(join(projectRoot, 'document.pdf'), Buffer.from([0, 1, 2]))
+    await expectNoOp(watcher)
+  })
+
+  it('超过 5 MB 的 PNG 不产生 op', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    await watcher.start()
+
+    await writeFile(join(projectRoot, 'large.png'), Buffer.alloc(5 * 1024 * 1024 + 1, 1))
+    await expectNoOp(watcher)
+  })
+
+  it('内容未变的 PNG 不重复产生 op', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    const path = join(projectRoot, 'same.png')
+    const content = Buffer.from([1, 2, 3])
+    await writeFile(path, content)
+    await watcher.start()
+
+    await writeFile(path, content)
+    await expectNoOp(watcher)
+  })
+
+  it('删除 PNG 会产生保留旧 blobHash 的 deleted op', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    const path = join(projectRoot, 'deleted.png')
+    await writeFile(path, Buffer.from([1, 2, 3]))
+    await watcher.start()
+
+    const opPromise = waitForOp(watcher)
+    await rm(path)
+
+    await expect(opPromise).resolves.toMatchObject({
+      filePath: 'deleted.png',
+      kind: 'deleted',
+      blobHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
   })
 
   it('无扩展名且含 NUL 的文件不产生 op', async () => {

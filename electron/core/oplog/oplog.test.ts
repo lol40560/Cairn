@@ -222,6 +222,18 @@ describe('oplog', () => {
     expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash })
   })
 
+  it('blobHash 与 size 会持久化但不改变 op hash', async () => {
+    const { oplog } = await createFixture()
+    const input = newOp({ diff: '', filePath: 'assets/logo.png' })
+    const blobHash = 'a'.repeat(64)
+
+    expect(computeHash({ ...input, blobHash, size: 12 })).toBe(computeHash(input))
+    const stored = oplog.putOp({ ...input, blobHash, size: 12 })
+
+    expect(oplog.getOp(stored.hash)).toMatchObject({ blobHash, size: 12 })
+    expect(oplog.listBlobs()).toMatchObject([{ hash: stored.hash, blobHash }])
+  })
+
   it('将对象写入正确的内容寻址路径', async () => {
     const { projectRoot, oplog } = await createFixture()
     const stored = oplog.putOp(newOp())

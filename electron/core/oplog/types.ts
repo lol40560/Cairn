@@ -12,6 +12,10 @@ export interface Op {
   kind?: OpKind
   /** 生成此 diff 时文件旧内容的 SHA-256，不参与 op hash。 */
   baseHash?: string
+  /** 二進制檔案內容的 SHA-256，不參與 op hash。 */
+  blobHash?: string
+  /** 二進制檔案的位元組大小，不參與 op hash。 */
+  size?: number
   source?: 'local' | 'remote'
 }
 
@@ -26,6 +30,10 @@ export interface NewOp {
   kind?: OpKind
   /** 生成此 diff 时文件旧内容的 SHA-256，不参与 op hash。 */
   baseHash?: string
+  /** 二進制檔案內容的 SHA-256，不參與 op hash。 */
+  blobHash?: string
+  /** 二進制檔案的位元組大小，不參與 op hash。 */
+  size?: number
   source?: 'local' | 'remote'
 }
 
@@ -36,5 +44,6 @@ export interface Oplog {
   walkDag(headHashes: string[]): Op[]
   listRecent(limit: number): Op[]
   listAllHashes(): string[]
+  listBlobs(): Op[]
   close(): void
 }
