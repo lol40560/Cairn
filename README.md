@@ -21,9 +21,23 @@ When multiple people (and their AI agents like Cursor or Claude Code) edit the s
 
 ## Screenshots
 
-![Cairn main view](./docs/screenshots/main.png)
+### Home
 
-_Coming soon — screenshots will be added after v1.0 release._
+![Home](./docs/screenshots/home.png)
+
+Manage multiple projects. Click a card to start syncing it with your team.
+
+### Changes
+
+![Changes](./docs/screenshots/changes.png)
+
+Every file change appears here in real time. Click any row to see the full diff.
+
+### Files with built-in editor
+
+![Files](./docs/screenshots/files.png)
+
+Browse your project, preview files with syntax highlighting, and edit directly in Cairn.
 
 ## Download
 
