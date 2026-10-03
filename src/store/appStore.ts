@@ -4,7 +4,7 @@ import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
 import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, PeerState, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'trash'
+export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'checkpoints' | 'trash'
 export type ActiveView = ViewType
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
 

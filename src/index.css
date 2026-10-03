@@ -588,6 +588,69 @@
   flex: 1;
 }
 
+.checkpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.checkpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  padding: 16px;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.checkpoint-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-2);
+}
+
+.checkpoint-icon {
+  flex-shrink: 0;
+  color: var(--amber);
+}
+
+.checkpoint-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.checkpoint-name {
+  overflow: hidden;
+  margin: 0 0 2px;
+  color: var(--text-0);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint-meta {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.checkpoint-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.checkpoints-loading {
+  padding: 40px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+
 .home-section-label {
   color: var(--text-2);
   font-size: 11px;

@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, ChevronLeft, ChevronRight, FileText, Home, Settings, Trash2, Users } from 'lucide-react'
+import { Activity, AlertTriangle, Bookmark, ChevronLeft, ChevronRight, FileText, Home, Settings, Trash2, Users } from 'lucide-react'
 
 import cairnLogo from '@/assets/cairn-logo.png'
 import { useTranslation } from '@/i18n'
@@ -23,6 +23,7 @@ const collaborationItems: NavItem[] = [
 ]
 
 const recoveryItems: NavItem[] = [
+  { icon: Bookmark, id: 'checkpoints', labelKey: 'checkpoints' },
   { icon: Trash2, id: 'trash', labelKey: 'trash' },
 ]
 

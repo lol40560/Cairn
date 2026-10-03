@@ -8,6 +8,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
+import { CheckpointsView } from '@/components/views/CheckpointsView'
 import { ConflictsView } from '@/components/views/ConflictsView'
 import { FilesView } from '@/components/views/FilesView'
 import { HomeView } from '@/components/views/HomeView'
@@ -363,6 +364,7 @@ export function App() {
             />
           )}
           {activeView === 'conflicts' && <ConflictsView onResolve={handleResolveConflict} />}
+          {activeView === 'checkpoints' && <CheckpointsView />}
           {activeView === 'trash' && <TrashView />}
         </div>
         </main>
