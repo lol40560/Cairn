@@ -74,6 +74,18 @@ describe('引导式空状态', () => {
     expect(html).toContain('Changes will appear here as you and your teammates edit files.')
   })
 
+  it('Activity 依檔案彙整變更', () => {
+    const ops = [
+      { author: 'alice', diff: '@@ -1 +1 @@\n-old\n+new', filePath: 'src/auth.ts', hash: 'a'.repeat(64), id: 'one', parentHashes: [], timestamp: 200 },
+      { author: 'bob', diff: '@@ -1 +1 @@\n-old\n+new', filePath: 'src/auth.ts', hash: 'b'.repeat(64), id: 'two', parentHashes: [], timestamp: 100 },
+    ]
+    const html = renderToStaticMarkup(<ActivityView folder="/tmp/project" ops={ops} onChangeFolder={async () => undefined} />)
+
+    expect(html).toContain('src/auth.ts')
+    expect(html).toContain('2 changes')
+    expect(html).toContain('2 authors')
+  })
+
   it('Same-file edits 空状态显示同步说明', () => {
     const html = renderToStaticMarkup(<ConflictsView />)
 

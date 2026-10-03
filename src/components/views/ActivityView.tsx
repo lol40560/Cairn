@@ -1,14 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { FolderOpen, SlidersHorizontal, Sparkles } from 'lucide-react'
 
 import { EmptyState } from '@/components/EmptyState'
+import { FileGroupRow } from '@/components/FileGroupRow'
 import { OpDiffDialog } from '@/components/OpDiffDialog'
 import { useTranslation } from '@/i18n'
-import { countDiff } from '@/lib/diffStats'
-import { formatLineCount } from '@/lib/lineCount'
+import { groupOpsByFile } from '@/lib/groupOpsByFile'
 import { useAppStore } from '@/store/appStore'
-import type { TranslateFn } from '@/i18n'
 import type { ConflictRecord, Op } from '@/types/cairn'
 
 interface ActivityViewProps {
@@ -20,35 +19,8 @@ interface ActivityViewProps {
   conflicts?: ConflictRecord[]
 }
 
-function formatTime(timestamp: number, locale: 'zh' | 'en'): string {
-  return new Intl.DateTimeFormat(locale === 'zh' ? 'zh-CN' : 'en-GB', {
-    hour: '2-digit',
-    hour12: false,
-    minute: '2-digit',
-    second: '2-digit',
-  }).format(timestamp)
-}
-
-function formatRelativeTime(timestamp: number, t: TranslateFn): string {
-  const elapsed = Math.max(0, Date.now() - timestamp)
-  const minutes = Math.floor(elapsed / 60_000)
-
-  if (minutes < 1) return t('justNow')
-  if (minutes < 60) {
-    return minutes === 1 ? t('minuteAgo') : t('minutesAgo').replace('{n}', String(minutes))
-  }
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) {
-    return hours === 1 ? t('hourAgo') : t('hoursAgo').replace('{n}', String(hours))
-  }
-
-  const days = Math.floor(hours / 24)
-  return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
-}
-
 export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChangeFolder, onReviewConflicts, conflicts: conflictsOverride }: ActivityViewProps) {
-  const { locale, t } = useTranslation()
+  const { t } = useTranslation()
   const storedFolder = useAppStore((state) => state.folder)
   const folder = folderOverride ?? storedFolder
   const setActiveView = useAppStore((state) => state.setActiveView)
@@ -56,8 +28,19 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   const conflicts = conflictsOverride ?? storedConflicts
   const [remoteOnly, setRemoteOnly] = useState(false)
   const [selectedOp, setSelectedOp] = useState<Op | undefined>()
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set())
   const visibleOps = remoteOnly ? ops.filter((op) => op.source === 'remote') : ops
+  const groups = useMemo(() => groupOpsByFile(visibleOps), [visibleOps])
   const fileCount = new Set(ops.map((op) => op.filePath)).size
+
+  const toggleFile = (filePath: string) => {
+    setExpandedFiles((current) => {
+      const next = new Set(current)
+      if (next.has(filePath)) next.delete(filePath)
+      else next.add(filePath)
+      return next
+    })
+  }
 
   return (
     <section className="view active">
@@ -111,57 +94,16 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
           />
         )
       ) : (
-        <div className="op-list">
-          {visibleOps.map((op) => {
-            const { added, removed } = countDiff(op.diff)
-            const dotClass = op.source === 'remote' ? 'remote' : ''
-
-            return (
-              <article
-                key={op.hash}
-                aria-label={op.filePath}
-                className="op-row op-row-clickable"
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedOp(op)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    setSelectedOp(op)
-                  }
-                }}
-              >
-                <span aria-label={op.source === 'remote' ? 'Remote change' : 'Local change'} className={`op-dot ${dotClass}`} />
-                <time className="op-time">{formatTime(op.timestamp, locale)}</time>
-                <div className="op-file">
-                  <p className="op-file-name">{op.filePath}</p>
-                  <p className="op-file-meta">{op.author} · {formatRelativeTime(op.timestamp, t)}</p>
-                </div>
-                <div className="op-stats">
-                  {op.kind === 'created' ? (
-                    <>
-                      <span className="op-kind-badge">{t('opCreated')}</span>
-                      <span className="op-kind-stats">
-                        {t('opLinesAdded').replace('{n}', formatLineCount(added))}
-                      </span>
-                    </>
-                  ) : op.kind === 'deleted' ? (
-                    <>
-                      <span className="op-kind-badge op-kind-deleted">{t('opDeleted')}</span>
-                      <span className="op-kind-stats">
-                        {t('opLinesRemoved').replace('{n}', formatLineCount(removed))}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span>+{formatLineCount(added)}</span>
-                      <span className="op-del">−{formatLineCount(removed)}</span>
-                    </>
-                  )}
-                </div>
-              </article>
-            )
-          })}
+        <div className="file-groups">
+          {groups.map((group) => (
+            <FileGroupRow
+              key={group.filePath}
+              expanded={expandedFiles.has(group.filePath)}
+              group={group}
+              onOpClick={setSelectedOp}
+              onToggle={() => toggleFile(group.filePath)}
+            />
+          ))}
         </div>
       )}
       <OpDiffDialog open={selectedOp !== undefined} op={selectedOp} onClose={() => setSelectedOp(undefined)} />
