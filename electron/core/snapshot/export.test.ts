@@ -67,10 +67,22 @@ describe('exportProjectSnapshot', () => {
     expect(archiveContents).not.toContain('ignored.log')
   })
 
-  it('跳过 binary 文件', async () => {
+  it('打包白名单 binary 文件', async () => {
     const root = await createProject()
     await writeFile(join(root, 'notes.txt'), 'text')
     await writeFile(join(root, 'image.png'), Buffer.from([137, 80, 78, 71, 0]))
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+
+    expect(result.fileCount).toBe(2)
+    expect(result.skippedCount).toBe(0)
+  })
+
+  it('跳过超过 5 MB 的白名单 binary 文件', async () => {
+    const root = await createProject()
+    await writeFile(join(root, 'notes.txt'), 'text')
+    await writeFile(join(root, 'large.png'), Buffer.alloc(5 * 1024 * 1024 + 1, 1))
 
     const result = await exportProjectSnapshot(root)
     archives.push(result.filePath)

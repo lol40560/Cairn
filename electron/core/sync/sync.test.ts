@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../oplog'
+import { BlobStore } from '../blobs'
 import { createAuthHmac, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
@@ -147,6 +148,168 @@ describe('sync protocol', () => {
     expect(deriveAuthKey('ABCDEF')).toHaveLength(32)
     expect(createAuthHmac('ABCDEF', 'nonce')).toMatch(/^[a-f0-9]{64}$/)
     expect(createAuthHmac('ABCDEF', 'nonce')).not.toBe(createAuthHmac('GHIJKL', 'nonce'))
+  })
+})
+
+describe('binary blob sync', () => {
+  it('連線後宣告本地 blob，缺少 blob 的 peer 會請求下載', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const content = Buffer.from([1, 2, 3])
+    const hash = await store.put(content)
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+    )
+
+    await sync.start()
+    transport.emit('connect', 'peer-a')
+    await vi.waitFor(() => {
+      expect(transport.send).toHaveBeenCalledWith('peer-a', { type: 'have-blob', hash, size: content.length })
+    })
+
+    transport.send.mockClear()
+    const missingHash = createHash('sha256').update('missing').digest('hex')
+    transport.emit('message', 'peer-a', { type: 'have-blob', hash: missingHash, size: 7 })
+    await vi.waitFor(() => {
+      expect(transport.send).toHaveBeenCalledWith('peer-a', { type: 'want-blob', hash: missingHash })
+    })
+    await sync.stop()
+  })
+
+  it('驗證 data-blob 雜湊後才存入 BlobStore，雜湊錯誤會被拒絕', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+    )
+    const content = Buffer.from([9, 8, 7])
+    const hash = createHash('sha256').update(content).digest('hex')
+
+    await sync.start()
+    transport.emit('message', 'peer-a', { type: 'data-blob', hash, data: content.toString('base64') })
+    await vi.waitFor(async () => expect(await store.get(hash)).toEqual(content))
+
+    const error = waitForEvent<[Error]>(sync, 'error')
+    transport.emit('message', 'peer-a', { type: 'data-blob', hash, data: Buffer.from([0]).toString('base64') })
+    await expect(error).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('blob hash mismatch') })])
+    await sync.stop()
+  })
+
+  it('缺 blob 的 binary op 進入 pending，blob 到達後自動落盤', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const transport = new MockTransport()
+    const content = Buffer.from([137, 80, 78, 71, 0, 42])
+    const blobHash = createHash('sha256').update(content).digest('hex')
+    const input: NewOp = {
+      author: 'alice',
+      baseHash: undefined,
+      blobHash,
+      diff: '',
+      filePath: 'assets/logo.png',
+      id: 'binary-pending',
+      kind: 'created',
+      parentHashes: [],
+      size: content.length,
+      timestamp: 1,
+    }
+    const remote: Op = { ...input, hash: computeHash(input) }
+    const writeBinaryFile = vi.fn(async () => undefined)
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        readFile: async () => '',
+        writeFile: vi.fn(async () => undefined),
+        writeBinaryFile,
+      },
+    )
+
+    await sync.start()
+    transport.emit('message', 'peer-a', { op: remote, type: 'data' })
+    await vi.waitFor(() => {
+      expect(transport.broadcast).toHaveBeenCalledWith({ type: 'want-blob', hash: blobHash })
+    })
+    expect(writeBinaryFile).not.toHaveBeenCalled()
+
+    transport.emit('message', 'peer-a', { type: 'data-blob', hash: blobHash, data: content.toString('base64') })
+    await vi.waitFor(() => {
+      expect(writeBinaryFile).toHaveBeenCalledWith('assets/logo.png', content)
+      expect(applyRemoteChange).toHaveBeenCalledWith('assets/logo.png', '', false, blobHash)
+    })
+    await sync.stop()
+  })
+
+  it('已有 blob 時不會重複請求', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const hash = await store.put(Buffer.from('already-here'))
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+    )
+
+    await sync.start()
+    transport.emit('message', 'peer-a', { type: 'have-blob', hash, size: 12 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(transport.send).not.toHaveBeenCalledWith('peer-a', { type: 'want-blob', hash })
+    await sync.stop()
+  })
+
+  it('兩個真實 TCP Sync 會傳送 blob 並將 binary op 落盤', async () => {
+    const source = await createTestOplog()
+    const target = await createTestOplog()
+    const sourceStore = new BlobStore(source.root)
+    const targetStore = new BlobStore(target.root)
+    const sourceTransport = new Transport('source')
+    const targetTransport = new Transport('target')
+    transports.push(sourceTransport, targetTransport)
+    const content = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 42])
+    const blobHash = await sourceStore.put(content)
+
+    const targetSync = new Sync(
+      { blobStore: targetStore, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: targetTransport },
+      {
+        applyRemoteChange: async () => undefined,
+        readFile: async () => '',
+        writeFile: async () => undefined,
+        writeBinaryFile: async (relativePath, data) => {
+          const destination = join(target.root, relativePath)
+          await mkdir(join(destination, '..'), { recursive: true })
+          await writeFile(destination, data)
+        },
+      },
+    )
+    const sourceSync = new Sync(
+      { blobStore: sourceStore, oplog: source.oplog, projectRoot: source.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'source', transport: sourceTransport },
+    )
+
+    await targetSync.start({ discovery: false })
+    await sourceSync.start({ discovery: false })
+    await sourceSync.connectToAddress('127.0.0.1', targetSync.getLocalPort()!, 'ABCDEF')
+    await vi.waitFor(async () => expect(await targetStore.has(blobHash)).toBe(true))
+
+    const input: NewOp = {
+      author: 'alice', blobHash, diff: '', filePath: 'assets/logo.png', id: 'tcp-binary',
+      kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
+    }
+    const op = source.oplog.putOp(input)
+    sourceSync.announceLocalOp(op)
+
+    await vi.waitFor(async () => {
+      await expect(readFile(join(target.root, 'assets', 'logo.png'))).resolves.toEqual(content)
+    })
+    await sourceSync.stop()
+    await targetSync.stop()
   })
 })
 

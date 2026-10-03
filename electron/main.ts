@@ -10,6 +10,7 @@ import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
+import { BlobStore } from './core/blobs'
 import { AppError, wrapIpcHandler } from './core/errors'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
@@ -634,12 +635,13 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   }
 
   const project = activeProject
+  const blobStore = new BlobStore(project.root)
   const sync = new Sync(
-    { oplog: project.oplog, projectRoot: project.root, roomCode },
+    { blobStore, oplog: project.oplog, projectRoot: project.root, roomCode },
     {},
     {
-      applyRemoteChange: (relativePath, content, deleted) =>
-        project.watcher.applyRemoteChange(relativePath, content, deleted),
+      applyRemoteChange: (relativePath, content, deleted, blobHash) =>
+        project.watcher.applyRemoteChange(relativePath, content, deleted, blobHash),
       readFile: async (relativePath) => {
         try {
           return await readFile(projectFilePath(project.root, relativePath), 'utf8')
@@ -655,6 +657,11 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
         const targetPath = projectFilePath(project.root, relativePath)
         await mkdir(dirname(targetPath), { recursive: true })
         await writeFile(targetPath, content, 'utf8')
+      },
+      writeBinaryFile: async (relativePath, content) => {
+        const targetPath = projectFilePath(project.root, relativePath)
+        await mkdir(dirname(targetPath), { recursive: true })
+        await writeFile(targetPath, content)
       },
       moveRemoteDeletionToTrash: async (relativePath, author, opHash) => {
         const targetPath = projectFilePath(project.root, relativePath)

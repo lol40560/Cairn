@@ -32,7 +32,6 @@ const CREATE_SCHEMA = `
     blob_hash TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_ops_timestamp ON ops(timestamp DESC);
-  CREATE INDEX IF NOT EXISTS idx_ops_blob_hash ON ops(blob_hash);
 `
 
 function canonicalize(input: NewOp): NewOp {

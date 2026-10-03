@@ -210,13 +210,22 @@ export class ProjectWatcher extends EventEmitter {
     console.info(`[cairn:watcher] 已停止监控 ${this.projectRoot}`)
   }
 
-  async applyRemoteChange(relativePath: string, content: string, deleted = false): Promise<void> {
+  async applyRemoteChange(
+    relativePath: string,
+    content: string,
+    deleted = false,
+    blobHash?: string,
+  ): Promise<void> {
     const normalizedPath = this.assertSafeRelativePath(relativePath)
-    const snapshotHash = writeSnapshot(this.projectRoot, normalizedPath, content)
     if (deleted) {
       this.baseline.delete(normalizedPath)
       return
     }
+    if (blobHash) {
+      this.baseline.set(normalizedPath, { content: '', snapshotHash: '', blobHash })
+      return
+    }
+    const snapshotHash = writeSnapshot(this.projectRoot, normalizedPath, content)
     this.baseline.set(normalizedPath, { content, snapshotHash })
   }
 

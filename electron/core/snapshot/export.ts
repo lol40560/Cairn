@@ -2,11 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, extname, join, relative, resolve, sep } from 'node:path'
 import { Writable } from 'node:stream'
 
 import { IgnoreMatcher } from '../ignore'
-import { isBinaryFile } from '../watcher/watcher'
+import {
+  isBinaryFile,
+  MAX_SYNCABLE_BINARY_SIZE,
+  SYNCABLE_BINARY_EXTENSIONS,
+} from '../watcher/watcher'
 import { AppError } from '../errors'
 
 const require = createRequire(import.meta.url)
@@ -51,7 +55,7 @@ interface ExportFile {
   size: number
 }
 
-/** 递归收集可导出的文本文件，保留其项目内相对路径。 */
+/** 递归收集可导出的文本與白名單二進制檔案，保留其项目内相对路径。 */
 async function collectExportFiles(projectRoot: string): Promise<{ files: ExportFile[]; skippedCount: number }> {
   const files: ExportFile[] = []
   const binaryByExtension = new Map<string, boolean>()
@@ -99,8 +103,14 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
         continue
       }
 
-      if (await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
-        // TODO(v1.4-B): 可同步圖片與字型會改由 blob 傳輸，此階段仍不納入 snapshot ZIP。
+      const size = sourceSize ?? (await stat(sourcePath)).size
+      const extension = extname(relativePath).toLowerCase()
+      const syncableBinary = SYNCABLE_BINARY_EXTENSIONS.has(extension)
+      if (syncableBinary && size > MAX_SYNCABLE_BINARY_SIZE) {
+        skippedCount += 1
+        continue
+      }
+      if (!syncableBinary && await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
         skippedCount += 1
         continue
       }
@@ -108,7 +118,7 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
       files.push({
         absolutePath: sourcePath,
         relativePath,
-        size: sourceSize ?? (await stat(sourcePath)).size,
+        size,
       })
     }
   }
@@ -156,7 +166,7 @@ async function createZipBuffer(files: ExportFile[]): Promise<Buffer> {
 }
 
 /**
- * 将项目的可同步文本文件打包为内存 ZIP。P2P seeder 与手动导出共用该入口，
+ * 将项目的可同步文本及白名單二進制檔案打包为内存 ZIP。P2P seeder 与手动导出共用该入口，
  * 从而确保过滤规则和体积上限完全一致。
  */
 export async function packageProjectAsZip(
@@ -191,7 +201,7 @@ export async function packageProjectAsZip(
 }
 
 /**
- * 打包当前项目的文本文件快照。Cairn 内部数据、依赖、构建产物和 binary 文件均不会进入压缩包。
+ * 打包当前项目快照。Cairn 内部数据、依赖、构建产物和非白名單 binary 文件均不会进入压缩包。
  */
 export async function exportProjectSnapshot(
   projectRoot: string,

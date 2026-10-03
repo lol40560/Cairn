@@ -99,6 +99,22 @@ describe('SnapshotDownloader', () => {
     expect(sync.retryPendingOps).toHaveBeenCalledOnce()
   })
 
+  it('解压快照时保留二进制文件的原始字节', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    const image = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 255, 42])
+    await mkdir(join(source, 'assets'), { recursive: true })
+    await writeFile(join(source, 'assets', 'logo.png'), image)
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+
+    await downloader.startDownload(snapshotId, target)
+
+    await expect(readFile(join(target, 'assets', 'logo.png'))).resolves.toEqual(image)
+  })
+
   it('哈希校验失败时拒绝解压', async () => {
     const source = await createDirectory('cairn-download-source-')
     const target = await createDirectory('cairn-download-target-')

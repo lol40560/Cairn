@@ -6,6 +6,7 @@ import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 import { applyPatch } from 'diff'
 import { merge } from 'node-diff3'
 
+import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
@@ -18,6 +19,8 @@ import { Transport } from './transport'
 export interface SyncOptions {
   roomCode: string
   oplog: Oplog
+  /** 二進制內容的內容定址儲存；未提供時仍可維持純文字同步。 */
+  blobStore?: BlobStore
   /** 用于持久化等待文件基线的远端操作。 */
   projectRoot?: string
 }
@@ -27,10 +30,11 @@ export interface SyncStartOptions {
 }
 
 export interface SyncHooks {
-  applyRemoteChange(relativePath: string, content: string, deleted?: boolean): Promise<void>
+  applyRemoteChange(relativePath: string, content: string, deleted?: boolean, blobHash?: string): Promise<void>
   fileExists?(relativePath: string): Promise<boolean>
   readFile(relativePath: string): Promise<string>
   writeFile(relativePath: string, content: string): Promise<void>
+  writeBinaryFile?(relativePath: string, content: Buffer): Promise<void>
   moveRemoteDeletionToTrash?(relativePath: string, author: string, opHash: string): Promise<void>
 }
 
@@ -302,6 +306,7 @@ export class Sync extends EventEmitter {
     for (const hash of this.options.oplog.listAllHashes()) {
       this.send(peerId, { hash, type: 'have' })
     }
+    void this.announceBlobs(peerId).catch((error: unknown) => this.emitError(error))
     this.seeder?.announceToPeer?.(peerId)
   }
 
@@ -334,6 +339,21 @@ export class Sync extends EventEmitter {
 
     if (message.type === 'data') {
       void this.receiveRemoteOp(message.op)
+      return
+    }
+
+    if (message.type === 'have-blob') {
+      void this.handleHaveBlob(peerId, message.hash).catch((error: unknown) => this.emitError(error))
+      return
+    }
+
+    if (message.type === 'want-blob') {
+      void this.handleWantBlob(peerId, message.hash).catch((error: unknown) => this.emitError(error))
+      return
+    }
+
+    if (message.type === 'data-blob') {
+      void this.handleDataBlob(message.hash, message.data).catch((error: unknown) => this.emitError(error))
       return
     }
 
@@ -419,6 +439,10 @@ export class Sync extends EventEmitter {
       throw new Error(`拒绝同步敏感文件：${op.filePath}`)
     }
 
+    if (op.blobHash) {
+      return this.applyRemoteBinaryOp(op, retryPending)
+    }
+
     const localContent = await this.hooks.readFile(op.filePath)
     const exists = this.hooks.fileExists
       ? await this.hooks.fileExists(op.filePath)
@@ -472,6 +496,94 @@ export class Sync extends EventEmitter {
 
     await this.handleConflict(op, localContent, { baseContent, remoteContent, mergedWithMarkers: mergedContent })
     return false
+  }
+
+  /** blob 尚未到達時先保留 op，取得且驗證內容後才寫入專案。 */
+  private async applyRemoteBinaryOp(
+    op: import('../oplog').Op,
+    retryPending: boolean,
+  ): Promise<boolean> {
+    const blobStore = this.options.blobStore
+    if (!blobStore) {
+      throw new Error(`无法应用 binary op：未配置 BlobStore（${op.filePath}）`)
+    }
+    const blobHash = op.blobHash
+    if (!blobHash) {
+      throw new Error(`无法应用 binary op：缺少 blob hash（${op.filePath}）`)
+    }
+    if (!await blobStore.has(blobHash)) {
+      await this.pendingOps?.add(op)
+      this.broadcast({ type: 'want-blob', hash: blobHash })
+      return false
+    }
+
+    if (op.kind === 'deleted') {
+      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      await this.hooks!.applyRemoteChange(op.filePath, '', true, blobHash)
+      await this.completeRemoteOp(op, retryPending)
+      return true
+    }
+
+    const content = await blobStore.get(blobHash)
+    if (!content) {
+      throw new Error(`blob 在存在检查后丢失：${blobHash}`)
+    }
+    if (!this.hooks!.writeBinaryFile) {
+      throw new Error(`无法应用 binary op：缺少二进制写入器（${op.filePath}）`)
+    }
+
+    // 先更新基线，再写磁碟，避免 watcher 將遠端落地誤判為本地變更。
+    await this.hooks!.applyRemoteChange(op.filePath, '', false, blobHash)
+    await this.hooks!.writeBinaryFile(op.filePath, content)
+    await this.completeRemoteOp(op, retryPending)
+    return true
+  }
+
+  private async announceBlobs(peerId: string): Promise<void> {
+    const blobStore = this.options.blobStore
+    if (!blobStore) return
+
+    const hashes = await blobStore.listAll()
+    console.info(`[cairn:sync] 向 ${peerId} 广播 ${hashes.length} 个 blob`)
+    for (const hash of hashes) {
+      const blob = await blobStore.get(hash)
+      if (blob) this.send(peerId, { type: 'have-blob', hash, size: blob.length })
+    }
+  }
+
+  private async handleHaveBlob(peerId: string, hash: string): Promise<void> {
+    const blobStore = this.options.blobStore
+    if (!blobStore || await blobStore.has(hash)) return
+    this.send(peerId, { type: 'want-blob', hash })
+  }
+
+  private async handleWantBlob(peerId: string, hash: string): Promise<void> {
+    const blob = await this.options.blobStore?.get(hash)
+    if (blob) this.send(peerId, { type: 'data-blob', hash, data: blob.toString('base64') })
+  }
+
+  private async handleDataBlob(hash: string, data: string): Promise<void> {
+    const blobStore = this.options.blobStore
+    if (!blobStore) return
+
+    const content = Buffer.from(data, 'base64')
+    const actualHash = createHash('sha256').update(content).digest('hex')
+    if (actualHash !== hash) {
+      this.emitError(new Error(`blob hash mismatch: expected ${hash}, got ${actualHash}`))
+      return
+    }
+    await blobStore.put(content)
+    await this.retryPendingBinaryOps()
+  }
+
+  private async retryPendingBinaryOps(): Promise<void> {
+    if (!this.pendingOps || !this.options.blobStore || this.retryingPending) return
+
+    for (const entry of await this.pendingOps.list()) {
+      if (entry.op.blobHash && await this.options.blobStore.has(entry.op.blobHash)) {
+        await this.applyRemoteOp(entry.op, false)
+      }
+    }
   }
 
   private async writeAndCompleteRemoteOp(

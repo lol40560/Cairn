@@ -49,6 +49,6 @@ describe('BlobStore', () => {
     const content = Buffer.alloc(5 * 1024 * 1024 + 1, 7)
     const hash = await store.put(content)
 
-    expect(await store.get(hash)).toEqual(content)
+    expect((await store.get(hash))?.equals(content)).toBe(true)
   })
 })

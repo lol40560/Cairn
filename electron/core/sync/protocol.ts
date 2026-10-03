@@ -48,6 +48,9 @@ export type SyncMessage =
   | { type: 'want-chunk'; snapshotId: string; index: number }
   | { type: 'chunk'; snapshotId: string; index: number; data: string }
   | { type: 'snapshot-done'; snapshotId: string }
+  | { type: 'have-blob'; hash: string; size: number }
+  | { type: 'want-blob'; hash: string }
+  | { type: 'data-blob'; hash: string; data: string }
   | { type: 'ping' }
   | { type: 'pong' }
 
@@ -108,7 +111,12 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
       return typeof candidate.reason === 'string'
     case 'have':
     case 'want':
+    case 'want-blob':
       return typeof candidate.hash === 'string'
+    case 'have-blob':
+      return typeof candidate.hash === 'string' && isNonNegativeNumber(candidate.size)
+    case 'data-blob':
+      return typeof candidate.hash === 'string' && typeof candidate.data === 'string'
     case 'data':
       return typeof candidate.op === 'object' && candidate.op !== null
     case 'seeder-available':
