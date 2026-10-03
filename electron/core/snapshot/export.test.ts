@@ -52,6 +52,21 @@ describe('exportProjectSnapshot', () => {
     expect(archiveContents).not.toContain('node_modules/package/index.js')
   })
 
+  it('遵守项目的 .gitignore 规则', async () => {
+    const root = await createProject()
+    await writeFile(join(root, '.gitignore'), '*.log\n')
+    await writeFile(join(root, 'keep.md'), '# Keep\n')
+    await writeFile(join(root, 'ignored.log'), 'do not export\n')
+
+    const result = await exportProjectSnapshot(root)
+    archives.push(result.filePath)
+    const archiveContents = (await readFile(result.filePath)).toString('utf8')
+
+    expect(result.fileCount).toBe(2)
+    expect(archiveContents).toContain('keep.md')
+    expect(archiveContents).not.toContain('ignored.log')
+  })
+
   it('跳过 binary 文件', async () => {
     const root = await createProject()
     await writeFile(join(root, 'notes.txt'), 'text')

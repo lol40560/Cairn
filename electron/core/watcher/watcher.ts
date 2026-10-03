@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
+import { dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { userInfo } from 'node:os'
 
 import chokidar, { type FSWatcher } from 'chokidar'
 import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, type NewOp, type Oplog, type Op } from '../oplog'
+import { DEFAULT_IGNORE_PATTERNS, IgnoreMatcher } from '../ignore'
 import { TrashManager } from '../trash'
 import { writeSnapshot } from './snapshot'
 
@@ -21,30 +22,15 @@ interface BaselineEntry {
   snapshotHash: string
 }
 
-export const IGNORED_DIRECTORIES = new Set([
-  '.git',
-  '.vibeswarm',
-  '.cairn',
-  'node_modules',
-  'dist',
-  'build',
-])
+/** 相容既有檔案瀏覽 API；監控本身改由 IgnoreMatcher 判斷。 */
+export const IGNORED_DIRECTORIES = new Set(
+  DEFAULT_IGNORE_PATTERNS
+    .filter((pattern) => !pattern.includes('*') && pattern !== '.DS_Store'),
+)
 const TEXT_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt', '.html', '.css', '.scss', '.yml', '.yaml', '.toml', '.xml', '.svg', '.vue', '.svelte', '.py', '.rs', '.go', '.java', '.c', '.cpp', '.h', '.sh', '.sql'])
 const BINARY_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp', '.tiff', '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar', '.mp3', '.mp4', '.wav', '.mov', '.avi', '.mkv', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.exe', '.dll', '.so', '.dylib', '.bin', '.dat', '.db', '.sqlite'])
 
-/** 不同步常见密钥与凭据；.env.example 仍可作为团队模板共享。 */
-export function isSensitiveFile(relativePath: string): boolean {
-  const fileName = basename(relativePath).toLowerCase()
-  return fileName === '.env'
-    || (fileName.startsWith('.env.') && fileName !== '.env.example')
-    || fileName.endsWith('.pem')
-    || fileName.endsWith('.key')
-    || fileName === 'id_rsa'
-    || fileName === 'id_ed25519'
-    || fileName === '.npmrc'
-    || fileName === '.netrc'
-    || fileName === 'credentials.json'
-}
+export { isSensitiveFile } from '../ignore'
 
 /** 以扩展名优先、NUL 字节兜底的方式判断文件是否为 binary。 */
 export async function isBinaryFile(
@@ -84,6 +70,7 @@ export class ProjectWatcher extends EventEmitter {
   private readonly debounceMs: number
   private readonly debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly fileQueues = new Map<string, Promise<void>>()
+  private readonly ignoreMatcher: IgnoreMatcher
   private readonly oplog: Oplog
   private readonly projectRoot: string
   private readonly trash: TrashManager
@@ -105,6 +92,7 @@ export class ProjectWatcher extends EventEmitter {
     this.debounceMs = options.debounceMs ?? 300
     this.author = options.author ?? userInfo().username
     this.trash = trash
+    this.ignoreMatcher = new IgnoreMatcher(projectRoot)
   }
 
   on(event: 'op', listener: (op: Op) => void): this
@@ -121,6 +109,7 @@ export class ProjectWatcher extends EventEmitter {
     const run = ++this.activeRun
     this.baseline.clear()
     this.initializing = true
+    this.ignoreMatcher.reload()
 
     const watcher = chokidar.watch(this.projectRoot, {
       ignoreInitial: false,
@@ -139,6 +128,7 @@ export class ProjectWatcher extends EventEmitter {
     }
 
     watcher.on('add', (absolutePath) => {
+      this.reloadIgnoreRulesIfNeeded(absolutePath)
       if (this.initializing) {
         enqueueInitial(absolutePath)
         return
@@ -146,6 +136,7 @@ export class ProjectWatcher extends EventEmitter {
       this.schedule(absolutePath, run)
     })
     watcher.on('change', (absolutePath) => {
+      this.reloadIgnoreRulesIfNeeded(absolutePath)
       if (this.initializing) {
         enqueueInitial(absolutePath)
         return
@@ -153,6 +144,7 @@ export class ProjectWatcher extends EventEmitter {
       this.schedule(absolutePath, run)
     })
     watcher.on('unlink', (absolutePath) => {
+      this.reloadIgnoreRulesIfNeeded(absolutePath)
       if (!this.initializing) {
         this.schedule(absolutePath, run)
       }
@@ -404,13 +396,18 @@ export class ProjectWatcher extends EventEmitter {
 
   private isIgnoredPath(path: string): boolean {
     const relativePath = relative(this.projectRoot, path)
-    if (relativePath.length === 0) {
-      return false
-    }
+    if (relativePath.length === 0) return false
+    if (relativePath.startsWith('..') || relativePath.split(sep).includes('..')) return true
 
-    return isSensitiveFile(relativePath) || relativePath
-      .split(sep)
-      .some((segment) => IGNORED_DIRECTORIES.has(segment))
+    return this.ignoreMatcher.isIgnored(relativePath.split(sep).join('/'))
+  }
+
+  /** 忽略檔規則變動後立即重載，下一個檔案事件即可套用新設定。 */
+  private reloadIgnoreRulesIfNeeded(absolutePath: string): void {
+    const relativePath = relative(this.projectRoot, absolutePath).split(sep).join('/')
+    if (relativePath === '.gitignore' || relativePath === '.cairnignore') {
+      this.ignoreMatcher.reload()
+    }
   }
 
   /** 删除进入废纸篓后的后续步骤失败时，尽力恢复基线内容，绝不继续广播删除。 */

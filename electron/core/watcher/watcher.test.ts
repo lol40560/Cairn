@@ -180,6 +180,24 @@ describe('ProjectWatcher', () => {
     await expectNoOp(watcher)
   })
 
+  it('遵守 .gitignore，且 .cairnignore 的否定规则可重新纳入文件', async () => {
+    const { projectRoot, watcher } = await createFixture()
+    await writeFile(join(projectRoot, '.gitignore'), '*.log\n', 'utf8')
+    await watcher.start()
+
+    await writeFile(join(projectRoot, 'ignored.log'), 'first\n', 'utf8')
+    await expectNoOp(watcher)
+
+    const configOp = waitForOp(watcher)
+    await writeFile(join(projectRoot, '.cairnignore'), '!ignored.log\n', 'utf8')
+    await expect(configOp).resolves.toMatchObject({ filePath: '.cairnignore' })
+
+    const opPromise = waitForOp(watcher)
+    await writeFile(join(projectRoot, 'ignored.log'), 'second\n', 'utf8')
+
+    await expect(opPromise).resolves.toMatchObject({ filePath: 'ignored.log', kind: 'created' })
+  })
+
   it('忽略敏感文件，但允许共享 .env.example 模板', async () => {
     const { projectRoot, watcher } = await createFixture()
     await watcher.start()

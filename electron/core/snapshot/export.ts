@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve, sep } from 'node:path'
 import { Writable } from 'node:stream'
 
-import { isBinaryFile, isSensitiveFile } from '../watcher/watcher'
+import { IgnoreMatcher } from '../ignore'
+import { isBinaryFile } from '../watcher/watcher'
 import { AppError } from '../errors'
 
 const require = createRequire(import.meta.url)
@@ -22,21 +23,6 @@ interface ArchiverModule {
 }
 
 const { ZipArchive } = require('archiver') as ArchiverModule
-
-const IGNORED_DIRECTORIES = new Set([
-  '.cairn',
-  '.git',
-  'node_modules',
-  'dist',
-  'build',
-  '.next',
-  '.nuxt',
-  'target',
-  'coverage',
-  '.turbo',
-  '.cache',
-  '.vscode',
-])
 
 const DEFAULT_MAX_SIZE_BYTES = 50 * 1024 * 1024
 
@@ -69,6 +55,7 @@ interface ExportFile {
 async function collectExportFiles(projectRoot: string): Promise<{ files: ExportFile[]; skippedCount: number }> {
   const files: ExportFile[] = []
   const binaryByExtension = new Map<string, boolean>()
+  const ignoreMatcher = new IgnoreMatcher(projectRoot)
   const resolvedRoot = await realpath(projectRoot)
   let skippedCount = 0
 
@@ -77,6 +64,9 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
 
     for (const entry of entries) {
       const absolutePath = join(directory, entry.name)
+      const relativePath = relative(projectRoot, absolutePath).split(sep).join('/')
+      if (ignoreMatcher.isIgnored(relativePath)) continue
+
       let sourcePath = absolutePath
       let sourceSize: number | undefined
       if (entry.isSymbolicLink()) {
@@ -101,9 +91,6 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
       }
 
       if (entry.isDirectory()) {
-        if (IGNORED_DIRECTORIES.has(entry.name)) {
-          continue
-        }
         await visit(absolutePath)
         continue
       }
@@ -112,8 +99,7 @@ async function collectExportFiles(projectRoot: string): Promise<{ files: ExportF
         continue
       }
 
-      const relativePath = relative(projectRoot, absolutePath).split(sep).join('/')
-      if (isSensitiveFile(relativePath) || await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
+      if (await isBinaryFile(sourcePath, relativePath, binaryByExtension)) {
         skippedCount += 1
         continue
       }
