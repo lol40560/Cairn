@@ -314,6 +314,21 @@ describe('binary blob sync', () => {
 })
 
 describe('transport', () => {
+  it('hello 會攜帶可選的工作區 identity', async () => {
+    const first = new Transport('first')
+    const second = new Transport('second')
+    first.setRoomCode('ABCDEF')
+    second.setRoomCode('ABCDEF')
+    first.setIdentity({ fingerprint: 'workspace', projectName: 'TownPass' })
+    transports.push(first, second)
+    const port = await second.listen()
+    const hello = waitForEvent<[string, { fingerprint: string; projectName: string } | undefined]>(second, 'hello')
+
+    await first.connect('127.0.0.1', port)
+
+    await expect(hello).resolves.toEqual(['first', { fingerprint: 'workspace', projectName: 'TownPass' }])
+  })
+
   it('让两个实例互连并互发消息', async () => {
     const first = new Transport('first')
     const second = new Transport('second')
@@ -538,6 +553,69 @@ describe('transport', () => {
 })
 
 describe('Sync', () => {
+  it('相同工作區指紋會回覆 identity-ok', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    const identity = { fingerprint: 'same', projectName: 'TownPass' }
+    const sync = new Sync(
+      { identity, oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+
+    await sync.start({ discovery: false })
+    transport.emit('hello', 'peer-a', identity)
+
+    expect(transport.send).toHaveBeenCalledWith('peer-a', { type: 'identity-ok' })
+    await sync.stop()
+  })
+
+  it('不同工作區指紋會發出 mismatch 事件並通知對端', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    const localIdentity = { baseCommit: 'a'.repeat(40), fingerprint: 'local', projectName: 'TownPass' }
+    const remoteIdentity = { baseCommit: 'b'.repeat(40), fingerprint: 'remote', projectName: 'OldTownPass' }
+    const sync = new Sync(
+      { identity: localIdentity, oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    const mismatch = waitForEvent<[{
+      peerId: string
+      hostIdentity: typeof localIdentity
+      guestIdentity: typeof remoteIdentity
+    }]>(sync, 'identityMismatch')
+
+    await sync.start({ discovery: false })
+    transport.emit('hello', 'peer-a', remoteIdentity)
+
+    expect((await mismatch)[0]).toEqual({
+      guestIdentity: remoteIdentity,
+      hostIdentity: localIdentity,
+      peerId: 'peer-a',
+    })
+    expect(transport.send).toHaveBeenCalledWith('peer-a', {
+      hostIdentity: localIdentity,
+      reason: 'workspace-fingerprint-differs',
+      type: 'identity-mismatch',
+      yourIdentity: remoteIdentity,
+    })
+    await sync.stop()
+  })
+
+  it('未帶 identity 的舊版 hello 會略過檢查', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    const sync = new Sync(
+      { identity: { fingerprint: 'local', projectName: 'TownPass' }, oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+
+    await sync.start({ discovery: false })
+    transport.emit('hello', 'peer-a', undefined)
+
+    expect(transport.send).not.toHaveBeenCalled()
+    await sync.stop()
+  })
+
   it('直连地址会转发给 transport.connect 并等待 hello 连接', async () => {
     const { oplog } = await createTestOplog()
     const transport = new MockTransport()

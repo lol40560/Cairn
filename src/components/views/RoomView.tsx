@@ -95,6 +95,7 @@ export function RoomView({
   const lastDownloadPath = useAppStore((state) => state.lastDownloadPath)
   const isSharing = useAppStore((state) => state.isSharing)
   const isHost = useAppStore((state) => state.isHost)
+  const identityMismatches = useAppStore((state) => state.identityMismatches)
   const pendingAutoDownload = useAppStore((state) => state.pendingAutoDownload)
   const seeders = useAppStore((state) => state.seeders)
   const showDownloadPrompt = useAppStore((state) => state.showDownloadPrompt)
@@ -504,6 +505,22 @@ export function RoomView({
           </button>
         )}
       </div>
+
+      {identityMismatches.length > 0 && (
+        <div className="identity-warning" role="alert">
+          <div className="identity-warning-title">{t('identityMismatchTitle')}</div>
+          {identityMismatches.map((mismatch) => (
+            <div key={mismatch.peerId} className="identity-warning-row">
+              <div className="identity-warning-peer">{mismatch.guestIdentity.projectName}</div>
+              <div className="identity-warning-detail">
+                <span>{t('identityHost')}: {mismatch.hostIdentity.baseCommit?.slice(0, 7) ?? '—'}</span>
+                <span>{t('identityTheirs')}: {mismatch.guestIdentity.baseCommit?.slice(0, 7) ?? '—'}</span>
+              </div>
+            </div>
+          ))}
+          <div className="identity-warning-hint">{t('identityMismatchHint')}</div>
+        </div>
+      )}
 
       {!joined ? (
         <div className="room-block">

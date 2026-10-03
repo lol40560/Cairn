@@ -19,6 +19,18 @@ export interface PeerInfo {
   lastSeen: number
 }
 
+export interface ProjectIdentity {
+  projectName: string
+  fingerprint: string
+  baseCommit?: string
+}
+
+export interface IdentityMismatch {
+  peerId: string
+  hostIdentity: ProjectIdentity
+  guestIdentity: ProjectIdentity
+}
+
 export interface LocalEndpoint {
   host: string
   port: number
@@ -161,11 +173,13 @@ export interface CairnApi {
   joinRoom(roomCode: string): Promise<IpcResult<void>>
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
+  getProjectIdentity(): Promise<IpcResult<ProjectIdentity>>
   getLocalEndpoint(): Promise<IpcResult<LocalEndpoint | undefined>>
   connectToAddress(input: LocalEndpoint & { roomCode: string }): Promise<IpcResult<void>>
   getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
   onConflict(callback: (conflict: ConflictRecord) => void): () => void
+  onIdentityMismatch(callback: (info: IdentityMismatch) => void): () => void
   saveGithubConfig(config: { token?: string; owner: string; repo: string }): Promise<IpcResult<void>>
   getGithubConfig(): Promise<IpcResult<{ owner: string; repo: string; hasToken: boolean }>>
   clearGithubConfig(): Promise<IpcResult<void>>

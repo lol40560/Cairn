@@ -62,6 +62,8 @@ export function App() {
   const roomCode = useAppStore((state) => state.roomCode)
   const status = useAppStore((state) => state.status)
   const addConflict = useAppStore((state) => state.addConflict)
+  const addIdentityMismatch = useAppStore((state) => state.addIdentityMismatch)
+  const clearIdentityMismatches = useAppStore((state) => state.clearIdentityMismatches)
   const prependOp = useAppStore((state) => state.prependOp)
   const replaceOps = useAppStore((state) => state.replaceOps)
   const setActiveView = useAppStore((state) => state.setActiveView)
@@ -186,14 +188,18 @@ export function App() {
       addConflict(conflict)
       console.warn('[cairn] 检测到冲突', conflict)
     })
+    const unsubscribeIdentityMismatch = window.cairn.onIdentityMismatch((info) => {
+      if (!disposed) addIdentityMismatch(info)
+    })
 
     return () => {
       disposed = true
       unsubscribe()
       unsubscribePeers()
       unsubscribeConflict()
+      unsubscribeIdentityMismatch()
     }
-  }, [addConflict, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeers, setStatus, t])
+  }, [addConflict, addIdentityMismatch, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeers, setStatus, t])
 
   useEffect(() => {
     let disposed = false
@@ -230,6 +236,7 @@ export function App() {
 
   const handleCreateRoom = async (): Promise<void> => {
     try {
+      clearIdentityMismatches()
       const code = getIpcData(await window.cairn.createRoom())
       setRoomCode(code)
       setIsHost(true)
@@ -242,6 +249,7 @@ export function App() {
 
   const handleJoinRoom = async (code: string): Promise<void> => {
     try {
+      clearIdentityMismatches()
       getIpcData(await window.cairn.joinRoom(code))
       setRoomCode(code)
       setIsHost(false)
@@ -258,6 +266,7 @@ export function App() {
       setPeers([])
       setIsHost(false)
       setRoomCode('')
+      clearIdentityMismatches()
     } catch (error) {
       console.error('[cairn] 无法离开房间', error)
       setToast(normalizeError(error, t))

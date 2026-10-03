@@ -8,6 +8,7 @@ import { merge } from 'node-diff3'
 
 import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
+import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
 import { isSensitiveFile } from '../watcher/watcher'
@@ -21,6 +22,8 @@ export interface SyncOptions {
   oplog: Oplog
   /** 二進制內容的內容定址儲存；未提供時仍可維持純文字同步。 */
   blobStore?: BlobStore
+  /** 本機工作區基準，用於在握手後提示不同專案或版本。 */
+  identity?: ProjectIdentity
   /** 用于持久化等待文件基线的远端操作。 */
   projectRoot?: string
 }
@@ -94,6 +97,7 @@ export class Sync extends EventEmitter {
     const discoveryEnabled = startOptions.discovery ?? true
     this.bindEvents()
     this.transport.setRoomCode(this.options.roomCode)
+    this.transport.setIdentity?.(this.options.identity)
     try {
       const port = await this.transport.listen()
       this.localPort = port
@@ -239,6 +243,7 @@ export class Sync extends EventEmitter {
     this.transport.on('connect', this.handleConnect)
     this.transport.on('disconnect', this.handleDisconnect)
     this.transport.on('authFailed', this.handleAuthFailed)
+    this.transport.on('hello', this.handleHello)
     this.transport.on('message', this.handleMessage)
     this.transport.on('error', this.handleError)
   }
@@ -250,6 +255,7 @@ export class Sync extends EventEmitter {
     this.transport.off('connect', this.handleConnect)
     this.transport.off('disconnect', this.handleDisconnect)
     this.transport.off('authFailed', this.handleAuthFailed)
+    this.transport.off('hello', this.handleHello)
     this.transport.off('message', this.handleMessage)
     this.transport.off('error', this.handleError)
   }
@@ -321,6 +327,30 @@ export class Sync extends EventEmitter {
     this.emitError(error)
   }
 
+  /** 认证完成后交换工作区指纹；不匹配只告警，绝不阻断既有同步。 */
+  private readonly handleHello = (peerId: string, remoteIdentity: ProjectIdentity | undefined): void => {
+    const localIdentity = this.options.identity
+    if (!localIdentity || !remoteIdentity) return
+
+    if (localIdentity.fingerprint === remoteIdentity.fingerprint) {
+      this.send(peerId, { type: 'identity-ok' })
+      return
+    }
+
+    const mismatch = {
+      guestIdentity: remoteIdentity,
+      hostIdentity: localIdentity,
+      peerId,
+    }
+    this.emit('identityMismatch', mismatch)
+    this.send(peerId, {
+      hostIdentity: localIdentity,
+      reason: 'workspace-fingerprint-differs',
+      type: 'identity-mismatch',
+      yourIdentity: remoteIdentity,
+    })
+  }
+
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {
     if (message.type === 'have') {
       if (!this.options.oplog.hasOp(message.hash)) {
@@ -354,6 +384,22 @@ export class Sync extends EventEmitter {
 
     if (message.type === 'data-blob') {
       void this.handleDataBlob(message.hash, message.data).catch((error: unknown) => this.emitError(error))
+      return
+    }
+
+    if (message.type === 'identity-mismatch') {
+      const localIdentity = this.options.identity
+      this.emit('identityMismatch', {
+        // 对端带回的 yourIdentity 是当前机器在握手时发送的身份。
+        guestIdentity: message.hostIdentity,
+        hostIdentity: localIdentity ?? message.yourIdentity,
+        peerId,
+      })
+      return
+    }
+
+    if (message.type === 'identity-ok') {
+      console.info(`[cairn:sync] identity 验证通过：${peerId}`)
       return
     }
 

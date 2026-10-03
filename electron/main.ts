@@ -11,6 +11,8 @@ import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import { BlobStore } from './core/blobs'
+import { computeProjectIdentity } from './core/identity'
+import type { ProjectIdentity } from './core/identity'
 import { AppError, wrapIpcHandler } from './core/errors'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
@@ -636,8 +638,9 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
 
   const project = activeProject
   const blobStore = new BlobStore(project.root)
+  const identity = await computeProjectIdentity(project.root)
   const sync = new Sync(
-    { blobStore, oplog: project.oplog, projectRoot: project.root, roomCode },
+    { blobStore, identity, oplog: project.oplog, projectRoot: project.root, roomCode },
     {},
     {
       applyRemoteChange: (relativePath, content, deleted, blobHash) =>
@@ -677,6 +680,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   )
   sync.on('peerJoined', broadcastPeers)
   sync.on('peerLeft', broadcastPeers)
+  sync.on('identityMismatch', (info) => sendToWindow('cairn:identity-mismatch', info))
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
@@ -727,6 +731,13 @@ export async function leaveRoom(): Promise<void> {
 
 export function listPeers(): PeerInfo[] {
   return activeRoom?.sync.listPeers() ?? []
+}
+
+export async function getProjectIdentity(): Promise<ProjectIdentity> {
+  if (!activeProject) {
+    throw new AppError('No active project', 'config')
+  }
+  return computeProjectIdentity(activeProject.root)
 }
 
 /** 返回可供局域网队友使用的本机 IPv4 与当前同步监听端口。 */
@@ -1131,6 +1142,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
+  ipcMain.handle('cairn:getProjectIdentity', wrapIpcHandler(getProjectIdentity))
   ipcMain.handle('cairn:getLocalEndpoint', wrapIpcHandler(getLocalEndpoint))
   ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
   ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))

@@ -4,6 +4,7 @@ import { createServer, Socket, type Server } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 
 import { createAuthHmac, decodeMessages, deriveRoomHash, encodeMessage, type SyncMessage } from './protocol'
+import type { ProjectIdentity } from '../identity'
 
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
 export const HEARTBEAT_INTERVAL_MS = 30_000
@@ -36,6 +37,7 @@ export class Transport extends EventEmitter {
   private readonly authenticatedSockets = new Set<Socket>()
   private readonly usedNonces = new Set<string>()
   private readonly sockets = new Set<Socket>()
+  private identity: ProjectIdentity | undefined
   private roomCode = ''
   private server: Server | undefined
 
@@ -48,6 +50,10 @@ export class Transport extends EventEmitter {
 
   setRoomCode(roomCode: string): void {
     this.roomCode = roomCode
+  }
+
+  setIdentity(identity: ProjectIdentity | undefined): void {
+    this.identity = identity
   }
 
   async listen(): Promise<number> {
@@ -209,7 +215,7 @@ export class Transport extends EventEmitter {
   private sendHello(socket: Socket): void {
     if (!socket.destroyed) {
       socket.write(
-        encodeMessage({ type: 'hello', peerId: this.peerId, version: 1 }),
+        encodeMessage({ identity: this.identity, type: 'hello', peerId: this.peerId, version: 1 }),
       )
     }
   }
@@ -226,6 +232,7 @@ export class Transport extends EventEmitter {
         return
       }
       this.registerPeer(socket, message.peerId)
+      this.emit('hello', message.peerId, message.identity)
       return
     }
 

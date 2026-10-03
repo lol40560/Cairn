@@ -1,5 +1,6 @@
 import { createHash, createHmac } from 'node:crypto'
 
+import type { ProjectIdentity } from '../identity'
 import type { Op } from '../oplog'
 
 export interface PeerInfo {
@@ -32,7 +33,7 @@ export function createAuthHmac(roomCode: string, nonce: string): string {
 }
 
 export type SyncMessage =
-  | { type: 'hello'; peerId: string; version: 1 }
+  | { type: 'hello'; peerId: string; version: 1; identity?: ProjectIdentity }
   | { type: 'auth-request'; roomHash: string; peerId: string }
   | { type: 'auth-challenge'; nonce: string }
   | { type: 'auth-response'; hmac: string }
@@ -51,6 +52,8 @@ export type SyncMessage =
   | { type: 'have-blob'; hash: string; size: number }
   | { type: 'want-blob'; hash: string }
   | { type: 'data-blob'; hash: string; data: string }
+  | { type: 'identity-mismatch'; reason: string; hostIdentity: ProjectIdentity; yourIdentity: ProjectIdentity }
+  | { type: 'identity-ok' }
   | { type: 'ping' }
   | { type: 'pong' }
 
@@ -97,8 +100,17 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'hello':
       return (
         typeof candidate.peerId === 'string' &&
-        candidate.version === 1
+        candidate.version === 1 &&
+        (candidate.identity === undefined || isProjectIdentity(candidate.identity))
       )
+    case 'identity-mismatch':
+      return (
+        typeof candidate.reason === 'string'
+        && isProjectIdentity(candidate.hostIdentity)
+        && isProjectIdentity(candidate.yourIdentity)
+      )
+    case 'identity-ok':
+      return true
     case 'auth-request':
       return typeof candidate.peerId === 'string' && typeof candidate.roomHash === 'string'
     case 'auth-challenge':
@@ -150,6 +162,16 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     default:
       return false
   }
+}
+
+function isProjectIdentity(value: unknown): value is ProjectIdentity {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.projectName === 'string'
+    && typeof candidate.fingerprint === 'string'
+    && (candidate.baseCommit === undefined || typeof candidate.baseCommit === 'string')
+  )
 }
 
 function isNonNegativeNumber(value: unknown): value is number {

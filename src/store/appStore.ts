@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { AvailableProjectEntry, ConflictRecord, LocalEndpoint, Op, PeerInfo, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
+import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
 export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'trash'
@@ -42,6 +42,7 @@ export interface AppState {
   lastConflictFiles: string[]
   trash: TrashEntry[]
   conflicts: ConflictRecord[]
+  identityMismatches: IdentityMismatch[]
   githubConfigured: boolean
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
@@ -72,6 +73,8 @@ export interface AppState {
   addConflict(conflict: ConflictRecord): void
   removeConflict(opHash: string): void
   clearConflicts(): void
+  addIdentityMismatch(info: IdentityMismatch): void
+  clearIdentityMismatches(): void
   setGithubConfigured(value: boolean): void
   replaceOps(ops: Op[]): void
   prependOp(op: Op): void
@@ -104,6 +107,7 @@ export const useAppStore = create<AppState>((set) => ({
   lastConflictFiles: [],
   trash: [],
   conflicts: [],
+  identityMismatches: [],
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
@@ -144,6 +148,10 @@ export const useAppStore = create<AppState>((set) => ({
   })),
   removeConflict: (opHash) => set((state) => ({ conflicts: state.conflicts.filter((conflict) => conflict.opHash !== opHash) })),
   clearConflicts: () => set({ conflicts: [] }),
+  addIdentityMismatch: (info) => set((state) => ({
+    identityMismatches: [info, ...state.identityMismatches.filter((existing) => existing.peerId !== info.peerId)],
+  })),
+  clearIdentityMismatches: () => set({ identityMismatches: [] }),
   setGithubConfigured: (githubConfigured) => set({ githubConfigured }),
   replaceOps: (ops) => set({ ops }),
   prependOp: (op) =>

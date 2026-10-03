@@ -9,6 +9,7 @@ import type { DiscoveryStatus } from './core/sync/discovery'
 import type { TrashEntry } from './core/trash'
 import type { ProjectEntry } from './core/projects'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
+import type { ProjectIdentity } from './core/identity'
 import type { ProjectFileContent, ProjectFileEntry } from './main'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
@@ -41,6 +42,7 @@ const cairn = {
     invoke('cairn:joinRoom', roomCode),
   leaveRoom: (): Promise<IpcResult<void>> => invoke('cairn:leaveRoom'),
   listPeers: (): Promise<IpcResult<PeerInfo[]>> => invoke('cairn:listPeers'),
+  getProjectIdentity: (): Promise<IpcResult<ProjectIdentity>> => invoke('cairn:getProjectIdentity'),
   getLocalEndpoint: (): Promise<IpcResult<{ host: string; port: number } | undefined>> =>
     invoke('cairn:getLocalEndpoint'),
   connectToAddress: (input: { host: string; port: number; roomCode: string }): Promise<IpcResult<void>> =>
@@ -61,6 +63,19 @@ const cairn = {
 
     return () => {
       ipcRenderer.removeListener('cairn:conflict', listener)
+    }
+  },
+  onIdentityMismatch: (
+    callback: (info: { peerId: string; hostIdentity: ProjectIdentity; guestIdentity: ProjectIdentity }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: IpcRendererEvent,
+      info: { peerId: string; hostIdentity: ProjectIdentity; guestIdentity: ProjectIdentity },
+    ): void => callback(info)
+    ipcRenderer.on('cairn:identity-mismatch', listener)
+
+    return () => {
+      ipcRenderer.removeListener('cairn:identity-mismatch', listener)
     }
   },
   saveGithubConfig: (config: { token?: string; owner: string; repo: string }): Promise<IpcResult<void>> => invoke('cairn:saveGithubConfig', config),
