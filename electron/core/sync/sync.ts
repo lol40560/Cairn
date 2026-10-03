@@ -15,7 +15,8 @@ import { isSensitiveFile } from '../watcher/watcher'
 import { Discovery } from './discovery'
 import { PendingOps } from './pending-ops'
 import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
-import { Transport } from './transport'
+import { ReconnectManager, type PeerState } from './reconnect'
+import { Transport, type PeerEndpoint } from './transport'
 
 export interface SyncOptions {
   roomCode: string
@@ -73,6 +74,7 @@ export class Sync extends EventEmitter {
   private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly pendingOps: PendingOps | undefined
   private readonly conflicts: ConflictsManager | undefined
+  private readonly reconnectManager: ReconnectManager
   private retryingPending = false
   private started = false
 
@@ -87,6 +89,13 @@ export class Sync extends EventEmitter {
     this.transport = dependencies.transport ?? new Transport(this.peerId)
     this.pendingOps = options.projectRoot ? new PendingOps(options.projectRoot) : undefined
     this.conflicts = options.projectRoot ? new ConflictsManager(options.projectRoot) : undefined
+    this.reconnectManager = new ReconnectManager({
+      baseDelayMs: 1_000,
+      connect: (peerId, host, port) => this.reconnectPeer(peerId, host, port),
+      maxAttempts: 20,
+      maxDelayMs: 30_000,
+    })
+    this.reconnectManager.on('peerStatusChanged', (state: PeerState) => this.emit('peerStatusChanged', state))
   }
 
   async start(startOptions: SyncStartOptions = {}): Promise<void> {
@@ -127,6 +136,7 @@ export class Sync extends EventEmitter {
 
     this.started = false
     this.localPort = undefined
+    this.reconnectManager.stop()
     this.pendingDirectEndpoint = undefined
     for (const timer of this.directFallbackTimers) {
       clearTimeout(timer)
@@ -155,6 +165,10 @@ export class Sync extends EventEmitter {
 
   getLocalPort(): number | undefined {
     return this.localPort
+  }
+
+  retryPeer(peerId: string): void {
+    this.reconnectManager.retryNow(peerId)
   }
 
   /** 绕过 mDNS 直接连到已知的 TCP 端点，并等待 hello 握手完成。 */
@@ -268,12 +282,14 @@ export class Sync extends EventEmitter {
     this.peers.set(info.peerId, info)
     if (!wasKnown) {
       this.emit('peerJoined', info)
+    }
+    if (!wasKnown || this.reconnectManager.get(info.peerId)?.status !== 'connected') {
       void this.transport.connect(info.host, info.port).catch((error: unknown) => this.emitError(error))
     }
   }
 
   private readonly handlePeerLeft = (peerId: string): void => {
-    if (!this.peers.delete(peerId)) {
+    if (!this.peers.has(peerId)) {
       return
     }
     for (const [seederKey, seeder] of this.seeders) {
@@ -285,15 +301,17 @@ export class Sync extends EventEmitter {
     this.emit('peerLeft', peerId)
   }
 
-  private readonly handleConnect = (peerId: string): void => {
-    const endpoint = this.pendingDirectEndpoint
+  private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint): void => {
+    const directEndpoint = this.pendingDirectEndpoint
     this.pendingDirectEndpoint = undefined
-    if (!this.peers.has(peerId) && endpoint) {
+    const knownPeer = this.peers.get(peerId)
+    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : directEndpoint)
+    if (!knownPeer && reconnectEndpoint) {
       this.peers.set(peerId, {
-        host: endpoint.host,
+        host: reconnectEndpoint.host,
         lastSeen: Date.now(),
         peerId,
-        port: endpoint.port,
+        port: reconnectEndpoint.port,
       })
       this.emit('peerJoined', this.peers.get(peerId))
     } else if (!this.peers.has(peerId)) {
@@ -308,18 +326,54 @@ export class Sync extends EventEmitter {
       }, 300)
       this.directFallbackTimers.add(timer)
     }
+    this.reconnectManager.markConnected(peerId, reconnectEndpoint?.host, reconnectEndpoint?.port)
     this.emit('connected', peerId)
     for (const hash of this.options.oplog.listAllHashes()) {
       this.send(peerId, { hash, type: 'have' })
     }
     void this.announceBlobs(peerId).catch((error: unknown) => this.emitError(error))
+    void this.retryPendingOps().catch((error: unknown) => this.emitError(error))
+    void this.retryPendingBinaryOps().catch((error: unknown) => this.emitError(error))
     this.seeder?.announceToPeer?.(peerId)
   }
 
   /** 连接意外断开时，停止当前下载，避免界面无限等待分块。 */
   private readonly handleDisconnect = (peerId: string): void => {
     this.handlePeerLeft(peerId)
+    const peer = this.peers.get(peerId)
+    this.reconnectManager.markDisconnected(peerId, peer?.host, peer?.port)
     this.downloader?.cancel(new Error('连接中断，请重试。'))
+  }
+
+  /** 等待完成 hello 握手，避免 TCP 已建立但认证失败时被误判为重连成功。 */
+  private async reconnectPeer(peerId: string, host: string, port: number): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error(`重连 ${host}:${port} 超时`))
+      }, 10_000)
+      const onConnected = (connectedPeerId: string): void => {
+        if (connectedPeerId !== peerId) return
+        cleanup()
+        resolve()
+      }
+      const onAuthFailed = (error: Error): void => {
+        cleanup()
+        reject(error)
+      }
+      const cleanup = (): void => {
+        clearTimeout(timeout)
+        this.off('connected', onConnected)
+        this.off('authFailed', onAuthFailed)
+      }
+
+      this.on('connected', onConnected)
+      this.once('authFailed', onAuthFailed)
+      void this.transport.connect(host, port).catch((error: unknown) => {
+        cleanup()
+        reject(error)
+      })
+    })
   }
 
   private readonly handleAuthFailed = (error: Error): void => {

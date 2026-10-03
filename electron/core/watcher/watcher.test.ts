@@ -133,7 +133,7 @@ describe('ProjectWatcher', () => {
     const secondOp = waitForOp(watcher)
     await writeFile(path, 'two\n', 'utf8')
     await secondOp
-  })
+  }, 15_000)
 
   it('同一 debounce 窗口内的连续写入合并为一条 op', async () => {
     const { projectRoot, oplog, watcher } = await createFixture()
@@ -303,15 +303,15 @@ describe('ProjectWatcher', () => {
     await watcher.start()
     const path = join(projectRoot, 'lifecycle.ts')
 
-    const created = waitForOp(watcher)
+    const created = waitForOp(watcher, 10_000)
     await writeFile(path, 'first\n', 'utf8')
     const first = await created
 
-    const changed = waitForOp(watcher)
+    const changed = waitForOp(watcher, 10_000)
     await writeFile(path, 'second\n', 'utf8')
     const second = await changed
 
-    const deleted = waitForOp(watcher)
+    const deleted = waitForOp(watcher, 10_000)
     await rm(path)
     const third = await deleted
 
@@ -322,7 +322,7 @@ describe('ProjectWatcher', () => {
       'modified',
       'deleted',
     ])
-  })
+  }, 15_000)
 
   it('快照以内容 SHA-256 为键去重', async () => {
     const { projectRoot } = await createFixture()

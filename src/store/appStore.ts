@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
-import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
+import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, PeerState, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
 export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'trash'
@@ -43,6 +43,7 @@ export interface AppState {
   trash: TrashEntry[]
   conflicts: ConflictRecord[]
   identityMismatches: IdentityMismatch[]
+  peerStatuses: Record<string, PeerState>
   githubConfigured: boolean
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
@@ -75,6 +76,8 @@ export interface AppState {
   clearConflicts(): void
   addIdentityMismatch(info: IdentityMismatch): void
   clearIdentityMismatches(): void
+  setPeerStatus(state: PeerState): void
+  clearPeerStatuses(): void
   setGithubConfigured(value: boolean): void
   replaceOps(ops: Op[]): void
   prependOp(op: Op): void
@@ -108,6 +111,7 @@ export const useAppStore = create<AppState>((set) => ({
   trash: [],
   conflicts: [],
   identityMismatches: [],
+  peerStatuses: {},
   githubConfigured: false,
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
@@ -152,6 +156,10 @@ export const useAppStore = create<AppState>((set) => ({
     identityMismatches: [info, ...state.identityMismatches.filter((existing) => existing.peerId !== info.peerId)],
   })),
   clearIdentityMismatches: () => set({ identityMismatches: [] }),
+  setPeerStatus: (peerState) => set((state) => ({
+    peerStatuses: { ...state.peerStatuses, [peerState.peerId]: peerState },
+  })),
+  clearPeerStatuses: () => set({ peerStatuses: {} }),
   setGithubConfigured: (githubConfigured) => set({ githubConfigured }),
   replaceOps: (ops) => set({ ops }),
   prependOp: (op) =>

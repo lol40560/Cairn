@@ -10,6 +10,7 @@ import type { TrashEntry } from './core/trash'
 import type { ProjectEntry } from './core/projects'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import type { ProjectIdentity } from './core/identity'
+import type { PeerState } from './core/sync/reconnect'
 import type { ProjectFileContent, ProjectFileEntry } from './main'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
@@ -42,6 +43,7 @@ const cairn = {
     invoke('cairn:joinRoom', roomCode),
   leaveRoom: (): Promise<IpcResult<void>> => invoke('cairn:leaveRoom'),
   listPeers: (): Promise<IpcResult<PeerInfo[]>> => invoke('cairn:listPeers'),
+  retryPeer: (peerId: string): Promise<IpcResult<void>> => invoke('cairn:retryPeer', peerId),
   getProjectIdentity: (): Promise<IpcResult<ProjectIdentity>> => invoke('cairn:getProjectIdentity'),
   getLocalEndpoint: (): Promise<IpcResult<{ host: string; port: number } | undefined>> =>
     invoke('cairn:getLocalEndpoint'),
@@ -55,6 +57,14 @@ const cairn = {
 
     return () => {
       ipcRenderer.removeListener('cairn:peers', listener)
+    }
+  },
+  onPeerStatusChanged: (callback: (state: PeerState) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, state: PeerState): void => callback(state)
+    ipcRenderer.on('cairn:peer-status-changed', listener)
+
+    return () => {
+      ipcRenderer.removeListener('cairn:peer-status-changed', listener)
     }
   },
   onConflict: (callback: (conflict: ConflictRecord) => void): (() => void) => {

@@ -31,6 +31,17 @@ export interface IdentityMismatch {
   guestIdentity: ProjectIdentity
 }
 
+export type PeerStatus = 'connected' | 'reconnecting' | 'offline'
+
+export interface PeerState {
+  peerId: string
+  status: PeerStatus
+  host?: string
+  port?: number
+  attempt: number
+  nextRetryAt?: number
+}
+
 export interface LocalEndpoint {
   host: string
   port: number
@@ -173,11 +184,13 @@ export interface CairnApi {
   joinRoom(roomCode: string): Promise<IpcResult<void>>
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
+  retryPeer(peerId: string): Promise<IpcResult<void>>
   getProjectIdentity(): Promise<IpcResult<ProjectIdentity>>
   getLocalEndpoint(): Promise<IpcResult<LocalEndpoint | undefined>>
   connectToAddress(input: LocalEndpoint & { roomCode: string }): Promise<IpcResult<void>>
   getDiscoveryStatus(): Promise<IpcResult<DiscoveryStatus>>
   onPeers(callback: (peers: PeerInfo[]) => void): () => void
+  onPeerStatusChanged(callback: (state: PeerState) => void): () => void
   onConflict(callback: (conflict: ConflictRecord) => void): () => void
   onIdentityMismatch(callback: (info: IdentityMismatch) => void): () => void
   saveGithubConfig(config: { token?: string; owner: string; repo: string }): Promise<IpcResult<void>>

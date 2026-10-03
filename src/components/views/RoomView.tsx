@@ -81,6 +81,7 @@ export function RoomView({
   const [directAddressInput, setDirectAddressInput] = useState('')
   const [copied, setCopied] = useState(false)
   const [exportingSnapshot, setExportingSnapshot] = useState(false)
+  const [reconnectClock, setReconnectClock] = useState(0)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
   const canceledDownload = useRef(false)
   const downloadFailureHandled = useRef(false)
@@ -96,9 +97,11 @@ export function RoomView({
   const isSharing = useAppStore((state) => state.isSharing)
   const isHost = useAppStore((state) => state.isHost)
   const identityMismatches = useAppStore((state) => state.identityMismatches)
+  const peerStatuses = useAppStore((state) => state.peerStatuses)
   const pendingAutoDownload = useAppStore((state) => state.pendingAutoDownload)
   const seeders = useAppStore((state) => state.seeders)
   const showDownloadPrompt = useAppStore((state) => state.showDownloadPrompt)
+  const connectedPeerCount = peers.filter((peer) => peerStatuses[peer.peerId]?.status !== 'reconnecting' && peerStatuses[peer.peerId]?.status !== 'offline').length
   const resetDownload = useAppStore((state) => state.resetDownload)
   const clearLastDownloadResult = useAppStore((state) => state.clearLastDownloadResult)
   const setDownloadProgress = useAppStore((state) => state.setDownloadProgress)
@@ -114,6 +117,16 @@ export function RoomView({
   const setSeeders = useAppStore((state) => state.setSeeders)
   const setShowDownloadPrompt = useAppStore((state) => state.setShowDownloadPrompt)
   const dismissToast = useCallback(() => setToast(null), [])
+
+  useEffect(() => {
+    if (!Object.values(peerStatuses).some((state) => state.status === 'reconnecting')) {
+      return
+    }
+    const updateClock = (): void => setReconnectClock(Date.now())
+    updateClock()
+    const timer = window.setInterval(updateClock, 1_000)
+    return () => window.clearInterval(timer)
+  }, [peerStatuses])
 
   useEffect(() => {
     if (!copied) {
@@ -292,6 +305,11 @@ export function RoomView({
     await onLeaveRoom()
     setDirectAddress(undefined)
     setLocalEndpoint(undefined)
+  }
+
+  const handleManualRetry = async (peerId: string): Promise<void> => {
+    const result = await window.cairn.retryPeer(peerId)
+    if (!result.ok) setToast(normalizeError(result.error, t))
   }
 
   const handleExportSnapshot = async (): Promise<void> => {
@@ -670,20 +688,42 @@ export function RoomView({
           </div>
 
           <div className="peers-section">
-            <p className="peers-label">{t('connectedPeers').replace('{n}', String(peers.length))}</p>
+            <p className="peers-label">{t('connectedPeers').replace('{n}', String(connectedPeerCount))}</p>
             {peers.length === 0 ? (
               <div className="team-empty">
                 <p className="team-empty-title">{t('teamAlone')}</p>
                 <p className="team-empty-desc">{t('teamAloneDesc')}</p>
               </div>
-            ) : peers.map((peer, index) => (
-              <div key={peer.peerId} className="peer-row">
-                <span aria-hidden="true" className="peer-dot" style={{ background: peerColors[index % peerColors.length] }} />
-                <span className="peer-name">{peer.peerId.slice(0, 8)}</span>
-                <span className="peer-meta">{t(getPeerTag(peer.peerId, isHost, index))}</span>
-                <span className="peer-meta">{peer.host}:{peer.port}</span>
-              </div>
-            ))}
+            ) : peers.map((peer, index) => {
+              const status = peerStatuses[peer.peerId]
+              const reconnecting = status?.status === 'reconnecting'
+              const offline = status?.status === 'offline'
+              const seconds = Math.max(0, Math.ceil(((status?.nextRetryAt ?? reconnectClock) - reconnectClock) / 1_000))
+              return (
+                <div
+                  key={peer.peerId}
+                  className={`peer-row${reconnecting ? ' peer-reconnecting' : ''}${offline ? ' peer-offline' : ''}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`peer-dot${reconnecting ? ' dot-reconnecting' : ''}${offline ? ' dot-offline' : ''}`}
+                    style={reconnecting || offline ? undefined : { background: peerColors[index % peerColors.length] }}
+                  />
+                  <span className="peer-name">{peer.peerId.slice(0, 8)}</span>
+                  <span className="peer-meta">{t(getPeerTag(peer.peerId, isHost, index))}</span>
+                  <span className="peer-meta">{peer.host}:{peer.port}</span>
+                  {reconnecting && (
+                    <span className="peer-status">{t('reconnectingIn').replace('{s}', String(seconds))}</span>
+                  )}
+                  {offline && (
+                    <span className="peer-status peer-status-offline">
+                      {t('offline')} · <button type="button" onClick={() => void handleManualRetry(peer.peerId)}>{t('retry')}</button>
+                    </span>
+                  )}
+                  {status?.status === 'connected' && <span className="peer-status peer-status-connected">{t('peerConnected')}</span>}
+                </div>
+              )
+            })}
             {isHost && (
               <div className="direct-connection">
                 <p className="direct-connection-label">{t('directConnection')}</p>

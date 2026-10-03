@@ -338,8 +338,8 @@ describe('transport', () => {
     const connectedSecond = waitForEvent<[string]>(second, 'connect')
 
     await first.connect('127.0.0.1', port)
-    await expect(connectedFirst).resolves.toEqual(['second'])
-    await expect(connectedSecond).resolves.toEqual(['first'])
+    await expect(connectedFirst).resolves.toEqual(['second', { host: '127.0.0.1', port }])
+    await expect(connectedSecond).resolves.toEqual(['first', undefined])
 
     const received = waitForEvent<[string, SyncMessage]>(second, 'message')
     first.send('second', { hash: 'shared', type: 'have' })
@@ -553,6 +553,36 @@ describe('transport', () => {
 })
 
 describe('Sync', () => {
+  it('断线后会重连，并在重连完成后重新交换 have', async () => {
+    vi.useFakeTimers()
+    const { oplog } = await createTestOplog()
+    const localOp = oplog.putOp(createOp('reconnect'))
+    const transport = new MockTransport()
+    transport.connect.mockImplementation(async () => {
+      transport.emit('connect', 'peer-a', { host: '192.168.1.5', port: 49500 })
+    })
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    await sync.start({ discovery: false })
+    transport.emit('connect', 'peer-a', { host: '192.168.1.5', port: 49500 })
+    transport.send.mockClear()
+    const reconnecting = waitForEvent<[{
+      peerId: string
+      status: string
+      attempt: number
+    }]>(sync, 'peerStatusChanged')
+    transport.emit('disconnect', 'peer-a')
+    expect((await reconnecting)[0]).toMatchObject({ attempt: 1, peerId: 'peer-a', status: 'reconnecting' })
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(transport.connect).toHaveBeenCalledWith('192.168.1.5', 49500)
+    expect(transport.send).toHaveBeenCalledWith('peer-a', { hash: localOp.hash, type: 'have' })
+    await sync.stop()
+    vi.useRealTimers()
+  })
+
   it('相同工作區指紋會回覆 identity-ok', async () => {
     const { oplog } = await createTestOplog()
     const transport = new MockTransport()

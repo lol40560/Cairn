@@ -20,6 +20,11 @@ export interface TransportOptions {
   authTimeoutMs?: number
 }
 
+export interface PeerEndpoint {
+  host: string
+  port: number
+}
+
 interface AuthState {
   peerId?: string
   nonce?: string
@@ -30,6 +35,7 @@ interface AuthState {
 export class Transport extends EventEmitter {
   private readonly connections = new Map<string, Socket>()
   private readonly socketPeerIds = new Map<Socket, string>()
+  private readonly socketEndpoints = new Map<Socket, PeerEndpoint>()
   private readonly socketHeartbeats = new Map<Socket, NodeJS.Timeout>()
   private readonly socketLastSeen = new Map<Socket, number>()
   private readonly authStates = new Map<Socket, AuthState>()
@@ -97,6 +103,7 @@ export class Transport extends EventEmitter {
     }
     this.connections.clear()
     this.socketPeerIds.clear()
+    this.socketEndpoints.clear()
     this.sockets.clear()
     this.usedNonces.clear()
 
@@ -113,7 +120,7 @@ export class Transport extends EventEmitter {
 
   async connect(host: string, port: number): Promise<void> {
     const socket = new Socket()
-    this.attachSocket(socket)
+    this.attachSocket(socket, { host, port })
 
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
@@ -151,10 +158,11 @@ export class Transport extends EventEmitter {
     }
   }
 
-  private attachSocket(socket: Socket): void {
+  private attachSocket(socket: Socket, endpoint?: PeerEndpoint): void {
     let buffer = ''
     const decoder = new StringDecoder('utf8')
     this.sockets.add(socket)
+    if (endpoint) this.socketEndpoints.set(socket, endpoint)
     this.socketLastSeen.set(socket, Date.now())
 
     socket.on('data', (chunk: Buffer) => {
@@ -383,7 +391,7 @@ export class Transport extends EventEmitter {
     this.socketPeerIds.set(socket, remotePeerId)
     this.connections.set(remotePeerId, socket)
     this.startHeartbeat(socket)
-    this.emit('connect', remotePeerId)
+    this.emit('connect', remotePeerId, this.socketEndpoints.get(socket))
   }
 
   /** 通过轻量 ping/pong 识别静默失效的 TCP 长连接。 */
@@ -425,6 +433,7 @@ export class Transport extends EventEmitter {
     this.socketLastSeen.delete(socket)
     const remotePeerId = this.socketPeerIds.get(socket)
     this.socketPeerIds.delete(socket)
+    this.socketEndpoints.delete(socket)
     if (!remotePeerId || this.connections.get(remotePeerId) !== socket) {
       return
     }

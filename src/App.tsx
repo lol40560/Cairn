@@ -64,6 +64,7 @@ export function App() {
   const addConflict = useAppStore((state) => state.addConflict)
   const addIdentityMismatch = useAppStore((state) => state.addIdentityMismatch)
   const clearIdentityMismatches = useAppStore((state) => state.clearIdentityMismatches)
+  const clearPeerStatuses = useAppStore((state) => state.clearPeerStatuses)
   const prependOp = useAppStore((state) => state.prependOp)
   const replaceOps = useAppStore((state) => state.replaceOps)
   const setActiveView = useAppStore((state) => state.setActiveView)
@@ -71,6 +72,7 @@ export function App() {
   const setGithubConfigured = useAppStore((state) => state.setGithubConfigured)
   const setIsHost = useAppStore((state) => state.setIsHost)
   const setPeers = useAppStore((state) => state.setPeers)
+  const setPeerStatus = useAppStore((state) => state.setPeerStatus)
   const setRoomCode = useAppStore((state) => state.setRoomCode)
   const setStatus = useAppStore((state) => state.setStatus)
   const setConflicts = useAppStore((state) => state.setConflicts)
@@ -191,6 +193,9 @@ export function App() {
     const unsubscribeIdentityMismatch = window.cairn.onIdentityMismatch((info) => {
       if (!disposed) addIdentityMismatch(info)
     })
+    const unsubscribePeerStatus = window.cairn.onPeerStatusChanged((peerState) => {
+      if (!disposed) setPeerStatus(peerState)
+    })
 
     return () => {
       disposed = true
@@ -198,8 +203,9 @@ export function App() {
       unsubscribePeers()
       unsubscribeConflict()
       unsubscribeIdentityMismatch()
+      unsubscribePeerStatus()
     }
-  }, [addConflict, addIdentityMismatch, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeers, setStatus, t])
+  }, [addConflict, addIdentityMismatch, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeerStatus, setPeers, setStatus, t])
 
   useEffect(() => {
     let disposed = false
@@ -237,6 +243,7 @@ export function App() {
   const handleCreateRoom = async (): Promise<void> => {
     try {
       clearIdentityMismatches()
+      clearPeerStatuses()
       const code = getIpcData(await window.cairn.createRoom())
       setRoomCode(code)
       setIsHost(true)
@@ -250,6 +257,7 @@ export function App() {
   const handleJoinRoom = async (code: string): Promise<void> => {
     try {
       clearIdentityMismatches()
+      clearPeerStatuses()
       getIpcData(await window.cairn.joinRoom(code))
       setRoomCode(code)
       setIsHost(false)
@@ -267,6 +275,7 @@ export function App() {
       setIsHost(false)
       setRoomCode('')
       clearIdentityMismatches()
+      clearPeerStatuses()
     } catch (error) {
       console.error('[cairn] 无法离开房间', error)
       setToast(normalizeError(error, t))

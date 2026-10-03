@@ -1079,7 +1079,7 @@
 
 .peer-row {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto auto;
+  grid-template-columns: 8px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 14px;
   border-radius: var(--r-md);
@@ -1089,6 +1089,14 @@
 
 .peer-row:hover {
   background: var(--bg-2);
+}
+
+.peer-reconnecting {
+  opacity: 0.7;
+}
+
+.peer-offline {
+  opacity: 0.5;
 }
 
 .direct-connection {
@@ -1136,6 +1144,20 @@
   border-radius: 50%;
 }
 
+.dot-reconnecting {
+  background: var(--amber) !important;
+  animation: peer-pulse 1.5s ease-in-out infinite;
+}
+
+.dot-offline {
+  background: var(--text-3) !important;
+}
+
+@keyframes peer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .peer-name {
   min-width: 0;
   overflow: hidden;
@@ -1150,6 +1172,31 @@
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.peer-status {
+  margin-left: auto;
+  color: var(--amber);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.peer-status-offline {
+  color: var(--text-3);
+}
+
+.peer-status-offline button {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.peer-status-connected {
+  color: var(--green);
 }
 
 .conflict-list {

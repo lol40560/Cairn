@@ -681,6 +681,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   sync.on('peerJoined', broadcastPeers)
   sync.on('peerLeft', broadcastPeers)
   sync.on('identityMismatch', (info) => sendToWindow('cairn:identity-mismatch', info))
+  sync.on('peerStatusChanged', (state) => sendToWindow('cairn:peer-status-changed', state))
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
@@ -731,6 +732,13 @@ export async function leaveRoom(): Promise<void> {
 
 export function listPeers(): PeerInfo[] {
   return activeRoom?.sync.listPeers() ?? []
+}
+
+export function retryPeer(peerId: string): void {
+  if (!activeRoom) {
+    throw new AppError('No active room', 'config')
+  }
+  activeRoom.sync.retryPeer(peerId)
 }
 
 export async function getProjectIdentity(): Promise<ProjectIdentity> {
@@ -1142,6 +1150,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
+  ipcMain.handle('cairn:retryPeer', wrapIpcHandler((peerId: string) => retryPeer(peerId)))
   ipcMain.handle('cairn:getProjectIdentity', wrapIpcHandler(getProjectIdentity))
   ipcMain.handle('cairn:getLocalEndpoint', wrapIpcHandler(getLocalEndpoint))
   ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
