@@ -55,9 +55,9 @@
   --line-soft: #1D1D22;
   --border-strong: #44444D;
   --text-0: #E8E8EB;
-  --text-1: #9595A0;
-  --text-2: #5E5E68;
-  --text-3: #44444D;
+  --text-1: #9A9E93;
+  --text-2: #787D74;
+  --text-3: #5A5F58;
   --red: #D15060;
   --red-hover: #DD5E6E;
   --red-soft: rgb(209 80 96 / 15%);
@@ -2347,9 +2347,25 @@
 }
 
 .files-editor {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
   background: #1e1e1e;
+}
+
+.files-content-warning {
+  flex-shrink: 0;
+  border-bottom: 1px solid rgb(232 164 74 / 20%);
+  background: rgb(232 164 74 / 8%);
+  color: var(--amber);
+  font-size: 12px;
+  padding: 8px 16px;
+}
+
+.files-editor-monaco {
+  min-height: 0;
+  flex: 1;
 }
 
 .file-tree-node {

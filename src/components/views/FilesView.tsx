@@ -25,6 +25,18 @@ interface FilesViewProps {
   selectedPath?: string
 }
 
+/** 偵測副檔名與文字內容不一致的常見誤命名情況。 */
+// eslint-disable-next-line react-refresh/only-export-components
+export function detectMisleadingContent(filePath: string, content: string): 'rtf' | 'html' | undefined {
+  const extension = filePath.split('.').pop()?.toLowerCase()
+  if (extension !== 'md' && extension !== 'txt') return undefined
+
+  if (content.startsWith('{\\rtf')) return 'rtf'
+  if (/^<!DOCTYPE html/i.test(content.trim())) return 'html'
+
+  return undefined
+}
+
 /** 项目文本文件浏览与编辑器；所有读取和保存均经受限 IPC。 */
 export function FilesView({ files: filesOverride, selectedPath: selectedPathOverride }: FilesViewProps) {
   const { t } = useTranslation()
@@ -47,6 +59,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
   const [pendingSwitchPath, setPendingSwitchPath] = useState<string | undefined>()
   const loadRequestId = useRef(0)
   const saveHandlerRef = useRef<() => Promise<void>>(async () => undefined)
+  const contentMismatch = selectedFile ? detectMisleadingContent(selectedFile.path, selectedFile.content) : undefined
 
   const loadFiles = useCallback(async (): Promise<void> => {
     try {
@@ -208,29 +221,36 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
         <div className="files-main">
           {selectedFile ? (
             <div className="files-editor">
-              <Editor
-                height="100%"
-                language={detectLanguage(selectedFile.path)}
-                options={{
-                  automaticLayout: true,
-                  fontFamily: 'JetBrains Mono, monospace',
-                  fontSize: 13,
-                  minimap: { enabled: false },
-                  readOnly: false,
-                  renderLineHighlight: 'all',
-                  scrollBeyondLastLine: false,
-                  scrollbar: { horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
-                }}
-                onChange={(value) => {
-                  const content = value ?? ''
-                  setEditorContent(content)
-                  setIsDirty(content !== savedContent)
-                }}
-                onMount={handleEditorMount}
-                path={`inmemory://cairn/files/${encodeURIComponent(selectedFile.path)}`}
-                theme="vs-dark"
-                value={editorContent}
-              />
+              {contentMismatch ? (
+                <div className="files-content-warning" role="status">
+                  {contentMismatch === 'rtf' ? t('fileLooksLikeRtf') : t('fileLooksLikeHtml')}
+                </div>
+              ) : null}
+              <div className="files-editor-monaco">
+                <Editor
+                  height="100%"
+                  language={detectLanguage(selectedFile.path)}
+                  options={{
+                    automaticLayout: true,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 13,
+                    minimap: { enabled: false },
+                    readOnly: false,
+                    renderLineHighlight: 'all',
+                    scrollBeyondLastLine: false,
+                    scrollbar: { horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
+                  }}
+                  onChange={(value) => {
+                    const content = value ?? ''
+                    setEditorContent(content)
+                    setIsDirty(content !== savedContent)
+                  }}
+                  onMount={handleEditorMount}
+                  path={`inmemory://cairn/files/${encodeURIComponent(selectedFile.path)}`}
+                  theme="vs-dark"
+                  value={editorContent}
+                />
+              </div>
             </div>
           ) : (
             <EmptyState

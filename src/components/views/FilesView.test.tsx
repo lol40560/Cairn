@@ -8,7 +8,7 @@ vi.mock('@monaco-editor/react', () => ({
 
 import { FileTree } from '@/components/FileTree'
 import { buildFileTree } from '@/lib/file-tree'
-import { FilesView } from './FilesView'
+import { detectMisleadingContent, FilesView } from './FilesView'
 import { useAppStore } from '@/store/appStore'
 
 const initialState = useAppStore.getState()
@@ -84,5 +84,12 @@ describe('FilesView', () => {
       expect.objectContaining({ name: 'README.md', type: 'file' }),
     ])
     expect(tree[0]?.children).toEqual([expect.objectContaining({ path: 'src/auth.ts', type: 'file' })])
+  })
+
+  it('偵測被誤標為文字格式的 RTF 與 HTML', () => {
+    expect(detectMisleadingContent('notes.md', '{\\rtf1\\ansi test')).toBe('rtf')
+    expect(detectMisleadingContent('notes.txt', ' <!DOCTYPE html><html>')).toBe('html')
+    expect(detectMisleadingContent('notes.md', '# Plain markdown')).toBeUndefined()
+    expect(detectMisleadingContent('page.html', '<!DOCTYPE html>')).toBeUndefined()
   })
 })
