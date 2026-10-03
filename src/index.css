@@ -453,6 +453,34 @@
   top: 16px;
 }
 
+.project-card-remove {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.project-card:hover .project-card-remove,
+.project-card:focus-within .project-card-remove {
+  opacity: 1;
+}
+
+.project-card-remove:hover {
+  background: var(--bg-0);
+  color: var(--red);
+}
+
 .view-action {
   display: inline-flex;
   height: 32px;

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { FolderOpen, Plus } from 'lucide-react'
+import { FolderOpen, Plus, X } from 'lucide-react'
 
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { EmptyState } from '@/components/EmptyState'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { useTranslation, type TranslateFn } from '@/i18n'
@@ -46,6 +47,7 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
   const setFolder = useAppStore((state) => state.setFolder)
   const setProjects = useAppStore((state) => state.setProjects)
   const setStatus = useAppStore((state) => state.setStatus)
+  const [pendingRemove, setPendingRemove] = useState<AvailableProjectEntry | undefined>()
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
 
   const refreshProjects = useCallback(async (): Promise<void> => {
@@ -151,6 +153,18 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
                   }
                 }}
               >
+                <button
+                  aria-label={t('remove')}
+                  className="project-card-remove"
+                  title={t('remove')}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setPendingRemove(project)
+                  }}
+                >
+                  <X aria-hidden="true" size={14} />
+                </button>
                 {project.isFavorite && <span aria-label="Favorite" className="project-card-favorite">★</span>}
                 <div>
                   <p className="project-card-name">{project.name}</p>
@@ -182,6 +196,20 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
           </div>
         </>
       )}
+      <ConfirmDialog
+        cancelLabel={t('cancel')}
+        confirmLabel={t('remove')}
+        danger
+        message={t('removeProjectMessage').replace('{name}', pendingRemove?.name ?? '')}
+        open={pendingRemove !== undefined}
+        title={t('removeProjectTitle')}
+        onCancel={() => setPendingRemove(undefined)}
+        onConfirm={() => {
+          const project = pendingRemove
+          setPendingRemove(undefined)
+          if (project) void removeProject(project.id)
+        }}
+      />
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </section>
   )

@@ -23,7 +23,23 @@ describe('HomeView', () => {
     expect(html).toContain('Home')
     expect(html).toContain('VibeSwarmTest')
     expect(html).toContain('project-card')
+    expect(html).toContain('project-card-remove')
+    expect(html).toContain('aria-label="Remove"')
     expect(html).toContain('Add project')
+  })
+
+  it('正常项目卡片包含移除确认对话框', () => {
+    const html = renderToStaticMarkup(<HomeView projects={[{
+      available: true,
+      id: 'project-1',
+      isFavorite: false,
+      lastOpenedAt: Date.now(),
+      name: 'VibeSwarmTest',
+      path: '/Users/test/VibeSwarmTest',
+    }]} />)
+
+    expect(html).not.toContain('Remove from list?')
+    expect(html).toContain('project-card-remove')
   })
 
   it('缺失项目显示失效状态与操作按钮', () => {
