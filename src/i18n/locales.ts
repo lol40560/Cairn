@@ -616,7 +616,11 @@ export function detectLocale(): Locale {
     // 私密模式等场景可能禁止访问 localStorage。
   }
 
-  return globalThis.navigator?.language.startsWith('zh') ? 'zh' : 'en'
+  // 测试、主进程或精简运行环境不一定提供 navigator。
+  const language = typeof globalThis.navigator?.language === 'string'
+    ? globalThis.navigator.language
+    : 'en'
+  return language.startsWith('zh') ? 'zh' : 'en'
 }
 
 /** 保存用户选择；存储失败不能影响界面切换。 */

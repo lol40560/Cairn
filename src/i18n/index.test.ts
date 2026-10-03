@@ -3,20 +3,21 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { detectLocale, t } from './index'
 import { en, zh } from './locales'
 
-const originalLanguage = globalThis.navigator.language
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
 const originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 
 let storage = new Map<string, string>()
 
 function setLanguage(language: string): void {
-  Object.defineProperty(globalThis.navigator, 'language', {
+  Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
-    value: language,
+    value: { language },
   })
 }
 
 beforeEach(() => {
   storage = new Map<string, string>()
+  setLanguage('en-US')
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
@@ -33,7 +34,11 @@ afterEach(() => {
   } else {
     Object.defineProperty(globalThis, 'localStorage', originalLocalStorage)
   }
-  setLanguage(originalLanguage)
+  if (originalNavigator === undefined) {
+    Reflect.deleteProperty(globalThis, 'navigator')
+  } else {
+    Object.defineProperty(globalThis, 'navigator', originalNavigator)
+  }
 })
 
 describe('i18n', () => {
@@ -57,6 +62,12 @@ describe('i18n', () => {
 
   it('在系统语言为 en-US 时选择英文', () => {
     setLanguage('en-US')
+
+    expect(detectLocale()).toBe('en')
+  })
+
+  it('navigator 不存在时回退英文', () => {
+    Reflect.deleteProperty(globalThis, 'navigator')
 
     expect(detectLocale()).toBe('en')
   })
