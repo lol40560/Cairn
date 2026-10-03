@@ -16,7 +16,7 @@ import { TrashView } from './TrashView'
 import { useAppStore, type AppState } from '@/store/appStore'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
 import { ConflictDialog } from '@/components/ConflictDialog'
-import { Dock } from '@/components/Dock'
+import { Sidebar } from '@/components/Sidebar'
 import { OpDiffDialog } from '@/components/OpDiffDialog'
 import { Onboarding } from '@/components/Onboarding'
 
@@ -120,13 +120,13 @@ describe('引导式空状态', () => {
     expect(html).toContain('+new')
   })
 
-  it('Dock 在有冲突时显示数量徽章', () => {
-    const html = renderToStaticMarkup(
-      <Dock activeView="activity" conflictCount={2} onOpenSettings={() => undefined} onViewChange={() => undefined} />,
-    )
+  it('Sidebar 显示项目、协作和复原分组', () => {
+    const html = renderToStaticMarkup(<Sidebar onOpenSettings={() => undefined} />)
 
-    expect(html).toContain('dock-badge-count')
-    expect(html).toContain('>2</span>')
+    expect(html).toContain('Project')
+    expect(html).toContain('Collaboration')
+    expect(html).toContain('Recovery')
+    expect(html).toContain('Settings')
   })
 
   it('Deleted files 空状态说明可恢复期限', () => {

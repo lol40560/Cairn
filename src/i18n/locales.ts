@@ -2,6 +2,9 @@ export type Locale = 'zh' | 'en'
 
 export const zh = {
   activity: '改动',
+  groupProject: '專案',
+  groupCollaboration: '協作',
+  groupRecovery: '復原',
   activityTitle: '改动',
   roomTitle: '团队',
   conflicts: '同时编辑',
@@ -269,6 +272,9 @@ export const zh = {
 
 export const en: Record<keyof typeof zh, string> = {
   activity: 'Changes',
+  groupProject: 'Project',
+  groupCollaboration: 'Collaboration',
+  groupRecovery: 'Recovery',
   activityTitle: 'Changes',
   roomTitle: 'Team',
   conflicts: 'Same-file edits',

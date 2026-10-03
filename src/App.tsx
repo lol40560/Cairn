@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Dock } from '@/components/Dock'
 import { ConflictDialog } from '@/components/ConflictDialog'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
 import { Onboarding } from '@/components/Onboarding'
 import { SettingsDialog } from '@/components/SettingsDialog'
+import { Sidebar } from '@/components/Sidebar'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
@@ -335,10 +335,11 @@ export function App() {
 
   return (
     <>
-      <main aria-label="Cairn" className="app">
-      <section className="shell">
+      <div aria-label="Cairn" className="app-shell">
+        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+        <main className="app-main">
         <TopBar folder={folder} opCount={ops.length} roomCode={roomCode} status={status} />
-        <div className="content">
+        <div className="app-content">
           {activeView === 'home' && <HomeView />}
           {activeView === 'activity' && (
             <ActivityView
@@ -364,13 +365,7 @@ export function App() {
           {activeView === 'conflicts' && <ConflictsView onResolve={handleResolveConflict} />}
           {activeView === 'trash' && <TrashView />}
         </div>
-      </section>
-      <Dock
-        activeView={activeView}
-        conflictCount={conflicts.length}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onViewChange={setActiveView}
-      />
+        </main>
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -394,7 +389,7 @@ export function App() {
         onResolve={handleResolveConflict}
       />
       <Toast message={toast} onDismiss={dismissToast} />
-      </main>
+      </div>
       {restoring && (
         <div className="startup-overlay" role="status">
           <div aria-hidden="true" className="startup-spinner" />
