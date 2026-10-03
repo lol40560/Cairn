@@ -11,6 +11,8 @@ import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import { BlobStore } from './core/blobs'
+import { CheckpointManager } from './core/checkpoints'
+import type { Checkpoint } from './core/checkpoints'
 import { computeProjectIdentity } from './core/identity'
 import type { ProjectIdentity } from './core/identity'
 import { AppError, wrapIpcHandler } from './core/errors'
@@ -82,6 +84,7 @@ let activeShadow: ShadowGit | undefined
 let activeRoom: { roomCode: string; sync: Sync } | undefined
 let activeSeeder: SnapshotSeeder | undefined
 let activeDownloader: SnapshotDownloader | undefined
+let activeCheckpointManager: CheckpointManager | undefined
 let projectsManager: ProjectsManager | undefined
 let handlersRegistered = false
 let isQuitting = false
@@ -256,10 +259,12 @@ export async function stopWatching(preserveWatchState = false, waitForPendingSta
   await leaveRoom()
   const project = activeProject
   if (!project) {
+    activeCheckpointManager = undefined
     return
   }
 
   activeProject = undefined
+  activeCheckpointManager = undefined
   activeShadow?.close()
   activeShadow = undefined
   try {
@@ -940,6 +945,7 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
         console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
       }
       activeProject = { root: folder, oplog, watcher, trash, conflicts }
+      activeCheckpointManager = new CheckpointManager(folder)
       activeShadow = shadow
       await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
       // 项目索引失败不应撤销已成功启动的监控。
@@ -973,6 +979,33 @@ export async function listRecentOps(limit: number): Promise<Op[]> {
   }
 
   return activeProject ? activeProject.oplog.listRecent(limit) : []
+}
+
+export async function listCheckpoints(): Promise<Checkpoint[]> {
+  return activeCheckpointManager ? activeCheckpointManager.list() : []
+}
+
+export async function createCheckpoint(name: string): Promise<Checkpoint> {
+  if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
+  if (typeof name !== 'string' || name.trim().length === 0) throw new AppError('Checkpoint name is required', 'config')
+  if (name.length > 100) throw new AppError('Checkpoint name too long', 'config')
+  return activeCheckpointManager.create(name.trim())
+}
+
+export async function restoreCheckpoint(id: string): Promise<{ restored: number }> {
+  if (!activeCheckpointManager || !activeProject) throw new AppError('请先选择项目', 'config')
+  const project = activeProject
+  await project.watcher.stop()
+  try {
+    return await activeCheckpointManager.restore(id)
+  } finally {
+    await project.watcher.start()
+  }
+}
+
+export async function deleteCheckpoint(id: string): Promise<void> {
+  if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
+  await activeCheckpointManager.delete(id)
 }
 
 /** 列出当前项目中安全、可作为 UTF-8 文本预览的文件。 */
@@ -1140,6 +1173,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:startWatching', wrapIpcHandler((folder: string) => startWatching(folder)))
   ipcMain.handle('cairn:stopWatching', wrapIpcHandler(() => stopWatching()))
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
+  ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(listCheckpoints))
+  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler((name: string) => createCheckpoint(name)))
+  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler((id: string) => restoreCheckpoint(id)))
+  ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler((id: string) => deleteCheckpoint(id)))
   ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
   ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
   ipcMain.handle(

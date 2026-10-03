@@ -25,6 +25,14 @@ export interface ProjectIdentity {
   baseCommit?: string
 }
 
+export interface Checkpoint {
+  id: string
+  name: string
+  createdAt: number
+  sizeBytes: number
+  fileCount: number
+}
+
 export interface IdentityMismatch {
   peerId: string
   hostIdentity: ProjectIdentity
@@ -176,6 +184,10 @@ export interface CairnApi {
   startWatching(folder: string): Promise<IpcResult<void>>
   stopWatching(): Promise<IpcResult<void>>
   listRecentOps(limit: number): Promise<IpcResult<Op[]>>
+  listCheckpoints(): Promise<IpcResult<Checkpoint[]>>
+  createCheckpoint(name: string): Promise<IpcResult<Checkpoint>>
+  restoreCheckpoint(id: string): Promise<IpcResult<{ restored: number }>>
+  deleteCheckpoint(id: string): Promise<IpcResult<void>>
   listProjectFiles(): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>>
   readProjectFile(path: string): Promise<IpcResult<ProjectFileContent>>
   saveProjectFile(path: string, content: string): Promise<IpcResult<{ saved: boolean; mtime: number }>>

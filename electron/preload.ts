@@ -12,6 +12,7 @@ import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import type { ProjectIdentity } from './core/identity'
 import type { PeerState } from './core/sync/reconnect'
 import type { ProjectFileContent, ProjectFileEntry } from './main'
+import type { Checkpoint } from './core/checkpoints'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -24,6 +25,10 @@ const cairn = {
   stopWatching: (): Promise<IpcResult<void>> => invoke('cairn:stopWatching'),
   listRecentOps: (limit: number): Promise<IpcResult<Op[]>> =>
     invoke('cairn:listRecentOps', limit),
+  listCheckpoints: (): Promise<IpcResult<Checkpoint[]>> => invoke('cairn:listCheckpoints'),
+  createCheckpoint: (name: string): Promise<IpcResult<Checkpoint>> => invoke('cairn:createCheckpoint', name),
+  restoreCheckpoint: (id: string): Promise<IpcResult<{ restored: number }>> => invoke('cairn:restoreCheckpoint', id),
+  deleteCheckpoint: (id: string): Promise<IpcResult<void>> => invoke('cairn:deleteCheckpoint', id),
   listProjectFiles: (): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>> =>
     invoke('cairn:listProjectFiles'),
   readProjectFile: (filePath: string): Promise<IpcResult<ProjectFileContent>> =>

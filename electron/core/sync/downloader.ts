@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { createRequire } from 'node:module'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { isAbsolute } from 'node:path'
 
+import { extractZipBuffer } from '../snapshot/extract'
 import type { SyncMessage } from './protocol'
 import { SNAPSHOT_CHUNK_SIZE } from './seeder'
 import type { Sync } from './sync'
 
-const require = createRequire(import.meta.url)
-const yauzl = require('yauzl') as typeof import('yauzl')
 const META_TIMEOUT_MS = 10_000
 const MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024
 export const CHUNK_TIMEOUT_MS = 5_000
@@ -328,104 +326,12 @@ export class SnapshotDownloader extends EventEmitter {
 
 /** 将 ZIP 中的文件安全合并到目标目录，绝不覆盖已有不同内容。 */
 async function extractSnapshot(buffer: Buffer, targetDir: string): Promise<DownloadResult> {
-  return new Promise<DownloadResult>((resolvePromise, rejectPromise) => {
-    yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
-      if (openError || !zipfile) {
-        rejectPromise(openError ?? new Error('无法打开项目快照'))
-        return
-      }
-
-      const conflictFiles: string[] = []
-      let extractedFiles = 0
-      let completed = false
-      const finish = (error?: Error): void => {
-        if (completed) {
-          return
-        }
-        completed = true
-        zipfile.close()
-        if (error) {
-          rejectPromise(error)
-        } else {
-          resolvePromise({ targetDir, extractedFiles, conflictFiles })
-        }
-      }
-      const readNext = (): void => zipfile.readEntry()
-
-      zipfile.on('error', finish)
-      zipfile.on('end', () => finish())
-      zipfile.on('entry', (entry) => {
-        if (/\/$/.test(entry.fileName)) {
-          readNext()
-          return
-        }
-
-        const targetPath = safeTargetPath(targetDir, entry.fileName)
-        if (!targetPath) {
-          finish(new Error(`快照包含越界路径：${entry.fileName}`))
-          return
-        }
-        zipfile.openReadStream(entry, (streamError, stream) => {
-          if (streamError || !stream) {
-            finish(streamError ?? new Error(`无法读取 ZIP 条目：${entry.fileName}`))
-            return
-          }
-          const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
-          stream.once('error', finish)
-          stream.once('end', () => {
-            void (async () => {
-              try {
-                const content = Buffer.concat(chunks)
-                const destination = await destinationForContent(targetPath, content, conflictFiles)
-                if (destination) {
-                  await mkdir(dirname(destination), { recursive: true })
-                  await writeFile(destination, content)
-                  extractedFiles += 1
-                }
-                readNext()
-              } catch (error) {
-                finish(error instanceof Error ? error : new Error(String(error)))
-              }
-            })()
-          })
-        })
-      })
-      readNext()
-    })
+  const conflictFiles: string[] = []
+  let extractedFiles = 0
+  await extractZipBuffer(buffer, targetDir, {
+    onConflict: (relativePath) => conflictFiles.push(`${targetDir}/${relativePath}.cairn-remote`),
+    onFile: () => { extractedFiles += 1 },
+    overwrite: false,
   })
-}
-
-function safeTargetPath(targetDir: string, entryName: string): string | undefined {
-  const normalizedEntry = normalize(entryName)
-  if (isAbsolute(normalizedEntry) || normalizedEntry === '..' || normalizedEntry.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
-    return undefined
-  }
-  const targetPath = resolve(targetDir, normalizedEntry)
-  return relative(targetDir, targetPath).startsWith('..') ? undefined : targetPath
-}
-
-async function destinationForContent(
-  targetPath: string,
-  content: Buffer,
-  conflictFiles: string[],
-): Promise<string | undefined> {
-  try {
-    const existing = await readFile(targetPath)
-    if (existing.equals(content)) {
-      return undefined
-    }
-    const conflictPath = `${targetPath}.cairn-remote`
-    conflictFiles.push(conflictPath)
-    return conflictPath
-  } catch (error) {
-    if (isMissingPath(error)) {
-      return targetPath
-    }
-    throw error
-  }
-}
-
-function isMissingPath(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+  return { conflictFiles, extractedFiles, targetDir }
 }
