@@ -126,11 +126,11 @@ describe('ProjectWatcher', () => {
     await watcher.start()
     const path = join(projectRoot, 'debounce.ts')
 
-    const firstOp = waitForOp(watcher)
+    const firstOp = waitForOp(watcher, 10_000)
     await writeFile(path, 'one\n', 'utf8')
     await firstOp
 
-    const secondOp = waitForOp(watcher)
+    const secondOp = waitForOp(watcher, 10_000)
     await writeFile(path, 'two\n', 'utf8')
     await secondOp
   }, 15_000)

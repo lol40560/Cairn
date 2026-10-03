@@ -45,6 +45,7 @@ export interface AppState {
   identityMismatches: IdentityMismatch[]
   peerStatuses: Record<string, PeerState>
   githubConfigured: boolean
+  sidebarCollapsed: boolean
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
   setProjects(projects: AvailableProjectEntry[]): void
@@ -79,8 +80,17 @@ export interface AppState {
   setPeerStatus(state: PeerState): void
   clearPeerStatuses(): void
   setGithubConfigured(value: boolean): void
+  setSidebarCollapsed(collapsed: boolean): void
   replaceOps(ops: Op[]): void
   prependOp(op: Op): void
+}
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return globalThis.localStorage?.getItem('cairn.sidebarCollapsed') === 'true'
+  } catch {
+    return false
+  }
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -113,6 +123,7 @@ export const useAppStore = create<AppState>((set) => ({
   identityMismatches: [],
   peerStatuses: {},
   githubConfigured: false,
+  sidebarCollapsed: readSidebarCollapsed(),
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
   setProjects: (projects) => set({ projects }),
@@ -161,6 +172,14 @@ export const useAppStore = create<AppState>((set) => ({
   })),
   clearPeerStatuses: () => set({ peerStatuses: {} }),
   setGithubConfigured: (githubConfigured) => set({ githubConfigured }),
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    try {
+      globalThis.localStorage?.setItem('cairn.sidebarCollapsed', String(sidebarCollapsed))
+    } catch {
+      // 無法存取儲存空間時，仍保留本次工作階段的設定。
+    }
+    set({ sidebarCollapsed })
+  },
   replaceOps: (ops) => set({ ops }),
   prependOp: (op) =>
     set((state) => {

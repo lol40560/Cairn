@@ -1,5 +1,6 @@
-import { Activity, AlertTriangle, FileText, Home, Settings, Trash2, Users } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronLeft, ChevronRight, FileText, Home, Settings, Trash2, Users } from 'lucide-react'
 
+import cairnLogo from '@/assets/cairn-logo.png'
 import { useTranslation } from '@/i18n'
 import type { TranslationKey } from '@/i18n/locales'
 import { useAppStore, type ViewType } from '@/store/appStore'
@@ -28,8 +29,10 @@ const recoveryItems: NavItem[] = [
 export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }) {
   const { t } = useTranslation()
   const activeView = useAppStore((state) => state.activeView)
+  const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const conflicts = useAppStore((state) => state.conflicts)
   const setActiveView = useAppStore((state) => state.setActiveView)
+  const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed)
 
   const renderNavItem = (item: NavItem) => {
     const Icon = item.icon
@@ -40,41 +43,54 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }) {
         key={item.id}
         aria-current={activeView === item.id ? 'page' : undefined}
         className={`sidebar-nav-item ${activeView === item.id ? 'active' : ''}`}
+        title={collapsed ? label : undefined}
         type="button"
         onClick={() => setActiveView(item.id)}
       >
         <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
-        <span>{label}</span>
+        {!collapsed ? <span>{label}</span> : null}
         {item.id === 'conflicts' && conflicts.length > 0 ? (
-          <span aria-label={`${conflicts.length} ${label}`} className="sidebar-badge">{conflicts.length}</span>
+          collapsed ? <span aria-label={`${conflicts.length} ${label}`} className="sidebar-badge-dot" /> : (
+            <span aria-label={`${conflicts.length} ${label}`} className="sidebar-badge">{conflicts.length}</span>
+          )
         ) : null}
       </button>
     )
   }
 
   return (
-    <aside className="app-sidebar">
+    <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-brand">
-        <span className="sidebar-brand-text">Cairn</span>
+        <img alt="" className="sidebar-logo" src={cairnLogo} />
+        {!collapsed ? <span className="sidebar-brand-text">Cairn</span> : null}
+        <button
+          aria-label={collapsed ? t('expandSidebar') : t('collapseSidebar')}
+          className="sidebar-collapse-btn"
+          title={collapsed ? t('expandSidebar') : t('collapseSidebar')}
+          type="button"
+          onClick={() => setSidebarCollapsed(!collapsed)}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
       </div>
       <nav aria-label={t('workspaceNavigation')} className="sidebar-nav">
         <div className="sidebar-group">
-          <p className="sidebar-group-title">{t('groupProject')}</p>
+          {!collapsed ? <p className="sidebar-group-title">{t('groupProject')}</p> : null}
           {projectItems.map(renderNavItem)}
         </div>
         <div className="sidebar-group">
-          <p className="sidebar-group-title">{t('groupCollaboration')}</p>
+          {!collapsed ? <p className="sidebar-group-title">{t('groupCollaboration')}</p> : null}
           {collaborationItems.map(renderNavItem)}
         </div>
         <div className="sidebar-group">
-          <p className="sidebar-group-title">{t('groupRecovery')}</p>
+          {!collapsed ? <p className="sidebar-group-title">{t('groupRecovery')}</p> : null}
           {recoveryItems.map(renderNavItem)}
         </div>
       </nav>
       <div className="sidebar-bottom">
-        <button className="sidebar-nav-item" type="button" onClick={onOpenSettings}>
+        <button className="sidebar-nav-item" title={collapsed ? t('settings') : undefined} type="button" onClick={onOpenSettings}>
           <Settings aria-hidden="true" size={16} strokeWidth={1.8} />
-          <span>{t('settings')}</span>
+          {!collapsed ? <span>{t('settings')}</span> : null}
         </button>
       </div>
     </aside>

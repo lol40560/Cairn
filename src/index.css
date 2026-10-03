@@ -135,27 +135,107 @@
 .app-sidebar {
   display: flex;
   width: 220px;
+  height: 100vh;
   flex-shrink: 0;
   flex-direction: column;
   gap: 8px;
   border-right: 1px solid var(--line-soft);
   background: var(--bg-1);
   padding: 20px 12px;
+  transition: width 0.2s var(--ease);
+}
+
+.app-sidebar.collapsed {
+  width: 56px;
+  padding-right: 8px;
+  padding-left: 8px;
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
+  gap: 10px;
   min-height: 40px;
   margin-bottom: 24px;
-  padding: 0 12px;
+  padding: 0 4px 0 12px;
+  cursor: default;
+}
+
+.sidebar-logo {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.sidebar-collapse-btn {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.sidebar-collapse-btn:hover {
+  background: var(--bg-2);
+  color: var(--text-0);
+}
+
+.app-sidebar.collapsed .sidebar-brand {
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.app-sidebar.collapsed .sidebar-collapse-btn {
+  margin-left: 0;
 }
 
 .sidebar-brand-text {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-0);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  transform-origin: left center;
+  transition: color 180ms var(--ease), letter-spacing 220ms var(--ease), transform 220ms var(--ease);
+}
+
+.sidebar-brand-text::after {
+  position: absolute;
+  bottom: -7px;
+  left: 1px;
+  width: 18px;
+  height: 2px;
+  border-radius: 99px;
+  background: var(--red);
+  content: '';
+  opacity: 0;
+  transform: scaleX(0.25);
+  transform-origin: left center;
+  transition: opacity 160ms var(--ease), transform 260ms var(--ease);
+}
+
+.sidebar-brand:hover .sidebar-brand-text {
+  color: #fff;
+  letter-spacing: -0.005em;
+  transform: translateY(-1px) scale(1.035);
+}
+
+.sidebar-brand:hover .sidebar-brand-text::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 .sidebar-nav {
@@ -164,6 +244,7 @@
   flex-direction: column;
   gap: 24px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-group {
@@ -199,6 +280,12 @@
   padding: 0 12px;
   text-align: left;
   transition: background 0.12s, color 0.12s;
+}
+
+.app-sidebar.collapsed .sidebar-nav-item {
+  justify-content: center;
+  gap: 0;
+  padding: 0;
 }
 
 .sidebar-nav-item:hover,
@@ -241,6 +328,16 @@
   font-size: 10px;
   font-weight: 600;
   padding: 0 5px;
+}
+
+.sidebar-badge-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--red);
 }
 
 .sidebar-bottom {

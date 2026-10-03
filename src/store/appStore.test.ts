@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppStore } from './appStore'
 
@@ -26,6 +26,7 @@ afterEach(() => {
     pendingAutoDownload: false,
     status: 'idle',
     showDownloadPrompt: false,
+    sidebarCollapsed: false,
   })
 })
 
@@ -97,6 +98,45 @@ describe('appStore', () => {
 
     useAppStore.getState().setActiveView('conflicts')
     expect(useAppStore.getState().activeView).toBe('conflicts')
+  })
+
+  it('折叠侧边栏时会保存偏好', () => {
+    const storage = new Map<string, string>()
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
+    })
+
+    try {
+      useAppStore.getState().setSidebarCollapsed(true)
+
+      expect(useAppStore.getState().sidebarCollapsed).toBe(true)
+      expect(storage.get('cairn.sidebarCollapsed')).toBe('true')
+
+      useAppStore.getState().setSidebarCollapsed(false)
+      expect(storage.get('cairn.sidebarCollapsed')).toBe('false')
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+      else Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+  })
+
+  it('初始化时读取已保存的折叠偏好', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key: string) => key === 'cairn.sidebarCollapsed' ? 'true' : null, setItem: () => undefined },
+    })
+
+    try {
+      vi.resetModules()
+      const { useAppStore: freshStore } = await import('./appStore')
+      expect(freshStore.getState().sidebarCollapsed).toBe(true)
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+      else Reflect.deleteProperty(globalThis, 'localStorage')
+    }
   })
 
   it('加入团队后可等待 seeder 并控制下载确认弹窗', () => {
