@@ -26,8 +26,15 @@ jobs:
       # 跳過 postinstall 的 electron-rebuild，避免測試載入 Electron ABI 的原生模組。
       - name: Install dependencies (skip native scripts)
         run: npm ci --ignore-scripts
-      - name: Rebuild native modules for Node
-        run: npm rebuild better-sqlite3
+      # 強制走 node-gyp 原始碼編譯，避免載入與 runner glibc 不相容的預編譯 binary。
+      - name: Rebuild better-sqlite3 from source
+        working-directory: node_modules/better-sqlite3
+        run: npx node-gyp rebuild --build-from-source
+        env:
+          npm_config_build_from_source: "true"
+      - name: Verify better-sqlite3 binary
+        working-directory: node_modules/better-sqlite3
+        run: node -e "require('./build/Release/better_sqlite3.node'); console.log('better-sqlite3 native binary OK')"
       - run: npm test -- --run
       - run: npm run lint
       - run: npx tsc -b --pretty false
