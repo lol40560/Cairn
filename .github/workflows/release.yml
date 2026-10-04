@@ -23,14 +23,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential python3
-      - run: npm ci
+      # 跳過 postinstall 的 electron-rebuild，避免測試載入 Electron ABI 的原生模組。
+      - name: Install dependencies (skip native scripts)
+        run: npm ci --ignore-scripts
+      - name: Rebuild native modules for Node
+        run: npm rebuild better-sqlite3
       - run: npm test -- --run
       - run: npm run lint
       - run: npx tsc -b --pretty false
       - run: npm run build
-      # build 後切回 Node ABI，供真實同步驗證使用。
-      - name: Rebuild native modules for Node
-        run: npm run native:node
       - run: npm run verify:sync
 
   build-mac:

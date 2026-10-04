@@ -28,6 +28,9 @@
     "dist:win": "npm run build && electron-builder --win",
     "dist:all": "npm run build && electron-builder --mac --win"
   },
+  "allowScripts": [
+    "better-sqlite3"
+  ],
   "build": {
     "appId": "com.cairn.app",
     "productName": "Cairn",
