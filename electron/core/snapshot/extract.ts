@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+
+import {
+  assertSafeProjectRelativePath,
+  prepareSafeProjectWritePath,
+  resolveSafeProjectPath,
+} from '../fs/project-path'
 
 const require = createRequire(import.meta.url)
 const yauzl = require('yauzl') as typeof import('yauzl')
@@ -40,7 +45,9 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
         }
 
         const relativePath = entry.fileName.replaceAll('\\', '/')
-        if (!safeTargetPath('.', relativePath)) {
+        try {
+          assertSafeProjectRelativePath(relativePath)
+        } catch {
           finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
           return
         }
@@ -96,13 +103,14 @@ export async function extractZipBuffer(
         }
 
         const relativePath = entry.fileName.replaceAll('\\', '/')
-        if (options.skip?.(relativePath)) {
-          readNext()
+        try {
+          assertSafeProjectRelativePath(relativePath)
+        } catch {
+          finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
           return
         }
-        const destination = safeTargetPath(targetRoot, relativePath)
-        if (!destination) {
-          finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
+        if (options.skip?.(relativePath)) {
+          readNext()
           return
         }
 
@@ -118,11 +126,13 @@ export async function extractZipBuffer(
             void (async () => {
               try {
                 const content = Buffer.concat(chunks)
+                const destination = await resolveSafeProjectPath(targetRoot, relativePath)
                 if (options.overwrite === false) {
                   const exists = await existingContent(destination)
                   if (exists && !exists.equals(content)) {
                     options.onConflict?.(relativePath)
-                    await writeFile(`${destination}.cairn-remote`, content)
+                    const remotePath = await prepareSafeProjectWritePath(targetRoot, `${relativePath}.cairn-remote`)
+                    await writeFile(remotePath, content)
                     readNext()
                     return
                   }
@@ -131,8 +141,8 @@ export async function extractZipBuffer(
                     return
                   }
                 }
-                await mkdir(dirname(destination), { recursive: true })
-                await writeFile(destination, content)
+                const writePath = await prepareSafeProjectWritePath(targetRoot, relativePath)
+                await writeFile(writePath, content)
                 options.onFile?.(relativePath)
                 readNext()
               } catch (error) {
@@ -145,15 +155,6 @@ export async function extractZipBuffer(
       readNext()
     })
   })
-}
-
-function safeTargetPath(targetRoot: string, entryName: string): string | undefined {
-  const normalized = normalize(entryName)
-  if (isAbsolute(normalized) || normalized === '..' || normalized.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
-    return undefined
-  }
-  const target = resolve(targetRoot, normalized)
-  return relative(targetRoot, target).startsWith('..') ? undefined : target
 }
 
 async function existingContent(targetPath: string): Promise<Buffer | undefined> {

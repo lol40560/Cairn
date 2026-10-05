@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { dirname, extname, join, relative, resolve } from 'node:path'
+import { extname, join } from 'node:path'
 import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
 
+import { assertSafeProjectRelativePath, prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
 import { readZipEntries } from '../snapshot/extract'
 import { packageProjectAsZip } from '../snapshot/export'
 
@@ -134,7 +135,7 @@ export class CheckpointManager {
     for (const path of currentEntries.keys()) {
       if (targetEntries.has(path)) continue
       try {
-        await unlink(this.absolutePath(path))
+        await unlink(await resolveSafeProjectPath(this.projectRoot, this.assertRelativePath(path)))
         removed += 1
       } catch (error) {
         failedFiles.push(`${path}: ${error instanceof Error ? error.message : String(error)}`)
@@ -143,8 +144,7 @@ export class CheckpointManager {
     for (const [path, content] of targetEntries) {
       if (currentEntries.get(path)?.equals(content)) continue
       try {
-        const destination = this.absolutePath(path)
-        await mkdir(dirname(destination), { recursive: true })
+        const destination = await prepareSafeProjectWritePath(this.projectRoot, this.assertRelativePath(path))
         await writeFile(destination, content)
         restored += 1
       } catch (error) {
@@ -184,15 +184,8 @@ export class CheckpointManager {
     return readZipEntries(await readFile(join(this.checkpointDirectory(id), 'snapshot.zip')))
   }
 
-  private absolutePath(path: string): string { return join(this.projectRoot, this.assertRelativePath(path)) }
-
   private assertRelativePath(path: string): string {
-    const normalized = path.replaceAll('\\', '/')
-    const candidate = resolve(this.projectRoot, normalized)
-    if (!normalized || normalized.startsWith('/') || relative(this.projectRoot, candidate).startsWith('..') || candidate === resolve(this.projectRoot)) {
-      throw new Error(`Invalid project-relative path: ${path}`)
-    }
-    return normalized
+    return assertSafeProjectRelativePath(path)
   }
 
   private checkpointDirectory(id: string): string {

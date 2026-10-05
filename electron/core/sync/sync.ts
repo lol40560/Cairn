@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { mkdir, realpath, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
+import { writeFile } from 'node:fs/promises'
 
 import { applyPatch } from 'diff'
 import { merge } from 'node-diff3'
 
 import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
+import { prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
 import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
@@ -717,8 +717,7 @@ export class Sync extends EventEmitter {
       ...threeWay,
     }
     if (record.remoteContent !== undefined && this.options.projectRoot) {
-      const remotePath = resolve(this.options.projectRoot, `${op.filePath}.cairn-remote`)
-      await mkdir(dirname(remotePath), { recursive: true })
+      const remotePath = await prepareSafeProjectWritePath(this.options.projectRoot, `${op.filePath}.cairn-remote`)
       await writeFile(remotePath, record.remoteContent, 'utf8')
     }
     await this.conflicts?.save(record)
@@ -741,38 +740,7 @@ export class Sync extends EventEmitter {
       return
     }
 
-    const normalized = relativePath.replaceAll('\\', '/')
-    const segments = normalized.split('/')
-    if (
-      normalized.length === 0
-      || isAbsolute(normalized)
-      || win32.isAbsolute(normalized)
-      || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
-    ) {
-      throw new Error(`远端文件路径非法：${relativePath}`)
-    }
-
-    const root = await realpath(projectRoot)
-    const target = resolve(root, ...segments)
-    if (!target.startsWith(`${root}${sep}`)) {
-      throw new Error(`远端文件路径越界：${relativePath}`)
-    }
-
-    let currentPath = root
-    for (const segment of segments) {
-      currentPath = join(currentPath, segment)
-      try {
-        const resolvedPath = await realpath(currentPath)
-        if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${sep}`)) {
-          throw new Error(`远端文件路径通过符号链接越界：${relativePath}`)
-        }
-      } catch (error) {
-        if (isMissingPath(error)) {
-          break
-        }
-        throw error
-      }
-    }
+    await resolveSafeProjectPath(projectRoot, relativePath)
   }
 
   private readonly handleError = (error: Error): void => {
@@ -786,10 +754,6 @@ export class Sync extends EventEmitter {
   private seederKey(peerId: string, snapshotId: string): string {
     return `${peerId}:${snapshotId}`
   }
-}
-
-function isMissingPath(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 function contentHash(content: string): string {

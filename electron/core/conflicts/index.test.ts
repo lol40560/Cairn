@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,6 +9,7 @@ import { ConflictsManager, type ConflictRecord } from './index'
 const roots: string[] = []
 const firstHash = 'a'.repeat(64)
 const secondHash = 'b'.repeat(64)
+const symlinkIt = process.platform === 'win32' ? it.skip : it
 
 async function createFixture(): Promise<{ root: string; manager: ConflictsManager }> {
   const root = await mkdtemp(join(tmpdir(), 'cairn-conflicts-'))
@@ -69,5 +70,17 @@ describe('ConflictsManager', () => {
     await manager.save(createRecord(secondHash))
     await manager.resolve(secondHash, 'merged', 'merged\n')
     await expect(readFile(join(root, 'src', 'auth.ts'), 'utf8')).resolves.toBe('merged\n')
+  })
+
+  symlinkIt('regression: conflict resolution rejects a symlink parent escaping the project', async () => {
+    const { root, manager } = await createFixture()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-conflicts-outside-'))
+    roots.push(outside)
+    await mkdir(join(root, 'src'))
+    await symlink(outside, join(root, 'src', 'linked'), 'dir')
+    await manager.save({ ...createRecord(), filePath: 'src/linked/auth.ts' })
+
+    await expect(manager.resolve(firstHash, 'remote')).rejects.toThrow('symbolic link')
+    await expect(access(join(outside, 'auth.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

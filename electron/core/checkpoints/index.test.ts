@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { CheckpointManager } from './index'
 
 const roots: string[] = []
+const symlinkIt = process.platform === 'win32' ? it.skip : it
 
 async function createProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'cairn-checkpoint-'))
@@ -113,5 +114,20 @@ describe('CheckpointManager', () => {
     const checkpoint = await manager.create('Before restoring checkpoint', { source: 'auto-before-restore' })
     expect(checkpoint.source).toBe('auto-before-restore')
     expect((await manager.list())[0]).toMatchObject({ id: checkpoint.id, source: 'auto-before-restore' })
+  })
+
+  symlinkIt('regression: restore rejects a symlink parent escaping the project', async () => {
+    const root = await createProject()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-checkpoint-outside-'))
+    roots.push(outside)
+    const manager = new CheckpointManager(root)
+    await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src', 'app.ts'), 'safe\n', 'utf8')
+    const checkpoint = await manager.create('Safe')
+    await rm(join(root, 'src'), { force: true, recursive: true })
+    await symlink(outside, join(root, 'src'), 'dir')
+
+    await expect(manager.restore(checkpoint.id)).rejects.toThrow('symbolic link')
+    await expect(access(join(outside, 'app.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

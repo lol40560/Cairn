@@ -1306,7 +1306,7 @@ describe('Sync', () => {
     await sync.stop()
   })
 
-  it('拒绝通过符号链接写入项目外文件', async () => {
+  it('regression: 拒绝通过符号链接写入项目外文件', async () => {
     const target = await createTestOplog()
     const outside = await mkdtemp(join(tmpdir(), 'cairn-sync-outside-'))
     roots.push(outside)
@@ -1335,7 +1335,7 @@ describe('Sync', () => {
     await sync.start()
     transport.emit('message', 'source', { op: remote, type: 'data' })
 
-    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('符号链接越界') })])
+    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('symbolic link') })])
     expect(readFile).not.toHaveBeenCalled()
     await sync.stop()
   })

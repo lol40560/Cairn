@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path'
+import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 
 import { ensureCairnDataDir } from '../data-dir'
+import { assertSafeProjectRelativePath, prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
 
 export interface TrashEntry {
   trashId: string
@@ -36,8 +37,11 @@ export class TrashManager {
     baselineContent?: string | Buffer,
   ): Promise<string> {
     const originalPath = this.assertSafeRelativePath(relativePath)
-    const expectedSourcePath = this.projectPath(originalPath)
-    if (resolve(absolutePath) !== expectedSourcePath) {
+    const expectedSourcePath = await this.projectPath(originalPath)
+    const sourceMatches = existsSync(absolutePath)
+      ? await realpath(absolutePath) === expectedSourcePath
+      : resolve(absolutePath) === resolve(this.projectRoot, originalPath)
+    if (!sourceMatches) {
       throw new Error(`废纸篓源文件路径不匹配：${absolutePath}`)
     }
     const trashId = `${Date.now()}-${randomBytes(4).toString('hex')}`
@@ -86,13 +90,13 @@ export class TrashManager {
   /** 恢复条目；目标路径被占用时绝不覆盖。 */
   async restore(trashId: string): Promise<void> {
     const entry = await this.readEntry(trashId)
-    const targetPath = this.projectPath(entry.originalPath)
+    const targetPath = await this.projectPath(entry.originalPath)
     if (existsSync(targetPath)) {
       throw new Error(`无法恢复：${entry.originalPath} 已存在`)
     }
 
-    await mkdir(dirname(targetPath), { recursive: true })
-    await rename(join(this.entryDirectory(trashId), 'content'), targetPath)
+    const destination = await prepareSafeProjectWritePath(this.projectRoot, entry.originalPath)
+    await rename(join(this.entryDirectory(trashId), 'content'), destination)
     await rm(this.entryDirectory(trashId), { force: true, recursive: true })
   }
 
@@ -136,27 +140,12 @@ export class TrashManager {
     return join(this.trashRoot, trashId)
   }
 
-  private projectPath(relativePath: string): string {
-    const targetPath = resolve(this.projectRoot, relativePath)
-    if (targetPath === this.projectRoot || !targetPath.startsWith(`${this.projectRoot}${sep}`)) {
-      throw new Error(`废纸篓路径越界：${relativePath}`)
-    }
-    return targetPath
+  private async projectPath(relativePath: string): Promise<string> {
+    return resolveSafeProjectPath(this.projectRoot, relativePath)
   }
 
   private assertSafeRelativePath(relativePath: string): string {
-    const normalized = relativePath.replaceAll('\\', '/')
-    const segments = normalized.split('/')
-    if (
-      normalized.length === 0 ||
-      isAbsolute(normalized) ||
-      win32.isAbsolute(normalized) ||
-      segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..') ||
-      relative(this.projectRoot, this.projectPath(normalized)).startsWith('..')
-    ) {
-      throw new Error(`废纸篓路径非法：${relativePath}`)
-    }
-    return normalized
+    return assertSafeProjectRelativePath(relativePath)
   }
 
   private assertTrashId(trashId: string): void {

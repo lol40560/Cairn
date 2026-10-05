@@ -16,6 +16,7 @@ import type { Checkpoint, CheckpointComparison, CheckpointFileContents, Checkpoi
 import { computeProjectIdentity } from './core/identity'
 import type { ProjectIdentity } from './core/identity'
 import { AppError, wrapIpcHandler } from './core/errors'
+import { prepareSafeProjectWritePath, resolveSafeProjectPath } from './core/fs/project-path'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
 import { exportProjectSnapshot } from './core/snapshot/export'
@@ -627,13 +628,8 @@ function broadcastPeers(): void {
   sendToWindow('cairn:peers', listPeers())
 }
 
-function projectFilePath(projectRoot: string, relativePath: string): string {
-  const root = resolve(projectRoot)
-  const target = resolve(root, relativePath)
-  if (!target.startsWith(`${root}${sep}`)) {
-    throw new Error(`远端文件路径越界：${relativePath}`)
-  }
-  return target
+async function projectFilePath(projectRoot: string, relativePath: string): Promise<string> {
+  return resolveSafeProjectPath(projectRoot, relativePath)
 }
 
 async function startRoom(roomCode: string, discovery = true): Promise<void> {
@@ -652,7 +648,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
         project.watcher.applyRemoteChange(relativePath, content, deleted, blobHash),
       readFile: async (relativePath) => {
         try {
-          return await readFile(projectFilePath(project.root, relativePath), 'utf8')
+          return await readFile(await projectFilePath(project.root, relativePath), 'utf8')
         } catch (error: unknown) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
             return ''
@@ -660,19 +656,17 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
           throw error
         }
       },
-      fileExists: async (relativePath) => existsSync(projectFilePath(project.root, relativePath)),
+      fileExists: async (relativePath) => existsSync(await projectFilePath(project.root, relativePath)),
       writeFile: async (relativePath, content) => {
-        const targetPath = projectFilePath(project.root, relativePath)
-        await mkdir(dirname(targetPath), { recursive: true })
+        const targetPath = await prepareSafeProjectWritePath(project.root, relativePath)
         await writeFile(targetPath, content, 'utf8')
       },
       writeBinaryFile: async (relativePath, content) => {
-        const targetPath = projectFilePath(project.root, relativePath)
-        await mkdir(dirname(targetPath), { recursive: true })
+        const targetPath = await prepareSafeProjectWritePath(project.root, relativePath)
         await writeFile(targetPath, content)
       },
       moveRemoteDeletionToTrash: async (relativePath, author, opHash) => {
-        const targetPath = projectFilePath(project.root, relativePath)
+        const targetPath = await projectFilePath(project.root, relativePath)
         if (existsSync(targetPath)) {
           await project.trash.moveToTrash(relativePath, targetPath, author, opHash)
         }

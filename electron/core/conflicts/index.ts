@@ -1,7 +1,8 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
+import { join } from 'node:path'
 
 import { ensureCairnDataDir } from '../data-dir'
+import { prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
 
 export interface ConflictRecord {
   filePath: string
@@ -51,20 +52,18 @@ export class ConflictsManager {
   async resolve(opHash: string, resolution: ConflictResolution, content?: string): Promise<void> {
     const record = await this.get(opHash)
     if (!record) throw new Error(`找不到冲突记录：${opHash}`)
-    const target = this.projectPath(record.filePath)
+    await this.projectPath(record.filePath)
 
     if (resolution === 'remote') {
       if (record.remoteContent === undefined) throw new Error('冲突记录缺少远端内容')
-      await mkdir(dirname(target), { recursive: true })
-      await writeFile(target, record.remoteContent, 'utf8')
+      await writeFile(await prepareSafeProjectWritePath(this.projectRoot, record.filePath), record.remoteContent, 'utf8')
     }
     if (resolution === 'merged') {
       if (content === undefined) throw new Error('合并解决方案必须提供内容')
-      await mkdir(dirname(target), { recursive: true })
-      await writeFile(target, content, 'utf8')
+      await writeFile(await prepareSafeProjectWritePath(this.projectRoot, record.filePath), content, 'utf8')
     }
 
-    await rm(`${target}.cairn-remote`, { force: true })
+    await rm(await resolveSafeProjectPath(this.projectRoot, `${record.filePath}.cairn-remote`), { force: true })
     await this.delete(opHash)
   }
 
@@ -87,17 +86,8 @@ export class ConflictsManager {
     return join(this.root, `${opHash}.json`)
   }
 
-  private projectPath(relativePath: string): string {
-    const normalized = relativePath.replaceAll('\\', '/')
-    const segments = normalized.split('/')
-    if (
-      normalized.length === 0 || isAbsolute(normalized) || win32.isAbsolute(normalized)
-      || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
-    ) throw new Error(`冲突文件路径非法：${relativePath}`)
-    const root = resolve(this.projectRoot)
-    const target = resolve(root, ...segments)
-    if (!target.startsWith(`${root}${sep}`)) throw new Error(`冲突文件路径越界：${relativePath}`)
-    return target
+  private async projectPath(relativePath: string): Promise<string> {
+    return resolveSafeProjectPath(this.projectRoot, relativePath)
   }
 }
 

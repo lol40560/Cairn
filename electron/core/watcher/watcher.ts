@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
+import { access, readFile, realpath, writeFile } from 'node:fs/promises'
+import { extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { userInfo } from 'node:os'
 
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -9,6 +9,7 @@ import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
+import { prepareSafeProjectWritePath } from '../fs/project-path'
 import { DEFAULT_IGNORE_PATTERNS, IgnoreMatcher } from '../ignore'
 import { TrashManager } from '../trash'
 import { writeSnapshot } from './snapshot'
@@ -535,9 +536,10 @@ export class ProjectWatcher extends EventEmitter {
     }
 
     try {
-      await mkdir(dirname(absolutePath), { recursive: true })
-      await writeFile(absolutePath, content)
-      console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${absolutePath}`)
+      const relativePath = this.toRelativePath(absolutePath)
+      const destination = await prepareSafeProjectWritePath(this.projectRoot, relativePath)
+      await writeFile(destination, content)
+      console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${relativePath}`)
     } catch (restoreError) {
       console.error(`[cairn:watcher] 删除处理失败且无法恢复文件：${absolutePath}`, restoreError)
     }
