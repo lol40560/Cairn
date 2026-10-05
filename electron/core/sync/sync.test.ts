@@ -853,6 +853,41 @@ describe('transport', () => {
     await expect(connected).resolves.toEqual(['sender', undefined])
   })
 
+  it('regression: 认证完成后仍拒绝旧版 sync hello，避免混用 operation hash 格式', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const connected = vi.fn()
+    receiver.on('connect', connected)
+    const error = waitForEvent<[Error]>(receiver, 'error')
+    const clientNonce = '4'.repeat(64)
+    onRawMessages(client, (message) => {
+      if (message.type === 'auth-challenge') {
+        client.write(encodeMessage({
+          type: 'auth-response',
+          authVersion: AUTH_PROTOCOL_VERSION,
+          clientProof: createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce),
+        }))
+      }
+      if (message.type === 'auth-ok') {
+        client.write(encodeMessage({ type: 'hello', peerId: 'legacy-peer', version: 1 }))
+      }
+    })
+
+    client.write(encodeMessage({
+      type: 'auth-request',
+      authVersion: AUTH_PROTOCOL_VERSION,
+      peerId: 'legacy-peer',
+      roomHash: deriveRoomHash('ABCDEF'),
+      clientNonce,
+    }))
+
+    expect((await error)[0].message).toContain('同步協議版本不相容')
+    expect(connected).not.toHaveBeenCalled()
+  })
+
   it('regression: 认证前 hello 与同步数据不会进入应用层', async () => {
     const receiver = new Transport('receiver')
     receiver.setRoomCode('ABCDEF')
