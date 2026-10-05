@@ -30,16 +30,37 @@ export function deriveAuthKey(roomCode: string): Buffer {
 /** 计算认证挑战的 HMAC，供传输层和单元测试共享。 */
 export const AUTH_PROTOCOL_VERSION = 2
 
-function authTranscript(roomHash: string, clientNonce: string, serverNonce: string): string {
-  return `${AUTH_PROTOCOL_VERSION}\0${roomHash}\0${clientNonce}\0${serverNonce}`
+/**
+ * 将认证字段编码为带长度前缀的二进制 transcript。
+ *
+ * 不使用分隔符拼接，避免不同字段组合产生相同的认证输入。
+ */
+function authTranscript(domain: string, roomHash: string, clientNonce: string, serverNonce: string): Buffer {
+  const fields = [
+    Buffer.from(domain, 'utf8'),
+    Buffer.from(String(AUTH_PROTOCOL_VERSION), 'ascii'),
+    Buffer.from(roomHash, 'utf8'),
+    Buffer.from(clientNonce, 'utf8'),
+    Buffer.from(serverNonce, 'utf8'),
+  ]
+
+  return Buffer.concat(fields.flatMap((field) => {
+    const length = Buffer.allocUnsafe(4)
+    length.writeUInt32BE(field.length)
+    return [length, field]
+  }))
 }
 
 export function createServerProof(roomCode: string, roomHash: string, clientNonce: string, serverNonce: string): string {
-  return createHmac('sha256', deriveAuthKey(roomCode)).update(`cairn-auth-server-v2\0${authTranscript(roomHash, clientNonce, serverNonce)}`).digest('hex')
+  return createHmac('sha256', deriveAuthKey(roomCode))
+    .update(authTranscript('cairn-auth-server', roomHash, clientNonce, serverNonce))
+    .digest('hex')
 }
 
 export function createClientProof(roomCode: string, roomHash: string, clientNonce: string, serverNonce: string): string {
-  return createHmac('sha256', deriveAuthKey(roomCode)).update(`cairn-auth-client-v2\0${authTranscript(roomHash, clientNonce, serverNonce)}`).digest('hex')
+  return createHmac('sha256', deriveAuthKey(roomCode))
+    .update(authTranscript('cairn-auth-client', roomHash, clientNonce, serverNonce))
+    .digest('hex')
 }
 
 export type SyncMessage =

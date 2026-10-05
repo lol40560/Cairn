@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
-import { Socket } from 'node:net'
+import { createServer, Socket, type Server } from 'node:net'
 import { createHash } from 'node:crypto'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +17,8 @@ import { writeSnapshot } from '../watcher/snapshot'
 
 const roots: string[] = []
 const transports: Transport[] = []
+const rawServers: Server[] = []
+const rawSockets: Socket[] = []
 
 function waitForEvent<T extends unknown[]>(
   emitter: EventEmitter,
@@ -52,6 +54,44 @@ async function authenticateRawClient(
   const connected = waitForEvent<[string]>(receiver, 'connect')
   client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId, roomHash: deriveRoomHash(roomCode), clientNonce }))
   await connected
+}
+
+async function listenRawServer(handler: (socket: Socket) => void): Promise<number> {
+  const server = createServer((socket) => {
+    rawSockets.push(socket)
+    handler(socket)
+  })
+  rawServers.push(server)
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('无法启动测试 TCP 服务')
+  return address.port
+}
+
+async function connectRawSocket(port: number): Promise<Socket> {
+  const socket = new Socket()
+  rawSockets.push(socket)
+  await new Promise<void>((resolve, reject) => {
+    socket.once('error', reject)
+    socket.once('connect', () => resolve())
+    socket.connect(port, '127.0.0.1')
+  })
+  return socket
+}
+
+function onRawMessages(socket: Socket, listener: (message: SyncMessage) => void): void {
+  let buffer = ''
+  socket.on('data', (chunk: Buffer) => {
+    const decoded = decodeMessages(buffer + chunk.toString('utf8'))
+    buffer = decoded.rest
+    decoded.messages.forEach(listener)
+  })
 }
 
 async function createTestOplog(): Promise<{ oplog: Oplog; root: string }> {
@@ -107,6 +147,8 @@ class MockTransport extends EventEmitter {
 
 afterEach(async () => {
   await Promise.all(transports.splice(0).map((transport) => transport.close()))
+  rawSockets.splice(0).forEach((socket) => socket.destroy())
+  await Promise.all(rawServers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })))
 })
 
@@ -150,6 +192,13 @@ describe('sync protocol', () => {
     expect(deriveAuthKey('ABCDEF')).toHaveLength(32)
     expect(createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), 'a', 'b')).toMatch(/^[a-f0-9]{64}$/)
     expect(createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), 'a', 'b')).not.toBe(createClientProof('GHIJKL', deriveRoomHash('GHIJKL'), 'a', 'b'))
+  })
+
+  it('使用长度前缀 transcript 区分角色与字段边界', () => {
+    const roomHash = deriveRoomHash('ABCDEF')
+
+    expect(createClientProof('ABCDEF', roomHash, 'ab', 'c')).not.toBe(createClientProof('ABCDEF', roomHash, 'a', 'bc'))
+    expect(createClientProof('ABCDEF', roomHash, 'client', 'server')).not.toBe(createServerProof('ABCDEF', roomHash, 'client', 'server'))
   })
 })
 
@@ -551,6 +600,236 @@ describe('transport', () => {
 
     expect((await failed)[0].message).toBe('认证超时')
     client.destroy()
+  })
+
+  it('regression: client 不信任伪造服务器直接发送的 auth-ok', async () => {
+    const port = await listenRawServer((socket) => {
+      onRawMessages(socket, (message) => {
+        if (message.type === 'auth-request') {
+          socket.write(encodeMessage({ type: 'auth-ok' }))
+        }
+      })
+    })
+    const client = new Transport('client')
+    client.setRoomCode('ABCDEF')
+    transports.push(client)
+    const connected = vi.fn()
+    client.on('connect', connected)
+    const failed = waitForEvent<[Error]>(client, 'authFailed')
+
+    await client.connect('127.0.0.1', port)
+
+    expect((await failed)[0].message).toBe('无效认证确认')
+    expect(connected).not.toHaveBeenCalled()
+  })
+
+  it('regression: 被修改的有效长度 server proof 不会得到 client proof', async () => {
+    let clientProofs = 0
+    const port = await listenRawServer((socket) => {
+      onRawMessages(socket, (message) => {
+        if (message.type === 'auth-request') {
+          const serverNonce = 'b'.repeat(64)
+          const valid = createServerProof('ABCDEF', message.roomHash, message.clientNonce, serverNonce)
+          const altered = `${valid[0] === '0' ? '1' : '0'}${valid.slice(1)}`
+          socket.write(encodeMessage({ type: 'auth-challenge', authVersion: AUTH_PROTOCOL_VERSION, serverNonce, serverProof: altered }))
+        }
+        if (message.type === 'auth-response') clientProofs += 1
+      })
+    })
+    const client = new Transport('client')
+    client.setRoomCode('ABCDEF')
+    transports.push(client)
+    const failed = waitForEvent<[Error]>(client, 'authFailed')
+
+    await client.connect('127.0.0.1', port)
+
+    expect((await failed)[0].message).toBe('Invalid server proof')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(clientProofs).toBe(0)
+  })
+
+  it('regression: 舊 server proof 不可在新 client nonce 上重播', async () => {
+    let recordedChallenge: Extract<SyncMessage, { type: 'auth-challenge' }> | undefined
+    let resolveFirstProof: (() => void) | undefined
+    const firstProofReceived = new Promise<void>((resolve) => { resolveFirstProof = resolve })
+    const port = await listenRawServer((socket) => {
+      onRawMessages(socket, (message) => {
+        if (message.type === 'auth-response') {
+          socket.write(encodeMessage({ type: 'auth-ok' }))
+          resolveFirstProof?.()
+          return
+        }
+        if (message.type !== 'auth-request') return
+        if (!recordedChallenge) {
+          const serverNonce = 'c'.repeat(64)
+          recordedChallenge = {
+            type: 'auth-challenge',
+            authVersion: AUTH_PROTOCOL_VERSION,
+            serverNonce,
+            serverProof: createServerProof('ABCDEF', message.roomHash, message.clientNonce, serverNonce),
+          }
+          socket.write(encodeMessage(recordedChallenge))
+          return
+        }
+        socket.write(encodeMessage(recordedChallenge))
+      })
+    })
+    const first = new Transport('first')
+    first.setRoomCode('ABCDEF')
+    transports.push(first)
+    await first.connect('127.0.0.1', port)
+    await firstProofReceived
+
+    const second = new Transport('second')
+    second.setRoomCode('ABCDEF')
+    transports.push(second)
+    const failed = waitForEvent<[Error]>(second, 'authFailed')
+    await second.connect('127.0.0.1', port)
+
+    expect((await failed)[0].message).toBe('Invalid server proof')
+  })
+
+  it('regression: 舊 client proof 不可在新 server challenge 上重播', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const first = await connectRawSocket(port)
+    const firstNonce = 'd'.repeat(64)
+    let oldProof: string | undefined
+    onRawMessages(first, (message) => {
+      if (message.type === 'auth-challenge') {
+        oldProof = createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), firstNonce, message.serverNonce)
+        first.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: oldProof }))
+      }
+      if (message.type === 'auth-ok') first.write(encodeMessage({ type: 'hello', peerId: 'first', version: 1 }))
+    })
+    const firstConnected = waitForEvent(receiver, 'connect')
+    first.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'first', roomHash: deriveRoomHash('ABCDEF'), clientNonce: firstNonce }))
+    await firstConnected
+    expect(oldProof).toBeDefined()
+
+    const second = await connectRawSocket(port)
+    onRawMessages(second, (message) => {
+      if (message.type === 'auth-challenge') {
+        second.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: oldProof! }))
+      }
+    })
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+    second.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'second', roomHash: deriveRoomHash('ABCDEF'), clientNonce: 'e'.repeat(64) }))
+
+    expect((await failed)[0].message).toBe('认证失败')
+  })
+
+  it('regression: 握手状态机拒绝越序与重复认证消息', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+
+    client.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: '0'.repeat(64) }))
+
+    expect((await failed)[0].message).toBe('无效或已使用的认证挑战')
+  })
+
+  it('regression: client 拒绝重复 server challenge', async () => {
+    const port = await listenRawServer((socket) => {
+      onRawMessages(socket, (message) => {
+        if (message.type !== 'auth-request') return
+        const serverNonce = 'f'.repeat(64)
+        const challenge = {
+          type: 'auth-challenge' as const,
+          authVersion: AUTH_PROTOCOL_VERSION as 2,
+          serverNonce,
+          serverProof: createServerProof('ABCDEF', message.roomHash, message.clientNonce, serverNonce),
+        }
+        socket.write(`${encodeMessage(challenge)}${encodeMessage(challenge)}`)
+      })
+    })
+    const client = new Transport('client')
+    client.setRoomCode('ABCDEF')
+    transports.push(client)
+    const failed = waitForEvent<[Error]>(client, 'authFailed')
+
+    await client.connect('127.0.0.1', port)
+
+    expect((await failed)[0].message).toBe('无效认证挑战')
+  })
+
+  it('regression: server 拒绝重复 client response', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const clientNonce = '1'.repeat(64)
+    onRawMessages(client, (message) => {
+      if (message.type !== 'auth-challenge') return
+      const proof = createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce)
+      const response = { type: 'auth-response' as const, authVersion: AUTH_PROTOCOL_VERSION as 2, clientProof: proof }
+      client.write(`${encodeMessage(response)}${encodeMessage(response)}`)
+    })
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+
+    client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))
+
+    expect((await failed)[0].message).toBe('无效或已使用的认证挑战')
+  })
+
+  it('regression: 认证失败后会清理 peer 状态并允许重试', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const rejected = await connectRawSocket(port)
+    const firstFailed = waitForEvent<[Error]>(receiver, 'authFailed')
+    onRawMessages(rejected, (message) => {
+      if (message.type === 'auth-challenge') {
+        rejected.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: '0'.repeat(64) }))
+      }
+    })
+    rejected.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce: '2'.repeat(64) }))
+    await firstFailed
+
+    const retry = await connectRawSocket(port)
+    const clientNonce = '3'.repeat(64)
+    onRawMessages(retry, (message) => {
+      if (message.type === 'auth-challenge') {
+        retry.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce) }))
+      }
+      if (message.type === 'auth-ok') retry.write(encodeMessage({ type: 'hello', peerId: 'sender', version: 1 }))
+    })
+    const connected = waitForEvent(receiver, 'connect')
+    retry.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))
+
+    await expect(connected).resolves.toEqual(['sender', undefined])
+  })
+
+  it('regression: 认证前 hello 与同步数据不会进入应用层', async () => {
+    const receiver = new Transport('receiver')
+    receiver.setRoomCode('ABCDEF')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const helloClient = await connectRawSocket(port)
+    const hello = vi.fn()
+    const message = vi.fn()
+    receiver.on('hello', hello)
+    receiver.on('message', message)
+    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+
+    helloClient.write(encodeMessage({ type: 'hello', peerId: 'attacker', version: 1 }))
+
+    expect((await failed)[0].message).toBe('认证尚未完成')
+    expect(hello).not.toHaveBeenCalled()
+    expect(message).not.toHaveBeenCalled()
+
+    const dataClient = await connectRawSocket(port)
+    const error = waitForEvent<[Error]>(receiver, 'error')
+    dataClient.write(encodeMessage({ type: 'have', hash: 'pre-auth' }))
+    expect((await error)[0].message).toBe('收到握手前的同步消息')
+    expect(message).not.toHaveBeenCalled()
   })
 })
 
