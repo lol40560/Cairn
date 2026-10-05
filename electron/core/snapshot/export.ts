@@ -12,6 +12,7 @@ import {
   SYNCABLE_BINARY_EXTENSIONS,
 } from '../watcher/watcher'
 import { AppError } from '../errors'
+import { MAX_SNAPSHOT_COMPRESSED_BYTES } from './limits'
 
 const require = createRequire(import.meta.url)
 
@@ -28,7 +29,7 @@ interface ArchiverModule {
 
 const { ZipArchive } = require('archiver') as ArchiverModule
 
-const DEFAULT_MAX_SIZE_BYTES = 50 * 1024 * 1024
+const DEFAULT_MAX_SIZE_BYTES = MAX_SNAPSHOT_COMPRESSED_BYTES
 
 export interface ExportSnapshotResult {
   filePath: string

@@ -6,6 +6,11 @@ import {
   prepareSafeProjectWritePath,
   resolveSafeProjectPath,
 } from '../fs/project-path'
+import {
+  resolveSnapshotExtractionLimits,
+  type SnapshotExtractionLimitOverrides,
+  type SnapshotExtractionLimits,
+} from './limits'
 
 const require = createRequire(import.meta.url)
 const yauzl = require('yauzl') as typeof import('yauzl')
@@ -15,10 +20,16 @@ export interface ExtractOptions {
   onFile?: (relativePath: string) => void
   overwrite?: boolean
   skip?: (relativePath: string) => boolean
+  /** 测试或受控调用可收紧资源上限；生产环境使用默认硬上限。 */
+  limits?: SnapshotExtractionLimitOverrides
 }
 
 /** 以 Buffer 读取 ZIP 条目，供 checkpoint 比较使用；仍沿用同一条 Zip Slip 防线。 */
-export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer>> {
+export async function readZipEntries(
+  buffer: Buffer,
+  limitsOverride?: SnapshotExtractionLimitOverrides,
+): Promise<Map<string, Buffer>> {
+  const limits = resolveSnapshotExtractionLimits(limitsOverride)
   return new Promise<Map<string, Buffer>>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
@@ -27,6 +38,7 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
       }
 
       const entries = new Map<string, Buffer>()
+      const budget = createExtractionBudget(limits)
       let completed = false
       const finish = (error?: Error): void => {
         if (completed) return
@@ -51,6 +63,12 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
           finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
           return
         }
+        try {
+          budget.beginEntry(entry.uncompressedSize)
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
 
         zipfile.openReadStream(entry, (streamError, stream) => {
           if (streamError || !stream) {
@@ -58,9 +76,21 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
             return
           }
           const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+          let entryBytes = 0
+          stream.on('data', (chunk: Buffer) => {
+            if (completed) return
+            try {
+              entryBytes += chunk.length
+              budget.consume(entryBytes, chunk.length)
+              chunks.push(chunk)
+            } catch (error) {
+              stream.destroy()
+              finish(error instanceof Error ? error : new Error(String(error)))
+            }
+          })
           stream.once('error', finish)
           stream.once('end', () => {
+            if (completed) return
             entries.set(relativePath, Buffer.concat(chunks))
             zipfile.readEntry()
           })
@@ -77,6 +107,7 @@ export async function extractZipBuffer(
   targetRoot: string,
   options: ExtractOptions = {},
 ): Promise<void> {
+  const limits = resolveSnapshotExtractionLimits(options.limits)
   await new Promise<void>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
@@ -85,6 +116,7 @@ export async function extractZipBuffer(
       }
 
       let completed = false
+      const budget = createExtractionBudget(limits)
       const finish = (error?: Error): void => {
         if (completed) return
         completed = true
@@ -109,6 +141,12 @@ export async function extractZipBuffer(
           finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
           return
         }
+        try {
+          budget.beginEntry(entry.uncompressedSize)
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
         if (options.skip?.(relativePath)) {
           readNext()
           return
@@ -120,9 +158,21 @@ export async function extractZipBuffer(
             return
           }
           const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+          let entryBytes = 0
+          stream.on('data', (chunk: Buffer) => {
+            if (completed) return
+            try {
+              entryBytes += chunk.length
+              budget.consume(entryBytes, chunk.length)
+              chunks.push(chunk)
+            } catch (error) {
+              stream.destroy()
+              finish(error instanceof Error ? error : new Error(String(error)))
+            }
+          })
           stream.once('error', finish)
           stream.once('end', () => {
+            if (completed) return
             void (async () => {
               try {
                 const content = Buffer.concat(chunks)
@@ -155,6 +205,38 @@ export async function extractZipBuffer(
       readNext()
     })
   })
+}
+
+function createExtractionBudget(limits: SnapshotExtractionLimits): {
+  beginEntry: (declaredSize: number) => void
+  consume: (entryBytes: number, chunkBytes: number) => void
+} {
+  let entries = 0
+  let totalBytes = 0
+
+  return {
+    beginEntry(declaredSize: number): void {
+      entries += 1
+      if (entries > limits.maxEntries) {
+        throw new Error(`ZIP 条目数量超过 ${limits.maxEntries} 上限`)
+      }
+      if (!Number.isSafeInteger(declaredSize) || declaredSize < 0 || declaredSize > limits.maxEntryBytes) {
+        throw new Error(`ZIP 条目大小超过 ${limits.maxEntryBytes} 字节上限`)
+      }
+      if (declaredSize > limits.maxTotalUncompressedBytes - totalBytes) {
+        throw new Error(`ZIP 解压总大小超过 ${limits.maxTotalUncompressedBytes} 字节上限`)
+      }
+    },
+    consume(entryBytes: number, chunkBytes: number): void {
+      if (entryBytes > limits.maxEntryBytes) {
+        throw new Error(`ZIP 条目大小超过 ${limits.maxEntryBytes} 字节上限`)
+      }
+      if (chunkBytes > limits.maxTotalUncompressedBytes - totalBytes) {
+        throw new Error(`ZIP 解压总大小超过 ${limits.maxTotalUncompressedBytes} 字节上限`)
+      }
+      totalBytes += chunkBytes
+    },
+  }
 }
 
 async function existingContent(targetPath: string): Promise<Buffer | undefined> {

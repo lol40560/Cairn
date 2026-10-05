@@ -4,12 +4,12 @@ import { mkdir } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 
 import { extractZipBuffer } from '../snapshot/extract'
+import { MAX_SNAPSHOT_COMPRESSED_BYTES } from '../snapshot/limits'
 import type { SyncMessage } from './protocol'
 import { SNAPSHOT_CHUNK_SIZE } from './seeder'
 import type { Sync } from './sync'
 
 const META_TIMEOUT_MS = 10_000
-const MAX_SNAPSHOT_BYTES = 50 * 1024 * 1024
 export const CHUNK_TIMEOUT_MS = 5_000
 export const MAX_CHUNK_RETRIES = 3
 
@@ -166,11 +166,12 @@ export class SnapshotDownloader extends EventEmitter {
     if (!session || session.settled || session.progress.snapshotId !== message.snapshotId || session.peerId) {
       return
     }
-    if (message.size > MAX_SNAPSHOT_BYTES) {
+    if (!Number.isSafeInteger(message.size) || message.size < 0 || message.size > MAX_SNAPSHOT_COMPRESSED_BYTES) {
       this.fail(session, new Error('项目过大，超过 50 MB 上限'))
       return
     }
-    if (message.chunkCount !== Math.ceil(message.size / SNAPSHOT_CHUNK_SIZE)) {
+    const expectedChunkCount = Math.ceil(message.size / SNAPSHOT_CHUNK_SIZE)
+    if (!Number.isSafeInteger(message.chunkCount) || message.chunkCount < 0 || message.chunkCount !== expectedChunkCount) {
       this.fail(session, new Error('快照元数据无效：分块数量不匹配'))
       return
     }
@@ -192,21 +193,42 @@ export class SnapshotDownloader extends EventEmitter {
 
   handleChunk(peerId: string, message: Extract<SyncMessage, { type: 'chunk' }>): void {
     const session = this.session
-    const pending = session?.pendingChunk
-    if (
-      !session ||
-      session.settled ||
-      peerId !== session.peerId ||
-      message.snapshotId !== session.progress.snapshotId ||
-      !pending ||
-      pending.index !== message.index
-    ) {
+    if (!session || session.settled || peerId !== session.peerId || message.snapshotId !== session.progress.snapshotId) {
+      return
+    }
+
+    const pending = session.pendingChunk
+    if (!Number.isSafeInteger(message.index) || message.index < 0 || message.index >= session.progress.totalChunks) {
+      this.fail(session, new Error(`收到越界快照分块：${message.index}`))
+      return
+    }
+    // 同一会话按序接收；重复或乱序分块代表对端违反快照协议，直接中止而非保留额外数据。
+    if (session.chunks[message.index] || !pending || pending.index !== message.index) {
+      this.fail(session, new Error(`收到重复或意外快照分块：${message.index}`))
+      return
+    }
+
+    const expectedLength = expectedChunkLength(
+      message.index,
+      session.progress.totalBytes,
+      session.progress.totalChunks,
+    )
+    if (message.data.length > maxBase64Length(expectedLength)) {
+      this.fail(session, new Error(`快照分块编码超过大小上限：${message.index}`))
       return
     }
 
     const chunk = Buffer.from(message.data, 'base64')
-    if (chunk.length === 0 && session.progress.totalBytes > 0) {
-      pending.reject(new Error(`收到空快照分块：${message.index}`))
+    if (chunk.length !== expectedLength) {
+      this.fail(session, new Error(`快照分块大小不匹配：${message.index}`))
+      return
+    }
+    if (
+      chunk.length > SNAPSHOT_CHUNK_SIZE ||
+      session.progress.receivedBytes + chunk.length > session.progress.totalBytes ||
+      session.progress.receivedBytes + chunk.length > MAX_SNAPSHOT_COMPRESSED_BYTES
+    ) {
+      this.fail(session, new Error(`快照分块累计大小超过上限：${message.index}`))
       return
     }
     session.chunks[message.index] = chunk
@@ -294,6 +316,7 @@ export class SnapshotDownloader extends EventEmitter {
       session.pendingChunk = undefined
     }
     session.settled = true
+    this.releaseBuffers(session)
     if (this.session === session) {
       this.session = undefined
     }
@@ -313,6 +336,7 @@ export class SnapshotDownloader extends EventEmitter {
       pending.reject(error)
     }
     session.rejectMeta(error)
+    this.releaseBuffers(session)
     session.progress.status = 'failed'
     session.progress.error = error.message
     this.publishProgress(session)
@@ -322,6 +346,23 @@ export class SnapshotDownloader extends EventEmitter {
     }
     session.reject(error)
   }
+
+  private releaseBuffers(session: DownloadSession): void {
+    session.chunks.length = 0
+    session.progress.receivedBytes = 0
+  }
+}
+
+function expectedChunkLength(index: number, totalBytes: number, chunkCount: number): number {
+  if (chunkCount === 0 || index < 0 || index >= chunkCount) {
+    throw new Error(`无效快照分块索引：${index}`)
+  }
+  const offset = index * SNAPSHOT_CHUNK_SIZE
+  return Math.min(SNAPSHOT_CHUNK_SIZE, totalBytes - offset)
+}
+
+function maxBase64Length(decodedBytes: number): number {
+  return Math.ceil(decodedBytes / 3) * 4
 }
 
 /** 将 ZIP 中的文件安全合并到目标目录，绝不覆盖已有不同内容。 */

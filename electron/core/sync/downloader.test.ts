@@ -246,4 +246,84 @@ describe('SnapshotDownloader', () => {
 
     await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('项目下载已取消')
   })
+
+  it('regression: rejects an oversized encoded chunk before retaining it and releases the session', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const guarded = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+    sync.onWantChunk = (message) => {
+      queueMicrotask(() => downloader.handleChunk('seed-peer', {
+        type: 'chunk',
+        snapshotId: message.snapshotId,
+        index: message.index,
+        data: Buffer.alloc(SNAPSHOT_CHUNK_SIZE + 1).toString('base64'),
+      }))
+    }
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('编码超过大小上限')
+
+    // 失败后不得保留会话或其缓冲，下一次下载应能立即开始。
+    sync.onWantChunk = undefined
+    await expect(downloader.startDownload(snapshotId, target)).resolves.toMatchObject({ extractedFiles: 1 })
+  })
+
+  it('regression: rejects a chunk with an invalid index instead of creating a sparse buffer', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const indexed = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+    sync.onWantChunk = (message) => {
+      queueMicrotask(() => downloader.handleChunk('seed-peer', {
+        type: 'chunk',
+        snapshotId: message.snapshotId,
+        index: 999_999_999,
+        data: Buffer.alloc(1).toString('base64'),
+      }))
+    }
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('越界快照分块')
+  })
+
+  it('regression: rejects a duplicate chunk without accounting for it twice', async () => {
+    const source = await createDirectory('cairn-download-source-')
+    const target = await createDirectory('cairn-download-target-')
+    await writeFile(join(source, 'sample.ts'), 'export const duplicate = true\n')
+    const sync = new FakeSync()
+    const snapshotId = await configureSnapshot(sync, source)
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+    sync.onWantChunk = (message) => {
+      const data = sync.chunks[message.index]!.toString('base64')
+      queueMicrotask(() => {
+        downloader.handleChunk('seed-peer', { type: 'chunk', snapshotId: message.snapshotId, index: message.index, data })
+        downloader.handleChunk('seed-peer', { type: 'chunk', snapshotId: message.snapshotId, index: message.index, data })
+      })
+    }
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('重复或意外快照分块')
+  })
+
+  it('rejects metadata whose chunk count does not exactly match its advertised size', async () => {
+    const target = await createDirectory('cairn-download-target-')
+    const sync = new FakeSync()
+    const snapshotId = 'a'.repeat(64)
+    sync.metadata = {
+      type: 'snapshot-meta',
+      snapshotId,
+      projectName: 'malformed',
+      size: 0,
+      chunkCount: 1,
+    }
+    const downloader = new SnapshotDownloader(sync as unknown as Sync)
+    sync.downloader = downloader
+
+    await expect(downloader.startDownload(snapshotId, target)).rejects.toThrow('分块数量不匹配')
+  })
 })
