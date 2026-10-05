@@ -594,9 +594,13 @@ export class Sync extends EventEmitter {
     const exists = this.hooks.fileExists
       ? await this.hooks.fileExists(op.filePath)
       : localContent !== ''
-    if (op.kind === 'deleted' && !exists) {
-      // 文件已不存在时，删除操作保持幂等，不留下永远无法重试的 pending。
+    if (op.kind === 'deleted') {
+      // 刪除以存在性而非內容判斷：0-byte 檔案同樣必須移入本機廢紙簍。
+      if (exists) {
+        await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      }
       await this.hooks.applyRemoteChange(op.filePath, '', true)
+      await this.afterFilesystemApply(op)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
@@ -753,16 +757,10 @@ export class Sync extends EventEmitter {
     content: string,
     retryPending: boolean,
   ): Promise<boolean> {
-    if (op.kind === 'deleted') {
-      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
-      await this.hooks!.applyRemoteChange(op.filePath, '', true)
-      await this.afterFilesystemApply(op)
-    } else {
-      this.options.oplog.setRemoteOpTargetContentHash(op.hash, contentHash(content))
-      await this.hooks!.writeFile(op.filePath, content)
-      await this.hooks!.applyRemoteChange(op.filePath, content)
-      await this.afterFilesystemApply(op)
-    }
+    this.options.oplog.setRemoteOpTargetContentHash(op.hash, contentHash(content))
+    await this.hooks!.writeFile(op.filePath, content)
+    await this.hooks!.applyRemoteChange(op.filePath, content)
+    await this.afterFilesystemApply(op)
     await this.completeRemoteOp(op, retryPending)
     return true
   }

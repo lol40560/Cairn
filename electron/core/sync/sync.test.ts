@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -1655,6 +1655,54 @@ describe('Sync', () => {
     transport.emit('message', 'source', { op: remote, type: 'data' })
     await applied
     expect(applyRemoteChange).toHaveBeenCalledWith('gone.ts', '', true)
+    await sync.stop()
+  })
+
+  it('regression: 远端删除会移除实际存在的空文件并更新基线', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    const filePath = 'empty.ts'
+    const absolutePath = join(target.root, filePath)
+    await writeFile(absolutePath, '')
+    const input = {
+      ...createOp('empty-delete'),
+      diff: createTwoFilesPatch(filePath, filePath, '', ''),
+      filePath,
+      kind: 'deleted' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const moveRemoteDeletionToTrash = vi.fn(async (relativePath: string) => {
+      await unlink(join(target.root, relativePath))
+    })
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        fileExists: async (relativePath) => {
+          try {
+            await readFile(join(target.root, relativePath))
+            return true
+          } catch {
+            return false
+          }
+        },
+        moveRemoteDeletionToTrash,
+        readFile: async (relativePath) => readFile(join(target.root, relativePath), 'utf8'),
+        writeFile: vi.fn(async () => undefined),
+      },
+    )
+
+    const applied = waitForEvent<[Op]>(sync, 'remoteOp')
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await applied
+
+    await expect(readFile(absolutePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(moveRemoteDeletionToTrash).toHaveBeenCalledWith(filePath, 'alice', remote.hash)
+    expect(applyRemoteChange).toHaveBeenCalledWith(filePath, '', true)
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied')
     await sync.stop()
   })
 
