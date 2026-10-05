@@ -58,9 +58,17 @@ export class PendingOps {
   }
 
   async retryAll(applyFn: (op: Op) => Promise<boolean>): Promise<void> {
-    for (const entry of await this.list()) {
-      if (await applyFn(entry.op)) {
-        await this.remove(entry.op.hash)
+    // list() 先回傳快照，後續 remove 不會影響尚未處理的 entry。
+    const entries = await this.list()
+    for (const entry of entries) {
+      try {
+        if (await applyFn(entry.op)) {
+          await this.remove(entry.op.hash)
+        }
+      } catch (error) {
+        // 保留失敗 entry，讓下一次基線或 blob 到達後仍可安全重試。
+        const detail = error instanceof Error ? error.message : String(error)
+        console.warn(`[cairn:sync] 待重試操作失敗，將保留：${entry.op.hash.slice(0, 12)} (${detail})`)
       }
     }
   }
