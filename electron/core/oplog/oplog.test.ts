@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { ensureCairnDataDir } from '../data-dir'
-import { computeHash, createOplog } from './index'
+import { computeHash, createOplog, LEGACY_OP_HASH_VERSION } from './index'
 import type { NewOp, Op, Oplog } from './types'
 
 const roots: string[] = []
@@ -180,7 +180,7 @@ describe('oplog', () => {
     expect(oplog.getOp(local.hash)?.source).toBeUndefined()
   })
 
-  it('kind 不参与 hash，且读取旧对象时会从 diff 推导类型', async () => {
+  it('regression: 旧版 v1 对象保持可读，且从 diff 推导类型', async () => {
     const { projectRoot, oplog } = await createFixture()
     const legacyCases = [
       {
@@ -201,36 +201,47 @@ describe('oplog', () => {
       const input = newOp({
         diff: legacyCase.diff,
         filePath: `legacy-${index}.ts`,
+        hashVersion: LEGACY_OP_HASH_VERSION,
         id: `legacy-${index}`,
       })
       const hash = computeHash(input)
 
-      expect(computeHash({ ...input, kind: legacyCase.kind })).toBe(hash)
-      await writeCorruptOp(projectRoot, { ...input, hash })
+      // 歷史物件沒有 hashVersion 與 kind；它們仍依 v1 格式驗證與讀取。
+      const legacyObject = { ...input }
+      delete legacyObject.hashVersion
+      await writeCorruptOp(projectRoot, { ...legacyObject, hash })
       expect(oplog.getOp(hash)?.kind).toBe(legacyCase.kind)
     }
   })
 
-  it('baseHash 会持久化但不改变 op hash', async () => {
-    const { oplog } = await createFixture()
+  it('v2 hash 对相同语义稳定，且不依赖调用方字段插入顺序', () => {
     const input = newOp()
-    const baseHash = 'f'.repeat(64)
+    const reordered: NewOp = {
+      diff: input.diff,
+      filePath: input.filePath,
+      id: input.id,
+      parentHashes: [...input.parentHashes].reverse(),
+      timestamp: input.timestamp,
+      author: input.author,
+    }
 
-    expect(computeHash({ ...input, baseHash })).toBe(computeHash(input))
-    const stored = oplog.putOp({ ...input, baseHash })
-    expect(stored).toMatchObject({ baseHash })
-    expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash })
+    expect(computeHash(reordered)).toBe(computeHash(input))
   })
 
-  it('blobHash 与 size 会持久化但不改变 op hash', async () => {
+  it('v2 hash 绑定 kind、baseHash、blobHash 与 size', async () => {
     const { oplog } = await createFixture()
-    const input = newOp({ diff: '', filePath: 'assets/logo.png' })
+    const input = newOp({ diff: '', filePath: 'assets/logo.png', kind: 'created' })
+    const baseHash = 'f'.repeat(64)
     const blobHash = 'a'.repeat(64)
 
-    expect(computeHash({ ...input, blobHash, size: 12 })).toBe(computeHash(input))
-    const stored = oplog.putOp({ ...input, blobHash, size: 12 })
+    expect(computeHash({ ...input, kind: 'deleted' })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, baseHash })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, blobHash })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, size: 12 })).not.toBe(computeHash(input))
 
-    expect(oplog.getOp(stored.hash)).toMatchObject({ blobHash, size: 12 })
+    const stored = oplog.putOp({ ...input, baseHash, blobHash, size: 12 })
+
+    expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash, blobHash, size: 12 })
     expect(oplog.listBlobs()).toMatchObject([{ hash: stored.hash, blobHash }])
   })
 
@@ -309,14 +320,33 @@ describe('oplog', () => {
     expect(reopened.listUnappliedRemoteOps()).toEqual([])
   })
 
+  it('regression: v2 remote apply state remains attached to its v2 object after restart', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const received = oplog.putReceivedRemoteOp(newOp({
+      baseHash: 'a'.repeat(64),
+      kind: 'modified',
+    }))
+
+    expect(received.hashVersion).toBe(2)
+    expect(oplog.getRemoteOpApplyState(received.hash)).toBe('received')
+    oplog.close()
+
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.getOp(received.hash)).toMatchObject({ hashVersion: 2 })
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('received')
+  })
+
   it('migration: treats pre-apply-state historical operations as legacy complete', async () => {
     const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-legacy-'))
     roots.push(projectRoot)
-    const input = newOp({ id: 'legacy-complete' })
+    const input = newOp({ id: 'legacy-complete', hashVersion: LEGACY_OP_HASH_VERSION })
     const hash = computeHash(input)
     const objectPath = join(projectRoot, '.cairn', 'objects', hash.slice(0, 2), hash)
     await mkdir(dirname(objectPath), { recursive: true })
-    await writeFile(objectPath, JSON.stringify({ ...input, hash }), 'utf8')
+    const legacyObject = { ...input }
+    delete legacyObject.hashVersion
+    await writeFile(objectPath, JSON.stringify({ ...legacyObject, hash }), 'utf8')
     const legacy = new Database(join(projectRoot, '.cairn', 'oplog.db'))
     try {
       legacy.exec(`CREATE TABLE ops (

@@ -8,9 +8,9 @@ import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
 
-import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../oplog'
+import { computeHash, createOplog, CURRENT_OP_HASH_VERSION, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
-import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, SYNC_PROTOCOL_VERSION, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
 import { writeSnapshot } from '../watcher/snapshot'
@@ -47,7 +47,7 @@ async function authenticateRawClient(
         client.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof(roomCode, deriveRoomHash(roomCode), clientNonce, message.serverNonce) }))
       }
       if (message.type === 'auth-ok') {
-        client.write(encodeMessage({ type: 'hello', peerId, version: 1 }))
+        client.write(encodeMessage({ type: 'hello', peerId, version: SYNC_PROTOCOL_VERSION }))
       }
     }
   })
@@ -106,6 +106,7 @@ function createOp(id: string): NewOp {
     diff: `+${id}`,
     filePath: `src/${id}.ts`,
     id,
+    hashVersion: CURRENT_OP_HASH_VERSION,
     parentHashes: [],
     timestamp: Date.now(),
   }
@@ -262,6 +263,7 @@ describe('binary blob sync', () => {
       blobHash,
       diff: '',
       filePath: 'assets/logo.png',
+      hashVersion: CURRENT_OP_HASH_VERSION,
       id: 'binary-pending',
       kind: 'created',
       parentHashes: [],
@@ -306,7 +308,7 @@ describe('binary blob sync', () => {
     const blobHash = createHash('sha256').update(content).digest('hex')
     const input: NewOp = {
       author: 'alice', blobHash, diff: '', filePath: 'assets/recovered.png', id: 'binary-restart',
-      kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
+      hashVersion: CURRENT_OP_HASH_VERSION, kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
     }
     const remote: Op = { ...input, hash: computeHash(input) }
     target.oplog.putReceivedRemoteOp(remote)
@@ -395,7 +397,7 @@ describe('binary blob sync', () => {
 
     const input: NewOp = {
       author: 'alice', blobHash, diff: '', filePath: 'assets/logo.png', id: 'tcp-binary',
-      kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
+      hashVersion: CURRENT_OP_HASH_VERSION, kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
     }
     const op = source.oplog.putOp(input)
     sourceSync.announceLocalOp(op)
@@ -746,7 +748,7 @@ describe('transport', () => {
         oldProof = createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), firstNonce, message.serverNonce)
         first.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: oldProof }))
       }
-      if (message.type === 'auth-ok') first.write(encodeMessage({ type: 'hello', peerId: 'first', version: 1 }))
+      if (message.type === 'auth-ok') first.write(encodeMessage({ type: 'hello', peerId: 'first', version: SYNC_PROTOCOL_VERSION }))
     })
     const firstConnected = waitForEvent(receiver, 'connect')
     first.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'first', roomHash: deriveRoomHash('ABCDEF'), clientNonce: firstNonce }))
@@ -843,7 +845,7 @@ describe('transport', () => {
       if (message.type === 'auth-challenge') {
         retry.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce) }))
       }
-      if (message.type === 'auth-ok') retry.write(encodeMessage({ type: 'hello', peerId: 'sender', version: 1 }))
+      if (message.type === 'auth-ok') retry.write(encodeMessage({ type: 'hello', peerId: 'sender', version: SYNC_PROTOCOL_VERSION }))
     })
     const connected = waitForEvent(receiver, 'connect')
     retry.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))

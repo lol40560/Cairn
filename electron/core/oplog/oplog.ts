@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 
 import { ensureCairnDataDir } from '../data-dir'
-import { computeHash } from './hash'
+import { computeHash, CURRENT_OP_HASH_VERSION, deriveOpKind, LEGACY_OP_HASH_VERSION } from './hash'
 import type { NewOp, Op, OpKind, Oplog, RemoteOpApplyState } from './types'
 
 interface HashRow {
@@ -46,7 +46,7 @@ const CREATE_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_remote_op_apply_state ON remote_op_apply(state);
 `
 
-function canonicalize(input: NewOp): NewOp {
+function canonicalize(input: NewOp | Op): NewOp {
   return {
     id: input.id,
     author: input.author,
@@ -54,23 +54,22 @@ function canonicalize(input: NewOp): NewOp {
     timestamp: input.timestamp,
     filePath: input.filePath,
     diff: input.diff,
-    kind: input.kind,
+    // v2 將 kind 納入 identity；省略時以既有 diff 規則推導成穩定語義。
+    kind: input.kind ?? deriveOpKind(input.diff),
     baseHash: input.baseHash,
     blobHash: input.blobHash,
     size: input.size,
+    // 已帶 hash 的未標記物件必然是歷史 v1；新的 NewOp 預設寫入 v2。
+    hashVersion: isStoredOp(input)
+      ? input.hashVersion ?? LEGACY_OP_HASH_VERSION
+      : input.hashVersion ?? CURRENT_OP_HASH_VERSION,
     source: input.source,
   }
 }
 
 /** 为旧版对象补齐仅用于显示的变更类型。 */
 function inferKind(diff: string): OpKind {
-  if (diff.includes('--- /dev/null') || diff.includes('new file mode')) {
-    return 'created'
-  }
-  if (diff.includes('+++ /dev/null') || diff.includes('deleted file mode')) {
-    return 'deleted'
-  }
-  return 'modified'
+  return deriveOpKind(diff)
 }
 
 function isStoredOp(input: NewOp | Op): input is Op {
@@ -208,8 +207,7 @@ class SqliteOplog implements Oplog {
     const op: Op = {
       ...canonicalInput,
       hash: computedHash,
-      // 旧调用方没有显式提供时，也为新对象持久化可展示的类型。
-      kind: canonicalInput.kind ?? inferKind(canonicalInput.diff),
+      kind: canonicalInput.kind,
     }
     const objectPath = this.objectPath(op.hash)
 
@@ -378,6 +376,7 @@ class SqliteOplog implements Oplog {
         diff: op.diff,
         filePath: op.filePath,
         hash: op.hash,
+        hashVersion: op.hashVersion,
         id: op.id,
         kind: op.kind,
         parentHashes: op.parentHashes,

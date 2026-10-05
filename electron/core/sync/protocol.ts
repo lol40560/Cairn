@@ -3,6 +3,9 @@ import { createHash, createHmac } from 'node:crypto'
 import type { ProjectIdentity } from '../identity'
 import type { Op } from '../oplog'
 
+/** v2 peer 理解新版操作 identity，避免新舊 hash 格式被靜默混用。 */
+export const SYNC_PROTOCOL_VERSION = 2
+
 export interface PeerInfo {
   peerId: string
   host: string
@@ -64,7 +67,7 @@ export function createClientProof(roomCode: string, roomHash: string, clientNonc
 }
 
 export type SyncMessage =
-  | { type: 'hello'; peerId: string; version: 1; identity?: ProjectIdentity }
+  | { type: 'hello'; peerId: string; version: 1 | typeof SYNC_PROTOCOL_VERSION; identity?: ProjectIdentity }
   | { type: 'auth-request'; authVersion: 2; roomHash: string; peerId: string; clientNonce: string }
   | { type: 'auth-challenge'; authVersion: 2; serverNonce: string; serverProof: string }
   | { type: 'auth-response'; authVersion: 2; clientProof: string }
@@ -131,7 +134,7 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'hello':
       return (
         typeof candidate.peerId === 'string' &&
-        candidate.version === 1 &&
+        (candidate.version === 1 || candidate.version === SYNC_PROTOCOL_VERSION) &&
         (candidate.identity === undefined || isProjectIdentity(candidate.identity))
       )
     case 'identity-mismatch':

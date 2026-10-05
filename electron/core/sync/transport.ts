@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import { createServer, Socket, type Server } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 
-import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveRoomHash, encodeMessage, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveRoomHash, encodeMessage, SYNC_PROTOCOL_VERSION, type SyncMessage } from './protocol'
 import type { ProjectIdentity } from '../identity'
 
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
@@ -222,10 +222,18 @@ export class Transport extends EventEmitter {
     socket.destroy()
   }
 
+  /** 不容許不同操作 identity 格式的 peer 進入同步層。 */
+  private rejectProtocolVersion(socket: Socket, receivedVersion: number): void {
+    this.emit('error', new Error(
+      `同步協議版本不相容：本機 v${SYNC_PROTOCOL_VERSION}，遠端 v${receivedVersion}`,
+    ))
+    socket.destroy()
+  }
+
   private sendHello(socket: Socket): void {
     if (!socket.destroyed) {
       socket.write(
-        encodeMessage({ identity: this.identity, type: 'hello', peerId: this.peerId, version: 1 }),
+        encodeMessage({ identity: this.identity, type: 'hello', peerId: this.peerId, version: SYNC_PROTOCOL_VERSION }),
       )
     }
   }
@@ -239,6 +247,10 @@ export class Transport extends EventEmitter {
     if (message.type === 'hello') {
       if (!this.authenticatedSockets.has(socket)) {
         this.failAuthentication(socket, '认证尚未完成')
+        return
+      }
+      if (message.version !== SYNC_PROTOCOL_VERSION) {
+        this.rejectProtocolVersion(socket, message.version)
         return
       }
       this.registerPeer(socket, message.peerId)
