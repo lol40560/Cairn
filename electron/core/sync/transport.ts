@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events'
 import { createServer, Socket, type Server } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 
-import { createAuthHmac, decodeMessages, deriveRoomHash, encodeMessage, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveRoomHash, encodeMessage, type SyncMessage } from './protocol'
 import type { ProjectIdentity } from '../identity'
 
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
@@ -28,6 +28,8 @@ export interface PeerEndpoint {
 interface AuthState {
   peerId?: string
   nonce?: string
+  clientNonce?: string
+  phase: 'awaiting-challenge' | 'awaiting-client-proof' | 'awaiting-auth-ok'
   timeout: NodeJS.Timeout
   role: 'client' | 'server'
 }
@@ -280,30 +282,34 @@ export class Transport extends EventEmitter {
       }
       const nonce = randomBytes(32).toString('hex')
       const timeout = setTimeout(() => this.failAuthentication(socket, '认证超时'), this.options.authTimeoutMs ?? AUTH_TIMEOUT_MS)
-      this.authStates.set(socket, { peerId: message.peerId, nonce, role: 'server', timeout })
+      this.authStates.set(socket, { peerId: message.peerId, nonce, clientNonce: message.clientNonce, phase: 'awaiting-client-proof', role: 'server', timeout })
       this.pendingAuthPeers.set(message.peerId, socket)
-      this.write(socket, { type: 'auth-challenge', nonce })
+      this.write(socket, { type: 'auth-challenge', authVersion: AUTH_PROTOCOL_VERSION, serverNonce: nonce, serverProof: createServerProof(this.roomCode, message.roomHash, message.clientNonce, nonce) })
       return
     }
 
     if (message.type === 'auth-challenge') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'client' || !message.nonce) {
+      if (!state || state.role !== 'client' || state.phase !== 'awaiting-challenge') {
         this.failAuthentication(socket, '无效认证挑战')
         return
       }
-      this.write(socket, { type: 'auth-response', hmac: createAuthHmac(this.roomCode, message.nonce) })
+      const roomHash = deriveRoomHash(this.roomCode)
+      if (!state.clientNonce || !isMatchingHmac(createServerProof(this.roomCode, roomHash, state.clientNonce, message.serverNonce), message.serverProof)) { this.failAuthentication(socket, 'Invalid server proof'); return }
+      state.nonce = message.serverNonce
+      state.phase = 'awaiting-auth-ok'
+      this.write(socket, { type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof(this.roomCode, roomHash, state.clientNonce, message.serverNonce) })
       return
     }
 
     if (message.type === 'auth-response') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'server' || !state.nonce || this.usedNonces.has(state.nonce)) {
+      if (!state || state.role !== 'server' || state.phase !== 'awaiting-client-proof' || !state.nonce || !state.clientNonce || this.usedNonces.has(state.nonce)) {
         this.failAuthentication(socket, '无效或已使用的认证挑战')
         return
       }
-      const expected = createAuthHmac(this.roomCode, state.nonce)
-      if (!isMatchingHmac(expected, message.hmac)) {
+      const expected = createClientProof(this.roomCode, deriveRoomHash(this.roomCode), state.clientNonce, state.nonce)
+      if (!isMatchingHmac(expected, message.clientProof)) {
         this.failAuthentication(socket, '认证失败')
         return
       }
@@ -318,7 +324,7 @@ export class Transport extends EventEmitter {
 
     if (message.type === 'auth-ok') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'client') {
+      if (!state || state.role !== 'client' || state.phase !== 'awaiting-auth-ok') {
         this.failAuthentication(socket, '无效认证确认')
         return
       }
@@ -336,8 +342,9 @@ export class Transport extends EventEmitter {
 
   private beginClientAuthentication(socket: Socket): void {
     const timeout = setTimeout(() => this.failAuthentication(socket, '认证超时'), this.options.authTimeoutMs ?? AUTH_TIMEOUT_MS)
-    this.authStates.set(socket, { role: 'client', timeout })
-    this.write(socket, { type: 'auth-request', peerId: this.peerId, roomHash: deriveRoomHash(this.roomCode) })
+    const clientNonce = randomBytes(32).toString('hex')
+    this.authStates.set(socket, { role: 'client', clientNonce, phase: 'awaiting-challenge', timeout })
+    this.write(socket, { type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: this.peerId, roomHash: deriveRoomHash(this.roomCode), clientNonce })
   }
 
   private write(socket: Socket, message: SyncMessage): void {

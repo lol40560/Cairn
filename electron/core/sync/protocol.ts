@@ -28,15 +28,25 @@ export function deriveAuthKey(roomCode: string): Buffer {
 }
 
 /** 计算认证挑战的 HMAC，供传输层和单元测试共享。 */
-export function createAuthHmac(roomCode: string, nonce: string): string {
-  return createHmac('sha256', deriveAuthKey(roomCode)).update(nonce).digest('hex')
+export const AUTH_PROTOCOL_VERSION = 2
+
+function authTranscript(roomHash: string, clientNonce: string, serverNonce: string): string {
+  return `${AUTH_PROTOCOL_VERSION}\0${roomHash}\0${clientNonce}\0${serverNonce}`
+}
+
+export function createServerProof(roomCode: string, roomHash: string, clientNonce: string, serverNonce: string): string {
+  return createHmac('sha256', deriveAuthKey(roomCode)).update(`cairn-auth-server-v2\0${authTranscript(roomHash, clientNonce, serverNonce)}`).digest('hex')
+}
+
+export function createClientProof(roomCode: string, roomHash: string, clientNonce: string, serverNonce: string): string {
+  return createHmac('sha256', deriveAuthKey(roomCode)).update(`cairn-auth-client-v2\0${authTranscript(roomHash, clientNonce, serverNonce)}`).digest('hex')
 }
 
 export type SyncMessage =
   | { type: 'hello'; peerId: string; version: 1; identity?: ProjectIdentity }
-  | { type: 'auth-request'; roomHash: string; peerId: string }
-  | { type: 'auth-challenge'; nonce: string }
-  | { type: 'auth-response'; hmac: string }
+  | { type: 'auth-request'; authVersion: 2; roomHash: string; peerId: string; clientNonce: string }
+  | { type: 'auth-challenge'; authVersion: 2; serverNonce: string; serverProof: string }
+  | { type: 'auth-response'; authVersion: 2; clientProof: string }
   | { type: 'auth-ok' }
   | { type: 'auth-fail'; reason: string }
   | { type: 'have'; hash: string }
@@ -112,11 +122,11 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'identity-ok':
       return true
     case 'auth-request':
-      return typeof candidate.peerId === 'string' && typeof candidate.roomHash === 'string'
+      return candidate.authVersion === AUTH_PROTOCOL_VERSION && typeof candidate.peerId === 'string' && typeof candidate.roomHash === 'string' && typeof candidate.clientNonce === 'string'
     case 'auth-challenge':
-      return typeof candidate.nonce === 'string'
+      return candidate.authVersion === AUTH_PROTOCOL_VERSION && typeof candidate.serverNonce === 'string' && typeof candidate.serverProof === 'string'
     case 'auth-response':
-      return typeof candidate.hmac === 'string'
+      return candidate.authVersion === AUTH_PROTOCOL_VERSION && typeof candidate.clientProof === 'string'
     case 'auth-ok':
       return true
     case 'auth-fail':

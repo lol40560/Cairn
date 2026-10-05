@@ -10,7 +10,7 @@ import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, createOplog, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
-import { createAuthHmac, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
 import { writeSnapshot } from '../watcher/snapshot'
@@ -35,12 +35,14 @@ async function authenticateRawClient(
   roomCode = '',
 ): Promise<void> {
   let buffer = ''
+  const clientNonce = 'a'.repeat(64)
   client.on('data', (chunk: Buffer) => {
     const decoded = decodeMessages(buffer + chunk.toString('utf8'))
     buffer = decoded.rest
     for (const message of decoded.messages) {
       if (message.type === 'auth-challenge') {
-        client.write(encodeMessage({ type: 'auth-response', hmac: createAuthHmac(roomCode, message.nonce) }))
+        expect(message.serverProof).toBe(createServerProof(roomCode, deriveRoomHash(roomCode), clientNonce, message.serverNonce))
+        client.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof(roomCode, deriveRoomHash(roomCode), clientNonce, message.serverNonce) }))
       }
       if (message.type === 'auth-ok') {
         client.write(encodeMessage({ type: 'hello', peerId, version: 1 }))
@@ -48,7 +50,7 @@ async function authenticateRawClient(
     }
   })
   const connected = waitForEvent<[string]>(receiver, 'connect')
-  client.write(encodeMessage({ type: 'auth-request', peerId, roomHash: deriveRoomHash(roomCode) }))
+  client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId, roomHash: deriveRoomHash(roomCode), clientNonce }))
   await connected
 }
 
@@ -146,8 +148,8 @@ describe('sync protocol', () => {
     expect(deriveRoomHash('ABCDEF')).toBe(deriveRoomHash('ABCDEF'))
     expect(deriveRoomHash('ABCDEF')).not.toBe(deriveRoomHash('GHIJKL'))
     expect(deriveAuthKey('ABCDEF')).toHaveLength(32)
-    expect(createAuthHmac('ABCDEF', 'nonce')).toMatch(/^[a-f0-9]{64}$/)
-    expect(createAuthHmac('ABCDEF', 'nonce')).not.toBe(createAuthHmac('GHIJKL', 'nonce'))
+    expect(createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), 'a', 'b')).toMatch(/^[a-f0-9]{64}$/)
+    expect(createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), 'a', 'b')).not.toBe(createClientProof('GHIJKL', deriveRoomHash('GHIJKL'), 'a', 'b'))
   })
 })
 
@@ -503,7 +505,7 @@ describe('transport', () => {
       client.connect(port, '127.0.0.1')
     })
     const failed = waitForEvent<[Error]>(receiver, 'authFailed')
-    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('GHIJKL') }))
+    client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('GHIJKL'), clientNonce: 'a'.repeat(64) }))
 
     expect((await failed)[0].message).toBe('wrong-room')
     client.destroy()
@@ -518,7 +520,7 @@ describe('transport', () => {
     client.on('data', (chunk: Buffer) => {
       const decoded = decodeMessages(chunk.toString('utf8'))
       if (decoded.messages.some((message) => message.type === 'auth-challenge')) {
-        client.write(encodeMessage({ type: 'auth-response', hmac: '0'.repeat(64) }))
+        client.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: '0'.repeat(64) }))
       }
     })
     await new Promise<void>((resolve, reject) => {
@@ -527,7 +529,7 @@ describe('transport', () => {
       client.connect(port, '127.0.0.1')
     })
     const failed = waitForEvent<[Error]>(receiver, 'authFailed')
-    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('ABCDEF') }))
+    client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce: 'a'.repeat(64) }))
 
     expect((await failed)[0].message).toBe('认证失败')
     client.destroy()
@@ -545,7 +547,7 @@ describe('transport', () => {
       client.connect(port, '127.0.0.1')
     })
     const failed = waitForEvent<[Error]>(receiver, 'authFailed')
-    client.write(encodeMessage({ type: 'auth-request', peerId: 'sender', roomHash: deriveRoomHash('ABCDEF') }))
+    client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce: 'a'.repeat(64) }))
 
     expect((await failed)[0].message).toBe('认证超时')
     client.destroy()
