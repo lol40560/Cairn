@@ -14,10 +14,15 @@ import Database from 'better-sqlite3'
 
 import { ensureCairnDataDir } from '../data-dir'
 import { computeHash } from './hash'
-import type { NewOp, Op, OpKind, Oplog } from './types'
+import type { NewOp, Op, OpKind, Oplog, RemoteOpApplyState } from './types'
 
 interface HashRow {
   hash: string
+}
+
+interface RemoteApplyRow {
+  state: RemoteOpApplyState
+  target_content_hash: string | null
 }
 
 type StoredOp = Omit<Op, 'source'>
@@ -32,6 +37,13 @@ const CREATE_SCHEMA = `
     blob_hash TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_ops_timestamp ON ops(timestamp DESC);
+  CREATE TABLE IF NOT EXISTS remote_op_apply (
+    hash TEXT PRIMARY KEY,
+    state TEXT NOT NULL CHECK (state IN ('received', 'applied', 'rejected')),
+    target_content_hash TEXT,
+    FOREIGN KEY (hash) REFERENCES ops(hash)
+  );
+  CREATE INDEX IF NOT EXISTS idx_remote_op_apply_state ON remote_op_apply(state);
 `
 
 function canonicalize(input: NewOp): NewOp {
@@ -82,6 +94,107 @@ class SqliteOplog implements Oplog {
 
   putOp(input: NewOp | Op): Op {
     this.assertOpen('putOp')
+    return this.storeOp(input, false)
+  }
+
+  putReceivedRemoteOp(input: NewOp | Op): Op {
+    this.assertOpen('putReceivedRemoteOp')
+    return this.storeOp({ ...input, source: 'remote' }, true)
+  }
+
+  getOp(hash: string): Op | undefined {
+    this.assertOpen('getOp')
+
+    const indexed = this.database
+      .prepare('SELECT hash FROM ops WHERE hash = ?')
+      .get(hash) as HashRow | undefined
+
+    if (!indexed) {
+      return undefined
+    }
+
+    return this.readObject(hash)
+  }
+
+  hasReceivedOp(hash: string): boolean {
+    this.assertOpen('hasReceivedOp')
+
+    return Boolean(
+      this.database.prepare('SELECT 1 FROM ops WHERE hash = ?').get(hash),
+    )
+  }
+
+  hasOp(hash: string): boolean {
+    return this.hasReceivedOp(hash)
+  }
+
+  getRemoteOpApplyState(hash: string): RemoteOpApplyState | undefined {
+    this.assertOpen('getRemoteOpApplyState')
+    const row = this.database
+      .prepare('SELECT state FROM remote_op_apply WHERE hash = ?')
+      .get(hash) as Pick<RemoteApplyRow, 'state'> | undefined
+    return row?.state
+  }
+
+  listUnappliedRemoteOps(): Op[] {
+    this.assertOpen('listUnappliedRemoteOps')
+    const rows = this.database
+      .prepare(
+        `SELECT ops.hash FROM remote_op_apply
+         INNER JOIN ops ON ops.hash = remote_op_apply.hash
+         WHERE remote_op_apply.state = 'received'
+         ORDER BY ops.timestamp ASC, ops.hash ASC`,
+      )
+      .all() as HashRow[]
+    return rows.map(({ hash }) => ({ ...this.readObject(hash), source: 'remote' }))
+  }
+
+  setRemoteOpTargetContentHash(hash: string, targetContentHash: string): void {
+    this.assertOpen('setRemoteOpTargetContentHash')
+    if (!/^[a-f0-9]{64}$/u.test(targetContentHash)) {
+      throw new Error(`远端操作目标内容 hash 无效：${targetContentHash}`)
+    }
+    const result = this.database
+      .prepare(
+        `UPDATE remote_op_apply
+         SET target_content_hash = ?
+         WHERE hash = ? AND state = 'received'`,
+      )
+      .run(targetContentHash, hash)
+    if (result.changes !== 1) {
+      throw new Error(`无法为未完成远端操作保存目标内容：${hash}`)
+    }
+  }
+
+  getRemoteOpTargetContentHash(hash: string): string | undefined {
+    this.assertOpen('getRemoteOpTargetContentHash')
+    const row = this.database
+      .prepare('SELECT target_content_hash FROM remote_op_apply WHERE hash = ?')
+      .get(hash) as Pick<RemoteApplyRow, 'target_content_hash'> | undefined
+    return row?.target_content_hash ?? undefined
+  }
+
+  markRemoteOpApplied(hash: string): void {
+    this.assertOpen('markRemoteOpApplied')
+    const result = this.database
+      .prepare("UPDATE remote_op_apply SET state = 'applied' WHERE hash = ? AND state = 'received'")
+      .run(hash)
+    if (result.changes === 0 && this.getRemoteOpApplyState(hash) !== 'applied') {
+      throw new Error(`无法将远端操作标记为已应用：${hash}`)
+    }
+  }
+
+  markRemoteOpRejected(hash: string): void {
+    this.assertOpen('markRemoteOpRejected')
+    const result = this.database
+      .prepare("UPDATE remote_op_apply SET state = 'rejected' WHERE hash = ? AND state = 'received'")
+      .run(hash)
+    if (result.changes === 0 && this.getRemoteOpApplyState(hash) !== 'rejected') {
+      throw new Error(`无法将远端操作标记为已拒绝：${hash}`)
+    }
+  }
+
+  private storeOp(input: NewOp | Op, receivedRemotely: boolean): Op {
 
     const canonicalInput = canonicalize(input)
     const computedHash = computeHash(canonicalInput)
@@ -104,36 +217,22 @@ class SqliteOplog implements Oplog {
       this.writeObjectAtomically(objectPath, op)
     }
 
-    this.database
-      .prepare(
-        `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      .run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null)
+    const persist = this.database.transaction(() => {
+      this.database
+        .prepare(
+          `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null)
+      if (receivedRemotely) {
+        this.database
+          .prepare("INSERT OR IGNORE INTO remote_op_apply (hash, state) VALUES (?, 'received')")
+          .run(op.hash)
+      }
+    })
+    persist()
 
     return op
-  }
-
-  getOp(hash: string): Op | undefined {
-    this.assertOpen('getOp')
-
-    const indexed = this.database
-      .prepare('SELECT hash FROM ops WHERE hash = ?')
-      .get(hash) as HashRow | undefined
-
-    if (!indexed) {
-      return undefined
-    }
-
-    return this.readObject(hash)
-  }
-
-  hasOp(hash: string): boolean {
-    this.assertOpen('hasOp')
-
-    return Boolean(
-      this.database.prepare('SELECT 1 FROM ops WHERE hash = ?').get(hash),
-    )
   }
 
   walkDag(headHashes: string[]): Op[] {

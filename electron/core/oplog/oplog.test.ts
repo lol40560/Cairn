@@ -289,6 +289,53 @@ describe('oplog', () => {
     expect(oplog.hasOp('f'.repeat(64))).toBe(false)
   })
 
+  it('durably tracks a received remote op until it is explicitly marked applied', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const received = oplog.putReceivedRemoteOp(newOp({ id: 'remote-durable' }))
+    const targetHash = 'a'.repeat(64)
+
+    expect(oplog.hasReceivedOp(received.hash)).toBe(true)
+    expect(oplog.getRemoteOpApplyState(received.hash)).toBe('received')
+    expect(oplog.listUnappliedRemoteOps()).toEqual([{ ...received, source: 'remote' }])
+    oplog.setRemoteOpTargetContentHash(received.hash, targetHash)
+    oplog.close()
+
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('received')
+    expect(reopened.getRemoteOpTargetContentHash(received.hash)).toBe(targetHash)
+    reopened.markRemoteOpApplied(received.hash)
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('applied')
+    expect(reopened.listUnappliedRemoteOps()).toEqual([])
+  })
+
+  it('migration: treats pre-apply-state historical operations as legacy complete', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-legacy-'))
+    roots.push(projectRoot)
+    const input = newOp({ id: 'legacy-complete' })
+    const hash = computeHash(input)
+    const objectPath = join(projectRoot, '.cairn', 'objects', hash.slice(0, 2), hash)
+    await mkdir(dirname(objectPath), { recursive: true })
+    await writeFile(objectPath, JSON.stringify({ ...input, hash }), 'utf8')
+    const legacy = new Database(join(projectRoot, '.cairn', 'oplog.db'))
+    try {
+      legacy.exec(`CREATE TABLE ops (
+        hash TEXT PRIMARY KEY, id TEXT NOT NULL, author TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, file_path TEXT NOT NULL
+      )`)
+      legacy.prepare('INSERT INTO ops (hash, id, author, timestamp, file_path) VALUES (?, ?, ?, ?, ?)')
+        .run(hash, input.id, input.author, input.timestamp, input.filePath)
+    } finally {
+      legacy.close()
+    }
+
+    const migrated = createOplog(projectRoot)
+    oplogs.push(migrated)
+    expect(migrated.getOp(hash)).toMatchObject({ id: input.id })
+    expect(migrated.getRemoteOpApplyState(hash)).toBeUndefined()
+    expect(migrated.listUnappliedRemoteOps()).toEqual([])
+  })
+
   it('按父先子后顺序遍历三节点 DAG', async () => {
     const { oplog } = await createFixture()
     const a = oplog.putOp(newOp({ id: 'A', timestamp: 1 }))

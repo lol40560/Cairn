@@ -7,7 +7,7 @@ import { merge } from 'node-diff3'
 
 import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
-import { prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
+import { prepareSafeProjectWritePath, resolveSafeProjectPath, UnsafeProjectPathError } from '../fs/project-path'
 import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
@@ -44,6 +44,8 @@ export interface SyncHooks {
 
 interface SyncDependencies {
   discovery?: Discovery
+  /** 仅供崩溃边界回归测试使用；生产环境不传入。 */
+  afterFilesystemApplyBeforeMarkApplied?: (op: import('../oplog').Op) => Promise<void>
   peerId?: string
   transport?: Transport
 }
@@ -67,6 +69,7 @@ export class Sync extends EventEmitter {
   private readonly peers = new Map<string, PeerInfo>()
   private readonly seeders = new Map<string, SeederInfo>()
   private readonly transport: Transport
+  private readonly afterFilesystemApplyBeforeMarkApplied: ((op: import('../oplog').Op) => Promise<void>) | undefined
   private seeder?: SnapshotSeederHandler
   private downloader?: SnapshotDownloaderHandler
   private localPort: number | undefined
@@ -87,6 +90,7 @@ export class Sync extends EventEmitter {
     this.peerId = dependencies.peerId ?? randomUUID()
     this.discovery = dependencies.discovery ?? new Discovery()
     this.transport = dependencies.transport ?? new Transport(this.peerId)
+    this.afterFilesystemApplyBeforeMarkApplied = dependencies.afterFilesystemApplyBeforeMarkApplied
     this.pendingOps = options.projectRoot ? new PendingOps(options.projectRoot) : undefined
     this.conflicts = options.projectRoot ? new ConflictsManager(options.projectRoot) : undefined
     this.reconnectManager = new ReconnectManager({
@@ -407,7 +411,7 @@ export class Sync extends EventEmitter {
 
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {
     if (message.type === 'have') {
-      if (!this.options.oplog.hasOp(message.hash)) {
+      if (!this.options.oplog.hasReceivedOp(message.hash)) {
         this.send(peerId, { hash: message.hash, type: 'want' })
       }
       return
@@ -500,18 +504,37 @@ export class Sync extends EventEmitter {
   }
 
   private async receiveRemoteOp(op: import('../oplog').Op): Promise<void> {
-    if (this.options.oplog.hasOp(op.hash)) {
+    const previousState = this.options.oplog.getRemoteOpApplyState(op.hash)
+    if (previousState === 'applied') {
       return
     }
 
+    let remoteOp: import('../oplog').Op | undefined
+    let newlyReceived = false
     try {
-      const remoteOp = this.options.oplog.putOp({ ...op, source: 'remote' })
+      if (previousState === 'received') {
+        const stored = this.options.oplog.getOp(op.hash)
+        if (!stored) {
+          throw new Error(`未找到已接收的远端操作：${op.hash}`)
+        }
+        remoteOp = { ...stored, source: 'remote' }
+      } else if (this.options.oplog.hasReceivedOp(op.hash)) {
+        // 没有 apply 记录的旧对象来自升级前，按 legacy-complete 处理以免重放历史。
+        return
+      } else {
+        remoteOp = this.options.oplog.putReceivedRemoteOp(op)
+        newlyReceived = true
+      }
       if (this.hooks) {
         await this.applyRemoteOp(remoteOp)
       }
-      this.emit('remoteOp', remoteOp)
     } catch (error) {
+      this.markTerminalRemoteFailure(remoteOp, error)
       this.emitError(error)
+      return
+    }
+    if (newlyReceived) {
+      this.emit('remoteOp', remoteOp)
     }
   }
 
@@ -523,15 +546,39 @@ export class Sync extends EventEmitter {
 
     this.retryingPending = true
     try {
-      await this.pendingOps.retryAll((op) => this.applyRemoteOp(op, false))
+      for (const op of this.options.oplog.listUnappliedRemoteOps()) {
+        try {
+          await this.applyRemoteOp(op, false)
+        } catch (error) {
+          this.markTerminalRemoteFailure(op, error)
+          console.warn(`[cairn:sync] 重试未完成远端操作失败：${op.hash.slice(0, 12)}`, error)
+        }
+      }
+      await this.pendingOps.retryAll(async (op) => {
+        try {
+          return await this.applyRemoteOp(op, false)
+        } catch (error) {
+          this.markTerminalRemoteFailure(op, error)
+          this.emitError(error)
+          return isTerminalRemoteApplyError(error)
+        }
+      })
     } finally {
       this.retryingPending = false
     }
   }
 
   private async applyRemoteOp(op: import('../oplog').Op, retryPending = true): Promise<boolean> {
-    if (op.source !== 'remote' || !this.hooks) {
+    if (!this.started || op.source !== 'remote' || !this.hooks) {
       return false
+    }
+    // 升级前写入 pending/ 的远端操作没有 apply marker；只有实际进入待重试队列时才补建 intent，
+    // 不会把全部旧历史操作重新标记为待应用。
+    if (!this.options.oplog.getRemoteOpApplyState(op.hash)) {
+      this.options.oplog.putReceivedRemoteOp(op)
+    }
+    if (this.options.oplog.getRemoteOpApplyState(op.hash) === 'applied') {
+      return true
     }
 
     await this.assertSafeProjectPath(op.filePath)
@@ -547,9 +594,16 @@ export class Sync extends EventEmitter {
     const exists = this.hooks.fileExists
       ? await this.hooks.fileExists(op.filePath)
       : localContent !== ''
-    if (op.kind === 'deleted' && localContent === '') {
+    if (op.kind === 'deleted' && !exists) {
       // 文件已不存在时，删除操作保持幂等，不留下永远无法重试的 pending。
       await this.hooks.applyRemoteChange(op.filePath, '', true)
+      await this.completeRemoteOp(op, retryPending)
+      return true
+    }
+    const targetContentHash = this.options.oplog.getRemoteOpTargetContentHash(op.hash)
+    if (exists && targetContentHash === contentHash(localContent)) {
+      // 上次已写盘但在更新基线或 completion marker 前中断；只补齐后续步骤。
+      await this.hooks.applyRemoteChange(op.filePath, localContent)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
@@ -568,7 +622,8 @@ export class Sync extends EventEmitter {
       const nextContent = applyPatch(localContent, op.diff)
       if (nextContent !== false) return this.writeAndCompleteRemoteOp(op, nextContent, retryPending)
       await this.handleConflict(op, localContent)
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
 
     const projectRoot = this.options.projectRoot
@@ -577,13 +632,15 @@ export class Sync extends EventEmitter {
       const fallback = applyPatch(localContent, op.diff)
       if (fallback !== false) return this.writeAndCompleteRemoteOp(op, fallback, retryPending)
       await this.handleConflict(op, localContent)
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
 
     const remoteContent = applyPatch(baseContent, op.diff)
     if (remoteContent === false) {
       await this.handleConflict(op, localContent, { baseContent })
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
     // node-diff3 以数组元素为最小合并单位；按保留换行符的行拆分，避免逐字符合并丢失换行。
     const merged = merge(splitLines(localContent), splitLines(baseContent), splitLines(remoteContent), {
@@ -595,7 +652,8 @@ export class Sync extends EventEmitter {
     }
 
     await this.handleConflict(op, localContent, { baseContent, remoteContent, mergedWithMarkers: mergedContent })
-    return false
+    await this.completeRemoteOp(op, retryPending)
+    return true
   }
 
   /** blob 尚未到達時先保留 op，取得且驗證內容後才寫入專案。 */
@@ -618,8 +676,12 @@ export class Sync extends EventEmitter {
     }
 
     if (op.kind === 'deleted') {
-      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      const exists = this.hooks!.fileExists ? await this.hooks!.fileExists(op.filePath) : true
+      if (exists) {
+        await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      }
       await this.hooks!.applyRemoteChange(op.filePath, '', true, blobHash)
+      await this.afterFilesystemApply(op)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
@@ -632,9 +694,9 @@ export class Sync extends EventEmitter {
       throw new Error(`无法应用 binary op：缺少二进制写入器（${op.filePath}）`)
     }
 
-    // 先更新基线，再写磁碟，避免 watcher 將遠端落地誤判為本地變更。
-    await this.hooks!.applyRemoteChange(op.filePath, '', false, blobHash)
     await this.hooks!.writeBinaryFile(op.filePath, content)
+    await this.hooks!.applyRemoteChange(op.filePath, '', false, blobHash)
+    await this.afterFilesystemApply(op)
     await this.completeRemoteOp(op, retryPending)
     return true
   }
@@ -694,9 +756,12 @@ export class Sync extends EventEmitter {
     if (op.kind === 'deleted') {
       await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
       await this.hooks!.applyRemoteChange(op.filePath, '', true)
+      await this.afterFilesystemApply(op)
     } else {
-      await this.hooks!.applyRemoteChange(op.filePath, content)
+      this.options.oplog.setRemoteOpTargetContentHash(op.hash, contentHash(content))
       await this.hooks!.writeFile(op.filePath, content)
+      await this.hooks!.applyRemoteChange(op.filePath, content)
+      await this.afterFilesystemApply(op)
     }
     await this.completeRemoteOp(op, retryPending)
     return true
@@ -727,9 +792,20 @@ export class Sync extends EventEmitter {
   }
 
   private async completeRemoteOp(op: import('../oplog').Op, retryPending: boolean): Promise<void> {
+    this.options.oplog.markRemoteOpApplied(op.hash)
     await this.pendingOps?.remove(op.hash)
     if (retryPending) {
       await this.retryPendingOps()
+    }
+  }
+
+  private async afterFilesystemApply(op: import('../oplog').Op): Promise<void> {
+    await this.afterFilesystemApplyBeforeMarkApplied?.(op)
+  }
+
+  private markTerminalRemoteFailure(op: import('../oplog').Op | undefined, error: unknown): void {
+    if (op && isTerminalRemoteApplyError(error)) {
+      this.options.oplog.markRemoteOpRejected(op.hash)
     }
   }
 
@@ -762,4 +838,9 @@ function contentHash(content: string): string {
 
 function splitLines(content: string): string[] {
   return content.match(/.*(?:\n|$)/g)?.filter((line) => line.length > 0) ?? []
+}
+
+function isTerminalRemoteApplyError(error: unknown): boolean {
+  return error instanceof UnsafeProjectPathError
+    || (error instanceof Error && error.message.startsWith('拒绝同步敏感文件'))
 }

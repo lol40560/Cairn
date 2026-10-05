@@ -288,13 +288,57 @@ describe('binary blob sync', () => {
       expect(transport.broadcast).toHaveBeenCalledWith({ type: 'want-blob', hash: blobHash })
     })
     expect(writeBinaryFile).not.toHaveBeenCalled()
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('received')
 
     transport.emit('message', 'peer-a', { type: 'data-blob', hash: blobHash, data: content.toString('base64') })
     await vi.waitFor(() => {
       expect(writeBinaryFile).toHaveBeenCalledWith('assets/logo.png', content)
       expect(applyRemoteChange).toHaveBeenCalledWith('assets/logo.png', '', false, blobHash)
     })
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied')
     await sync.stop()
+  })
+
+  it('T-04 regression: a blob-dependent received op survives restart until its blob is available', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const content = Buffer.from([1, 2, 3, 4])
+    const blobHash = createHash('sha256').update(content).digest('hex')
+    const input: NewOp = {
+      author: 'alice', blobHash, diff: '', filePath: 'assets/recovered.png', id: 'binary-restart',
+      kind: 'created', parentHashes: [], size: content.length, timestamp: 1,
+    }
+    const remote: Op = { ...input, hash: computeHash(input) }
+    target.oplog.putReceivedRemoteOp(remote)
+    const first = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'first', transport: new MockTransport() as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined), readFile: async () => '', writeFile: vi.fn(async () => undefined),
+        writeBinaryFile: vi.fn(async () => undefined),
+      },
+    )
+    await first.start()
+    await vi.waitFor(() => expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('received'))
+    await first.stop()
+    target.oplog.close()
+
+    await store.put(content)
+    const reopenedOplog = createOplog(target.root)
+    const writeBinaryFile = vi.fn(async () => undefined)
+    const second = new Sync(
+      { blobStore: store, oplog: reopenedOplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'second', transport: new MockTransport() as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined), readFile: async () => '', writeFile: vi.fn(async () => undefined),
+        writeBinaryFile,
+      },
+    )
+    await second.start()
+    await vi.waitFor(() => expect(reopenedOplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(writeBinaryFile).toHaveBeenCalledWith('assets/recovered.png', content)
+    await second.stop()
+    reopenedOplog.close()
   })
 
   it('已有 blob 時不會重複請求', async () => {
@@ -1337,6 +1381,7 @@ describe('Sync', () => {
 
     await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('symbolic link') })])
     expect(readFile).not.toHaveBeenCalled()
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('rejected')
     await sync.stop()
   })
 
@@ -1609,5 +1654,237 @@ describe('Sync', () => {
     await applied
     expect(applyRemoteChange).toHaveBeenCalledWith('gone.ts', '', true)
     await sync.stop()
+  })
+
+  it('T-04: only marks a received remote op applied after its filesystem mutation and baseline succeed', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'before\n'
+    const input = {
+      ...createOp('durable-normal'),
+      diff: createTwoFilesPatch('durable.ts', 'durable.ts', 'before\n', 'after\n'),
+      filePath: 'durable.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await vi.waitFor(() => expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(content).toBe('after\n')
+    await sync.stop()
+  })
+
+  it('T-04 regression: a failed write remains received and a duplicate delivery retries it', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'before\n'
+    let failWrite = true
+    const input = {
+      ...createOp('durable-retry'),
+      diff: createTwoFilesPatch('retry.ts', 'retry.ts', 'before\n', 'after\n'),
+      filePath: 'retry.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => {
+          if (failWrite) throw new Error('ENOSPC')
+          content = next
+        },
+      },
+    )
+    const firstFailure = waitForEvent<[Error]>(sync, 'error')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await expect(firstFailure).resolves.toEqual([expect.objectContaining({ message: 'ENOSPC' })])
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('received')
+    expect(applyRemoteChange).not.toHaveBeenCalled()
+
+    failWrite = false
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await vi.waitFor(() => expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(content).toBe('after\n')
+    await sync.stop()
+  })
+
+  it('T-04 regression: startup recovers a durable remote op stored before filesystem apply', async () => {
+    const target = await createTestOplog()
+    let content = 'before\n'
+    const input = {
+      ...createOp('crash-before-write'),
+      diff: createTwoFilesPatch('recover.ts', 'recover.ts', 'before\n', 'after\n'),
+      filePath: 'recover.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    target.oplog.putReceivedRemoteOp(remote)
+    target.oplog.close()
+    const reopenedOplog = createOplog(target.root)
+    const sync = new Sync(
+      { oplog: reopenedOplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: new MockTransport() as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+
+    await sync.start()
+    await vi.waitFor(() => expect(reopenedOplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(content).toBe('after\n')
+    await sync.stop()
+    reopenedOplog.close()
+  })
+
+  it('T-04 regression: recovery reconciles a write that completed before the applied marker', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'before\n'
+    const input = {
+      ...createOp('crash-after-write'),
+      diff: createTwoFilesPatch('reconcile.ts', 'reconcile.ts', 'before\n', 'after\n'),
+      filePath: 'reconcile.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const first = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      {
+        afterFilesystemApplyBeforeMarkApplied: async () => { throw new Error('simulated crash') },
+        discovery: new MockDiscovery() as unknown as never,
+        peerId: 'target-first',
+        transport: transport as never,
+      },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: async (_path, next) => { content = next },
+      },
+    )
+    const crash = waitForEvent<[Error]>(first, 'error')
+    await first.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await expect(crash).resolves.toEqual([expect.objectContaining({ message: 'simulated crash' })])
+    expect(content).toBe('after\n')
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('received')
+    await first.stop()
+    target.oplog.close()
+
+    const rewrite = vi.fn(async (_path: string, next: string) => { content = next })
+    const reopenedOplog = createOplog(target.root)
+    const second = new Sync(
+      { oplog: reopenedOplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target-second', transport: new MockTransport() as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile: rewrite,
+      },
+    )
+    await second.start()
+    await vi.waitFor(() => expect(reopenedOplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(rewrite).not.toHaveBeenCalled()
+    expect(content).toBe('after\n')
+    await second.stop()
+    reopenedOplog.close()
+  })
+
+  it('T-04 regression: an already applied duplicate has no additional filesystem side effect', async () => {
+    const target = await createTestOplog()
+    const transport = new MockTransport()
+    let content = 'before\n'
+    const input = {
+      ...createOp('duplicate-applied'),
+      diff: createTwoFilesPatch('duplicate.ts', 'duplicate.ts', 'before\n', 'after\n'),
+      filePath: 'duplicate.ts',
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const writeFile = vi.fn(async (_path: string, next: string) => { content = next })
+    const sync = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => true,
+        readFile: async () => content,
+        writeFile,
+      },
+    )
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await vi.waitFor(() => expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(writeFile).toHaveBeenCalledOnce()
+    await sync.stop()
+  })
+
+  it('T-04 regression: a delete is idempotent after a crash before its applied marker', async () => {
+    const target = await createTestOplog()
+    let exists = true
+    let content = 'before\n'
+    const input = {
+      ...createOp('delete-recovery'),
+      diff: createTwoFilesPatch('delete.ts', 'delete.ts', 'before\n', ''),
+      filePath: 'delete.ts',
+      kind: 'deleted' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const moveToTrash = vi.fn(async () => { exists = false; content = '' })
+    const firstTransport = new MockTransport()
+    const first = new Sync(
+      { oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      {
+        afterFilesystemApplyBeforeMarkApplied: async () => { throw new Error('simulated crash') },
+        discovery: new MockDiscovery() as unknown as never,
+        peerId: 'target-first',
+        transport: firstTransport as never,
+      },
+      {
+        applyRemoteChange: vi.fn(async () => undefined), fileExists: async () => exists,
+        moveRemoteDeletionToTrash: moveToTrash, readFile: async () => content, writeFile: vi.fn(async () => undefined),
+      },
+    )
+    const crash = waitForEvent<[Error]>(first, 'error')
+    await first.start()
+    firstTransport.emit('message', 'source', { op: remote, type: 'data' })
+    await crash
+    expect(exists).toBe(false)
+    await first.stop()
+    target.oplog.close()
+
+    const reopenedOplog = createOplog(target.root)
+    const second = new Sync(
+      { oplog: reopenedOplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target-second', transport: new MockTransport() as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined), fileExists: async () => exists,
+        moveRemoteDeletionToTrash: moveToTrash, readFile: async () => content, writeFile: vi.fn(async () => undefined),
+      },
+    )
+    await second.start()
+    await vi.waitFor(() => expect(reopenedOplog.getRemoteOpApplyState(remote.hash)).toBe('applied'))
+    expect(moveToTrash).toHaveBeenCalledOnce()
+    await second.stop()
+    reopenedOplog.close()
   })
 })

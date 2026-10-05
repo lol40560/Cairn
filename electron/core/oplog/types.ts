@@ -1,4 +1,5 @@
 export type OpKind = 'created' | 'deleted' | 'modified'
+export type RemoteOpApplyState = 'received' | 'applied' | 'rejected'
 
 export interface Op {
   id: string
@@ -39,8 +40,19 @@ export interface NewOp {
 
 export interface Oplog {
   putOp(input: NewOp | Op): Op
+  /** 持久化远端操作及其“尚未 materialize”的 apply intent。 */
+  putReceivedRemoteOp(input: NewOp | Op): Op
   getOp(hash: string): Op | undefined
+  /** 操作对象是否已被本机持久化；不等同于远端操作已落盘。 */
+  hasReceivedOp(hash: string): boolean
+  /** @deprecated 请使用 hasReceivedOp 或 getRemoteOpApplyState 明确表达语义。 */
   hasOp(hash: string): boolean
+  getRemoteOpApplyState(hash: string): RemoteOpApplyState | undefined
+  listUnappliedRemoteOps(): Op[]
+  setRemoteOpTargetContentHash(hash: string, contentHash: string): void
+  getRemoteOpTargetContentHash(hash: string): string | undefined
+  markRemoteOpApplied(hash: string): void
+  markRemoteOpRejected(hash: string): void
   walkDag(headHashes: string[]): Op[]
   listRecent(limit: number): Op[]
   listAllHashes(): string[]
