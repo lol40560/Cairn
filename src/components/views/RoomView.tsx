@@ -5,8 +5,10 @@ import { Users } from 'lucide-react'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
 import { EmptyState } from '@/components/EmptyState'
+import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { derivePrimaryTeamStatus, deriveTeamHealth, formatDiagnostics } from '@/lib/teamHealth'
 import { useAppStore } from '@/store/appStore'
 import type { IpcResult, PeerInfo, SeederInfo } from '@/types/cairn'
 
@@ -79,13 +81,20 @@ export function RoomView({
   const { t } = useTranslation()
   const [joinCode, setJoinCode] = useState('')
   const [directAddressInput, setDirectAddressInput] = useState('')
+  const [showAdvancedConnection, setShowAdvancedConnection] = useState(false)
   const [copied, setCopied] = useState(false)
   const [exportingSnapshot, setExportingSnapshot] = useState(false)
+  const [joining, setJoining] = useState(false)
+  const [startingRoom, setStartingRoom] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [reconnectClock, setReconnectClock] = useState(0)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
   const canceledDownload = useRef(false)
   const downloadFailureHandled = useRef(false)
   const directAddress = useAppStore((state) => state.directAddress)
+  const watchStatus = useAppStore((state) => state.status)
+  const conflicts = useAppStore((state) => state.conflicts)
+  const ops = useAppStore((state) => state.ops)
   const localEndpoint = useAppStore((state) => state.localEndpoint)
   const joinedByRoomCode = roomCode !== ''
   const joined = joinedByRoomCode || directAddress !== undefined
@@ -117,6 +126,11 @@ export function RoomView({
   const setSeeders = useAppStore((state) => state.setSeeders)
   const setShowDownloadPrompt = useAppStore((state) => state.setShowDownloadPrompt)
   const dismissToast = useCallback(() => setToast(null), [])
+  const health = deriveTeamHealth({
+    status: watchStatus, roomCode, directAddress, peers, peerStatuses, isHost, isSharing,
+    identityMismatchCount: identityMismatches.length, conflicts, ops,
+  })
+  const primaryHealth = derivePrimaryTeamStatus(health)
 
   useEffect(() => {
     if (!Object.values(peerStatuses).some((state) => state.status === 'reconnecting')) {
@@ -241,28 +255,29 @@ export function RoomView({
       return
     }
 
-    // 先进入房间，确保 mDNS 与直连都使用同一份邀请码认证。
-    await onJoinRoom(roomCodeInput)
-    if (useAppStore.getState().roomCode !== roomCodeInput) {
-      return
-    }
-
-    const directAddressValue = directAddressInput.trim()
-    if (!directAddressValue) {
-      setPendingAutoDownload(true)
-      setJoinCode('')
-      return
-    }
-
-    const address = directAddressValue.match(/^([\d.]+):(\d+)$/)
-    if (!address) {
-      setToast({ message: t('invalidRoomCodeOrAddress'), tone: 'error' })
-      return
-    }
-
-    const host = address[1]
-    const port = Number.parseInt(address[2]!, 10)
+    setJoining(true)
     try {
+      // 先进入房间，确保 mDNS 与直连都使用同一份邀请码认证。
+      await onJoinRoom(roomCodeInput)
+      if (useAppStore.getState().roomCode !== roomCodeInput) {
+        return
+      }
+
+      const directAddressValue = directAddressInput.trim()
+      if (!directAddressValue) {
+        setPendingAutoDownload(true)
+        setJoinCode('')
+        return
+      }
+
+      const address = directAddressValue.match(/^([\d.]+):(\d+)$/)
+      if (!address) {
+        setToast({ message: t('invalidRoomCodeOrAddress'), tone: 'error' })
+        return
+      }
+
+      const host = address[1]
+      const port = Number.parseInt(address[2]!, 10)
       const result = await window.cairn.connectToAddress({ host, port, roomCode: roomCodeInput })
       if (!result.ok) {
         setToast({ message: t('authFailed'), tone: 'error' })
@@ -276,12 +291,20 @@ export function RoomView({
     } catch (error) {
       console.error('[cairn] 无法建立直接连接', error)
       setToast(normalizeError(error, t))
+    } finally {
+      setJoining(false)
     }
   }
 
   const handleCopy = async (): Promise<void> => {
     await navigator.clipboard?.writeText(roomCode)
     setCopied(true)
+  }
+
+  const handleCopyDiagnostics = async (): Promise<void> => {
+    const result = await window.cairn.copyToClipboard(formatDiagnostics(health, roomCode))
+    if (result.ok) setToast({ message: t('diagnosticsCopied') })
+    else setToast(normalizeError(result.error, t))
   }
 
   const handleCopyEndpoint = async (): Promise<void> => {
@@ -322,6 +345,7 @@ export function RoomView({
   }
 
   const handleStartSharing = async (): Promise<void> => {
+    setSharing(true)
     try {
       const result = await window.cairn.startSharing()
       if (!result.ok) {
@@ -333,10 +357,13 @@ export function RoomView({
     } catch (error) {
       console.error('[cairn] 无法开始项目分享', error)
       setToast(normalizeError(error, t))
+    } finally {
+      setSharing(false)
     }
   }
 
   const handleStartRoom = async (): Promise<void> => {
+    setStartingRoom(true)
     try {
       const result = await createRoomAndStartSharing(onCreateRoom, () => window.cairn.startSharing())
       if (result && !result.ok) {
@@ -345,6 +372,8 @@ export function RoomView({
     } catch (error) {
       console.error('[cairn] 创建团队后无法开始项目分享', error)
       setToast(normalizeError(error, t))
+    } finally {
+      setStartingRoom(false)
     }
   }
 
@@ -512,17 +541,18 @@ export function RoomView({
             {t('leaveRoom')}
           </button>
         )}
-        {joined && (
-          <button className="btn btn-ghost" disabled={exportingSnapshot} type="button" onClick={() => void handleExportSnapshot()}>
-            {t('exportSnapshot')}
-          </button>
-        )}
-        {joined && (
-          <button className="btn btn-primary" disabled={!hasOps} type="button" onClick={onExportPR}>
-            {t('exportPR')}
-          </button>
-        )}
       </div>
+
+      <section className={`team-health-summary state-${primaryHealth}`} aria-label={t('projectStatus')}>
+        <div className="team-health-heading">
+          <span aria-hidden="true" className="team-health-dot" />
+          <div>
+            <strong>{primaryHealth === 'identity-mismatch' ? t('projectMismatch') : primaryHealth === 'offline' ? t('teamOffline') : primaryHealth === 'reconnecting' ? t('reconnecting') : primaryHealth === 'conflict' ? t('attentionRequired') : primaryHealth === 'room-ready' ? t('roomReady') : health.localWatch === 'watching' ? t('statusWatching') : t('watcherStopped')}</strong>
+            <p>{health.connection === 'offline' ? t('localChangesTracked') : health.connection === 'reconnecting' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'connected' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'room-ready' ? t('waitingForTeammates') : health.connection === 'not-in-room' ? t('localOnly') : ''}</p>
+          </div>
+        </div>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={() => void handleCopyDiagnostics()}>{t('copyDiagnostics')}</button>
+      </section>
 
       {identityMismatches.length > 0 && (
         <div className="identity-warning" role="alert">
@@ -541,12 +571,18 @@ export function RoomView({
       )}
 
       {!joined ? (
-        <div className="room-block">
-          <p className="room-label">{t('createOrJoin')}</p>
-          <div className="room-actions">
-            <button className="btn btn-primary" type="button" onClick={() => void handleStartRoom()}>
-              {t('createRoom')}
+        <div className="room-setup">
+          <div className="room-setup-primary">
+            <p className="room-label">{t('createRoom')}</p>
+            <button aria-busy={startingRoom} className="btn btn-primary" disabled={startingRoom} type="button" onClick={() => void handleStartRoom()}>
+              {startingRoom ? <Spinner size={12} /> : null}
+              {startingRoom ? t('creating') : t('createRoom')}
             </button>
+          </div>
+          <div className="room-join-panel">
+            <p className="room-label">{t('joinTeam')}</p>
+            <p className="room-hint">{t('shareRoomHint')}</p>
+            <div className="room-actions">
             <input
               aria-label={t('inviteCodeLabel')}
               className="input room-input"
@@ -554,16 +590,31 @@ export function RoomView({
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value)}
             />
-            <input
-              aria-label={t('directAddressLabel')}
-              className="input room-input"
-              placeholder={t('directAddressPlaceholder')}
-              value={directAddressInput}
-              onChange={(event) => setDirectAddressInput(event.target.value)}
-            />
-            <button className="btn" disabled={joinCode.trim() === ''} type="button" onClick={() => void handleJoin()}>
-              {t('joinRoom')}
+            <button aria-busy={joining} className="btn" disabled={joinCode.trim() === '' || joining} type="button" onClick={() => void handleJoin()}>
+              {joining ? <Spinner size={12} /> : null}
+              {joining ? t('joining') : t('joinRoom')}
             </button>
+            </div>
+            <button
+              aria-expanded={showAdvancedConnection}
+              className="advanced-connection-toggle"
+              type="button"
+              onClick={() => setShowAdvancedConnection((value) => !value)}
+            >
+              {t('advancedConnection')}
+            </button>
+            {showAdvancedConnection ? (
+              <label className="room-advanced-field">
+                <span>{t('directAddressLabel')}</span>
+                <input
+                  aria-label={t('directAddressLabel')}
+                  className="input room-input"
+                  placeholder={t('directAddressPlaceholder')}
+                  value={directAddressInput}
+                  onChange={(event) => setDirectAddressInput(event.target.value)}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
       ) : (
@@ -621,8 +672,9 @@ export function RoomView({
             ) : isHost ? (
               <div className="sharing-empty">
                 <div className="sharing-empty-title">{t('stoppedSharing')}</div>
-                <button className="btn" type="button" onClick={() => void handleStartSharing()}>
-                  {t('restartSharing')}
+                <button aria-busy={sharing} className="btn" disabled={sharing} type="button" onClick={() => void handleStartSharing()}>
+                  {sharing ? <Spinner size={12} /> : null}
+                  {sharing ? t('creating') : t('restartSharing')}
                 </button>
               </div>
             ) : seeders.length > 0 ? (
@@ -688,7 +740,7 @@ export function RoomView({
           </div>
 
           <div className="peers-section">
-            <p className="peers-label">{t('connectedPeers').replace('{n}', String(connectedPeerCount))}</p>
+            <p className="peers-label">{t('people')} · {t('connectedPeers').replace('{n}', String(connectedPeerCount))}</p>
             {peers.length === 0 ? (
               <div className="team-empty">
                 <p className="team-empty-title">{t('teamAlone')}</p>
@@ -738,6 +790,17 @@ export function RoomView({
                 <p className="direct-connection-hint">{t('directConnectionHint')}</p>
               </div>
             )}
+          </div>
+          <div className="room-block room-exports">
+            <p className="room-label">{t('exports')}</p>
+            <div className="room-actions">
+              <button className="btn" disabled={exportingSnapshot} type="button" onClick={() => void handleExportSnapshot()}>
+                {t('exportSnapshot')}
+              </button>
+              <button className="btn btn-primary" disabled={!hasOps} type="button" onClick={onExportPR}>
+                {t('exportPR')}
+              </button>
+            </div>
           </div>
         </>
       )}

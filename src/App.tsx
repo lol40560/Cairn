@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ConflictDialog } from '@/components/ConflictDialog'
+import { HackathonController } from '@/components/HackathonController'
+import { SearchPalette, type SearchPaletteItem } from '@/components/SearchPalette'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
 import { Onboarding } from '@/components/Onboarding'
-import { SettingsDialog } from '@/components/SettingsDialog'
+import { SettingsView } from '@/components/SettingsDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { TopBar } from '@/components/TopBar'
@@ -11,15 +13,20 @@ import { ActivityView } from '@/components/views/ActivityView'
 import { CheckpointsView } from '@/components/views/CheckpointsView'
 import { ConflictsView } from '@/components/views/ConflictsView'
 import { FilesView } from '@/components/views/FilesView'
+import { DemoFilesView } from '@/components/views/DemoFilesView'
+import { DemoCheckpointsView } from '@/components/views/DemoCheckpointsView'
 import { HomeView } from '@/components/views/HomeView'
 import { RoomView } from '@/components/views/RoomView'
 import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { createPRBranchName } from '@/lib/prBranch'
 import { restoreLastSession } from '@/lib/sessionRestore'
+import { isEditableTarget, shortcutLabel } from '@/lib/shortcuts'
+import { getDemoScenario, type HackathonExecutionMode, type HackathonSceneId } from '@/lib/hackathonMode'
+import { createDemoWorkspace } from '@/lib/demoWorkspace'
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
-import type { IpcResult } from '@/types/cairn'
+import type { AvailableProjectEntry, IpcResult } from '@/types/cairn'
 
 function getIpcData<T>(result: IpcResult<T>): T {
   if (!result.ok) {
@@ -57,6 +64,7 @@ export function App() {
   const { t } = useTranslation()
   const activeView = useAppStore((state) => state.activeView)
   const conflicts = useAppStore((state) => state.conflicts)
+  const dirtyFilePaths = useAppStore((state) => state.dirtyFilePaths)
   const folder = useAppStore((state) => state.folder)
   const ops = useAppStore((state) => state.ops)
   const peers = useAppStore((state) => state.peers)
@@ -77,8 +85,15 @@ export function App() {
   const setRoomCode = useAppStore((state) => state.setRoomCode)
   const setStatus = useAppStore((state) => state.setStatus)
   const setConflicts = useAppStore((state) => state.setConflicts)
+  const projects = useAppStore((state) => state.projects)
+  const projectFiles = useAppStore((state) => state.projectFiles)
+  const setProjects = useAppStore((state) => state.setProjects)
+  const setProjectFiles = useAppStore((state) => state.setProjectFiles)
+  const setSelectedFilePath = useAppStore((state) => state.setSelectedFilePath)
+  const selectedFilePath = useAppStore((state) => state.selectedFilePath)
+  const incrementUnseenActivity = useAppStore((state) => state.incrementUnseenActivity)
+  const clearUnseenActivity = useAppStore((state) => state.clearUnseenActivity)
   const removeConflict = useAppStore((state) => state.removeConflict)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
   const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
@@ -86,6 +101,58 @@ export function App() {
   const [restoring, setRestoring] = useState(true)
   const [restoreError, setRestoreError] = useState<string | undefined>()
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
+  const [hackathonEnabled, setHackathonEnabled] = useState(false)
+  const [hackathonMode, setHackathonMode] = useState<HackathonExecutionMode>('live')
+  const [hackathonScene, setHackathonScene] = useState<HackathonSceneId>('ready')
+  const [presentationMode, setPresentationMode] = useState(false)
+  const [viewBeforeHackathon, setViewBeforeHackathon] = useState(activeView)
+  const [demoWorkspace, setDemoWorkspace] = useState(() => createDemoWorkspace('ready'))
+  const [demoWorkspaceVersion, setDemoWorkspaceVersion] = useState(0)
+  const [demoDirty, setDemoDirty] = useState(false)
+  const [demoConflictResolved, setDemoConflictResolved] = useState(false)
+  const activeViewRef = useRef(activeView)
+
+  useEffect(() => {
+    activeViewRef.current = activeView
+  }, [activeView])
+
+  const activateProject = useCallback(async (project: AvailableProjectEntry): Promise<void> => {
+    try {
+      getIpcData(await window.cairn.startWatching(project.path))
+      setFolder(project.path)
+      setStatus('watching')
+      replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
+      setActiveView('activity')
+    } catch (error) {
+      setToast(normalizeError(error, t))
+    }
+  }, [replaceOps, setActiveView, setFolder, setStatus, t])
+
+  const openQuickOpen = useCallback(async (): Promise<void> => {
+    if (projectFiles.length === 0 && folder) {
+      const result = await window.cairn.listProjectFiles()
+      if (result.ok) setProjectFiles(result.data.files)
+    }
+    setQuickOpenOpen(true)
+  }, [folder, projectFiles.length, setProjectFiles])
+
+  const openProjectSwitcher = useCallback(async (): Promise<void> => {
+    const result = await window.cairn.listProjects()
+    if (result.ok) setProjects(result.data)
+    setProjectSwitcherOpen(true)
+  }, [setProjects])
+
+  const openFileFromPalette = useCallback((path: string): void => {
+    if (activeView === 'files') {
+      window.dispatchEvent(new CustomEvent('cairn:open-file', { detail: path }))
+      return
+    }
+    setSelectedFilePath(path)
+    setActiveView('files')
+  }, [activeView, setActiveView, setSelectedFilePath])
 
   useEffect(() => {
     let disposed = false
@@ -184,6 +251,7 @@ export function App() {
     const unsubscribe = window.cairn.onOp((op) => {
       if (!disposed) {
         prependOp(op)
+        if (activeViewRef.current !== 'activity') incrementUnseenActivity()
       }
     })
     const unsubscribePeers = window.cairn.onPeers(setPeers)
@@ -206,7 +274,11 @@ export function App() {
       unsubscribeIdentityMismatch()
       unsubscribePeerStatus()
     }
-  }, [addConflict, addIdentityMismatch, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeerStatus, setPeers, setStatus, t])
+  }, [addConflict, addIdentityMismatch, incrementUnseenActivity, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeerStatus, setPeers, setStatus, t])
+
+  useEffect(() => {
+    if (activeView === 'activity') clearUnseenActivity()
+  }, [activeView, clearUnseenActivity])
 
   useEffect(() => {
     let disposed = false
@@ -269,7 +341,7 @@ export function App() {
     }
   }
 
-  const handleLeaveRoom = async (): Promise<void> => {
+  const handleLeaveRoom = useCallback(async (): Promise<void> => {
     try {
       getIpcData(await window.cairn.leaveRoom())
       setPeers([])
@@ -281,9 +353,9 @@ export function App() {
       console.error('[cairn] 无法离开房间', error)
       setToast(normalizeError(error, t))
     }
-  }
+  }, [clearIdentityMismatches, clearPeerStatuses, setIsHost, setPeers, setRoomCode, t])
 
-  const handleExportSnapshot = async (): Promise<void> => {
+  const handleExportSnapshot = useCallback(async (): Promise<void> => {
     try {
       const result = await window.cairn.exportSnapshot()
       if (!result.ok) {
@@ -312,7 +384,7 @@ export function App() {
       console.error('[cairn] 无法导出项目快照', error)
       setToast(normalizeError(error, t))
     }
-  }
+  }, [t])
 
   const exportPRSubmit = async (title: string) => window.cairn.exportPR({
     branch: 'main',
@@ -322,11 +394,83 @@ export function App() {
 
   const dismissToast = useCallback(() => setToast(null), [])
 
+  const commands = useMemo(() => {
+    const list: Array<SearchPaletteItem & { action(): void }> = [
+      { id: 'nav-home', label: t('home'), group: t('groupProject'), shortcut: shortcutLabel('1'), action: () => setActiveView('home') },
+      { id: 'nav-activity', label: t('activityTitle'), group: t('groupProject'), shortcut: shortcutLabel('2'), action: () => setActiveView('activity') },
+      { id: 'nav-files', label: t('files'), group: t('groupProject'), shortcut: shortcutLabel('3'), action: () => setActiveView('files') },
+      { id: 'nav-team', label: t('room'), group: t('groupCollaboration'), shortcut: shortcutLabel('4'), action: () => setActiveView('room') },
+      { id: 'nav-conflicts', label: t('conflicts'), group: t('groupCollaboration'), shortcut: shortcutLabel('5'), action: () => setActiveView('conflicts') },
+      { id: 'nav-checkpoints', label: t('checkpoints'), group: t('groupRecovery'), action: () => setActiveView('checkpoints') },
+      { id: 'nav-trash', label: t('trash'), group: t('groupRecovery'), action: () => setActiveView('trash') },
+      { id: 'settings', label: t('settings'), group: t('settings'), shortcut: shortcutLabel(','), action: () => setActiveView('settings') },
+      { id: 'switch-project', label: t('switchProject'), group: t('groupProject'), action: () => void openProjectSwitcher() },
+      { id: 'add-project', label: t('addProject'), group: t('groupProject'), action: () => setActiveView('home') },
+      { id: 'quick-open', label: t('quickOpen'), group: t('files'), shortcut: shortcutLabel('P'), action: () => void openQuickOpen() },
+    ]
+    if (activeView === 'files' && selectedFilePath) list.push({ id: 'save-file', label: t('filesSave'), group: t('files'), shortcut: shortcutLabel('S'), action: () => window.dispatchEvent(new Event('cairn:save-current-file')) })
+    if (roomCode) {
+      list.push({ id: 'copy-invite', label: t('copyInviteCode'), group: t('room'), action: () => void window.cairn.copyToClipboard(roomCode) })
+      list.push({ id: 'leave-team', label: t('leaveRoom'), group: t('room'), action: () => void handleLeaveRoom() })
+    }
+    if (folder) list.push({ id: 'export-snapshot', label: t('exportSnapshot'), group: t('exportPR'), action: () => void handleExportSnapshot() })
+    if (roomCode) list.push({ id: 'export-pr', label: t('exportPR'), group: t('exportPR'), action: () => setExportDialogOpen(true) })
+    return list
+  }, [activeView, folder, handleExportSnapshot, handleLeaveRoom, openProjectSwitcher, openQuickOpen, roomCode, selectedFilePath, setActiveView, t])
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent): void => {
+      const modifier = event.metaKey || event.ctrlKey
+      if (!modifier) return
+      const key = event.key.toLowerCase()
+      const editable = isEditableTarget(event.target)
+
+      if (key === 'p') {
+        event.preventDefault()
+        void openQuickOpen()
+        return
+      }
+      if (key === 'k' && !editable) {
+        event.preventDefault()
+        setCommandPaletteOpen(true)
+        return
+      }
+      if (key === ',' && !editable) {
+        event.preventDefault()
+        setActiveView('settings')
+        return
+      }
+      if (key === 'f' && activeView === 'activity' && !editable) {
+        event.preventDefault()
+        document.querySelector<HTMLInputElement>('[data-activity-search]')?.focus()
+        return
+      }
+      if (!editable && /^[1-5]$/.test(key)) {
+        const viewByKey: Record<string, 'home' | 'activity' | 'files' | 'room' | 'conflicts'> = {
+          1: 'home', 2: 'activity', 3: 'files', 4: 'room', 5: 'conflicts',
+        }
+        event.preventDefault()
+        setActiveView(viewByKey[key]!)
+      }
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [activeView, openQuickOpen, setActiveView])
+
   const handleResolveConflict = async (
     opHash: string,
     resolution: 'local' | 'remote' | 'merged',
   ): Promise<void> => {
-    const result = await window.cairn.resolveConflict(opHash, resolution)
+    if (hackathonEnabled && hackathonMode === 'simulation') {
+      const conflict = getDemoScenario(hackathonScene).conflicts.find((item) => item.opHash === opHash)
+      if (conflict) {
+        demoWorkspace.saveFile(conflict.filePath, resolution === 'remote' ? conflict.remoteContent ?? conflict.localContent : conflict.localContent)
+        setDemoConflictResolved(true)
+        setDemoWorkspaceVersion((version) => version + 1)
+      }
+      return
+    }
+    const result = await window.cairn.resolveConflict(opHash, resolution, undefined, dirtyFilePaths)
     if (!result.ok) {
       setToast(normalizeError(result.error, t))
       return
@@ -334,23 +478,49 @@ export function App() {
     removeConflict(opHash)
   }
 
+  const enterHackathonMode = (): void => {
+    if (dirtyFilePaths.length > 0) {
+      setToast({ message: t('conflictDirtyBlocked'), tone: 'error' })
+      return
+    }
+    setViewBeforeHackathon(activeView)
+    setHackathonEnabled(true)
+    setHackathonMode('live')
+    setHackathonScene('ready')
+    setDemoWorkspace(createDemoWorkspace('ready'))
+    setDemoWorkspaceVersion((version) => version + 1)
+    setDemoDirty(false)
+    setDemoConflictResolved(false)
+  }
+  const exitHackathonMode = (): void => {
+    setHackathonEnabled(false)
+    setPresentationMode(false)
+    setActiveView(viewBeforeHackathon)
+  }
+  const demoData = hackathonEnabled && hackathonMode === 'simulation' ? getDemoScenario(hackathonScene) : undefined
+  const displayedOps = demoData?.ops ?? ops
+  const displayedConflicts = demoData ? demoData.conflicts.filter(() => !demoConflictResolved) : conflicts
+  const simulationLocksCurrentView = hackathonEnabled && hackathonMode === 'simulation' && !['activity', 'conflicts', 'files', 'checkpoints'].includes(activeView)
+
   return (
     <>
-      <div aria-label="Cairn" className="app-shell">
-        <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+      <div aria-label="Cairn" className={`app-shell${presentationMode ? ' presentation-mode' : ''}`}>
+        <Sidebar />
         <main className="app-main">
-        <TopBar folder={folder} opCount={ops.length} roomCode={roomCode} status={status} />
+        <TopBar folder={folder} opCount={displayedOps.length} peerCount={peers.length} roomCode={roomCode} status={status} onSwitchProject={() => void openProjectSwitcher()} />
         <div className="app-content">
+          {simulationLocksCurrentView ? <section className="view active demo-isolation-view"><h1 className="view-title">{t('simulation')}</h1><p>{t('demoSimulationNotice')}</p></section> : <>
           {activeView === 'home' && <HomeView />}
           {activeView === 'activity' && (
             <ActivityView
               emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}
               onReviewConflicts={() => setConflictDialogOpen(true)}
-              ops={ops}
+              ops={displayedOps}
+              conflicts={displayedConflicts}
               onChangeFolder={async () => setActiveView('home')}
             />
           )}
-          {activeView === 'files' && <FilesView />}
+          {activeView === 'files' && (demoData ? <DemoFilesView key={demoWorkspaceVersion} workspace={demoWorkspace} ops={displayedOps} conflicts={displayedConflicts} onDirtyChange={setDemoDirty} /> : <FilesView />)}
           {activeView === 'room' && (
             <RoomView
               hasOps={ops.length > 0}
@@ -363,34 +533,93 @@ export function App() {
               onLeaveRoom={handleLeaveRoom}
             />
           )}
-          {activeView === 'conflicts' && <ConflictsView onResolve={handleResolveConflict} />}
-          {activeView === 'checkpoints' && <CheckpointsView />}
+          {activeView === 'conflicts' && <ConflictsView conflicts={displayedConflicts} dirtyFilePaths={demoData && demoDirty ? ['src/auth.ts'] : undefined} onResolve={handleResolveConflict} />}
+          {activeView === 'checkpoints' && (demoData ? <DemoCheckpointsView key={demoWorkspaceVersion} workspace={demoWorkspace} onWorkspaceChanged={() => setDemoWorkspaceVersion((version) => version + 1)} /> : <CheckpointsView />)}
           {activeView === 'trash' && <TrashView />}
+          {activeView === 'settings' && (
+            <SettingsView
+              onConfigured={setGithubConfigured}
+              onShowOnboarding={() => setShowOnboarding(true)}
+              onStartHackathonMode={enterHackathonMode}
+            />
+          )}
+          </>}
         </div>
         </main>
-      <SettingsDialog
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onConfigured={setGithubConfigured}
-        onShowOnboarding={() => setShowOnboarding(true)}
-      />
       <ExportPRDialog
         defaultTitle={`Cairn ${roomCode}`}
         open={exportDialogOpen}
         onClose={() => setExportDialogOpen(false)}
         onOpenSettings={() => {
           setExportDialogOpen(false)
-          setSettingsOpen(true)
+          setActiveView('settings')
         }}
         onSubmit={exportPRSubmit}
       />
       <ConflictDialog
-        conflicts={conflicts}
+        conflicts={displayedConflicts}
+        dirtyFilePaths={demoData && demoDirty ? ['src/auth.ts'] : undefined}
         open={conflictDialogOpen}
         onClose={() => setConflictDialogOpen(false)}
         onResolve={handleResolveConflict}
       />
       <Toast message={toast} onDismiss={dismissToast} />
+      {hackathonEnabled ? <HackathonController
+        mode={hackathonMode}
+        presentationMode={presentationMode}
+        scene={hackathonScene}
+        onExit={exitHackathonMode}
+        onModeChange={(mode) => { setHackathonMode(mode); if (mode === 'simulation') { setDemoWorkspace(createDemoWorkspace(hackathonScene)); setDemoWorkspaceVersion((version) => version + 1); setDemoDirty(false); setDemoConflictResolved(false); setActiveView('activity') } }}
+        onPresentationChange={setPresentationMode}
+        onSceneChange={(scene) => { if (hackathonMode === 'simulation' && demoDirty) { setToast({ message: t('demoDiscardBeforeSceneChange'), tone: 'error' }); return } setHackathonScene(scene); if (hackathonMode === 'simulation') { setDemoWorkspace(createDemoWorkspace(scene)); setDemoWorkspaceVersion((version) => version + 1); setDemoConflictResolved(false); setActiveView(scene === 'conflict' ? 'conflicts' : scene === 'recovery' ? 'checkpoints' : 'activity') } }}
+      /> : null}
+      <SearchPalette
+        emptyLabel={t('noCommandsFound')}
+        items={commands}
+        open={commandPaletteOpen}
+        placeholder={t('commandPalettePlaceholder')}
+        title={t('commandPalette')}
+        onClose={() => setCommandPaletteOpen(false)}
+        onSelect={(item) => commands.find((command) => command.id === item.id)?.action()}
+      />
+      <SearchPalette
+        emptyLabel={t('noFilesFound')}
+        items={projectFiles.map((file) => ({
+          id: file.path,
+          label: file.name,
+          detail: file.path.slice(0, Math.max(0, file.path.length - file.name.length)).replace(/\/$/, ''),
+          keywords: file.path,
+        }))}
+        open={quickOpenOpen}
+        placeholder={t('quickOpenPlaceholder')}
+        title={t('quickOpen')}
+        onClose={() => setQuickOpenOpen(false)}
+        onSelect={(item) => {
+          openFileFromPalette(item.id)
+        }}
+      />
+      <SearchPalette
+        emptyLabel={t('noProjectsFound')}
+        items={[
+          ...projects
+            .filter((project) => project.available)
+            .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+            .map((project) => ({ id: project.id, label: project.name, detail: project.path, keywords: project.path })),
+          { id: '__add_project__', label: t('addProject'), group: t('groupProject') },
+        ]}
+        open={projectSwitcherOpen}
+        placeholder={t('searchProjects')}
+        title={t('switchProject')}
+        onClose={() => setProjectSwitcherOpen(false)}
+        onSelect={(item) => {
+          if (item.id === '__add_project__') {
+            setActiveView('home')
+            return
+          }
+          const project = projects.find((entry) => entry.id === item.id)
+          if (project) void activateProject(project)
+        }}
+      />
       </div>
       {restoring && (
         <div className="startup-overlay" role="status">

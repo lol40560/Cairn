@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+
 import { ChevronRight } from 'lucide-react'
 
 import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
+import { contributorKind } from '@/lib/collaboration'
 import { formatLineCount } from '@/lib/lineCount'
 import type { FileGroup } from '@/lib/groupOpsByFile'
 import type { Op } from '@/types/cairn'
@@ -10,6 +13,7 @@ interface FileGroupRowProps {
   expanded: boolean
   group: FileGroup
   onOpClick(op: Op): void
+  onContextMenu?(event: MouseEvent<HTMLButtonElement>, filePath: string, latestOp: Op): void
   onToggle(): void
 }
 
@@ -42,15 +46,46 @@ function DiffStats({ op }: { op: Op }) {
   return <><span className="file-group-added">+{formatLineCount(added)}</span> <span className="file-group-removed">−{formatLineCount(removed)}</span></>
 }
 
-export function FileGroupRow({ expanded, group, onOpClick, onToggle }: FileGroupRowProps) {
+function AuthorAttribution({ op }: { op: Op }) {
+  const { t } = useTranslation()
+  const kind = contributorKind(op)
+  const label = kind === 'me' ? t('contributorMe') : kind === 'ai' ? t('contributorAi') : t('contributorTeammate')
+
+  return <span className={`op-row-author contributor-${kind}`} title={label}>{op.author} <span className="contributor-label">· {label}</span></span>
+}
+
+export function FileGroupRow({ expanded, group, onContextMenu, onOpClick, onToggle }: FileGroupRowProps) {
   const { locale, t } = useTranslation()
+  const latestOpHash = group.ops[0]?.hash
+  const initialOpHash = useRef(latestOpHash)
+  const [wasUpdated, setWasUpdated] = useState(false)
+
+  useEffect(() => {
+    if (initialOpHash.current === latestOpHash) return undefined
+
+    initialOpHash.current = latestOpHash
+    setWasUpdated(true)
+    const timer = window.setTimeout(() => setWasUpdated(false), 800)
+    return () => window.clearTimeout(timer)
+  }, [latestOpHash])
+
   const authorSummary = group.authors.length === 1
     ? group.authors[0]
     : t('multipleAuthors').replace('{n}', String(group.authors.length))
 
   return (
-    <div className={`file-group ${expanded ? 'expanded' : ''}`}>
-      <button aria-expanded={expanded} className="file-group-header" type="button" onClick={onToggle}>
+    <div className={`file-group ${expanded ? 'expanded' : ''}${wasUpdated ? ' was-updated' : ''}`}>
+      <button
+        aria-expanded={expanded}
+        className="file-group-header"
+        type="button"
+        onClick={onToggle}
+        onContextMenu={(event) => {
+          if (!onContextMenu || !group.ops[0]) return
+          event.preventDefault()
+          onContextMenu(event, group.filePath, group.ops[0])
+        }}
+      >
         <ChevronRight aria-hidden="true" className={`file-group-chevron ${expanded ? 'open' : ''}`} size={14} />
         <div className="file-group-info">
           <div className="file-group-name">{group.filePath}</div>
@@ -74,7 +109,7 @@ export function FileGroupRow({ expanded, group, onOpClick, onToggle }: FileGroup
               <span className="op-row-kind">
                 {op.kind === 'created' ? t('opCreated') : op.kind === 'deleted' ? t('opDeleted') : <DiffStats op={op} />}
               </span>
-              <span className="op-row-author">{op.author}</span>
+              <AuthorAttribution op={op} />
             </button>
           ))}
         </div>

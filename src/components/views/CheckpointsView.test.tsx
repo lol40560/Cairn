@@ -19,12 +19,14 @@ describe('CheckpointsView', () => {
       id: 'checkpoint-1',
       name: 'DEMO SAFE',
       sizeBytes: 1_048_576,
+      source: 'manual',
     }]} />)
 
     expect(html).toContain('DEMO SAFE')
     expect(html).toContain('12 files')
     expect(html).toContain('1.0 MB')
     expect(html).toContain('Restore')
+    expect(html).toContain('Compare with current')
     expect(html).toContain('aria-label="Delete"')
   })
 })

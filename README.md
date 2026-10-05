@@ -1,10 +1,10 @@
 # Cairn
 
-Real-time collaboration for teams using AI coding tools. Work on the same files with your teammates — no git pull, no conflicts.
+Local-first collaboration for developers and AI coding agents. Cairn watches a shared project on your local network, makes changes understandable, and keeps recovery close at hand.
 
 ## Why
 
-When multiple people (and their AI agents like Cursor or Claude Code) edit the same codebase, git becomes painful. Cairn syncs changes in real time over your local network.
+When people and AI coding agents edit the same codebase, it is easy to lose context before a conflict happens. Cairn keeps a local activity trail, surfaces overlap risk early, and provides safe recovery tools when a change needs attention.
 
 - **Local-first** — your code never leaves your computer unless you share it
 - **P2P** — no server, no accounts, no cloud
@@ -12,12 +12,14 @@ When multiple people (and their AI agents like Cursor or Claude Code) edit the s
 
 ## Features
 
-- Real-time file sync over WiFi
-- Zero-config team sharing with invite codes
-- One-click project download for new teammates
-- Deleted file protection (30-day retention)
-- Export to GitHub PR
-- Works with any editor
+- Real-time local-network collaboration with human and AI change attribution
+- File-grouped activity sessions, filters, search, and full Monaco diffs
+- Early overlap awareness plus confirmed-conflict review and resolution
+- Safe checkpoints, per-file comparison, stale-restore protection, and recovery snapshots
+- Invite-code project sharing, download, direct-connection fallback, and peer health diagnostics
+- Binary asset sync for supported images and fonts
+- GitHub PR export, deleted-file recovery, Quick Open, and keyboard navigation
+- A fully isolated Hackathon Mode for presenting the collaboration and recovery story without touching a real project
 
 ## Screenshots
 
@@ -38,6 +40,8 @@ Every file change appears here in real time. Click any row to see the full diff.
 ![Files](./docs/screenshots/files.png)
 
 Browse your project, preview files with syntax highlighting, and edit directly in Cairn.
+
+The current UI also includes grouped Activity sessions, Team Health, Conflict Center, Checkpoints, and Hackathon Mode. Replace the three screenshots above with current captures before a public announcement; the existing images predate those screens.
 
 ## Download
 
@@ -105,11 +109,21 @@ Click "More info" → "Run anyway".
 
 ## How it works
 
-Cairn watches your project folder for changes. When a file changes, it generates a change event (diff), stores it locally, and broadcasts it to teammates over the local network.
+Cairn watches your project folder for changes. When a file changes, it generates a local change event, stores it locally, and broadcasts it to teammates over the local network. It does not claim convergence acknowledgement: “Watching”, “Connected”, “Reconnecting”, and “Offline” describe what Cairn can actually observe.
 
 - Changes are tracked in `.cairn/` inside your project
 - Deleted files go to `.cairn/trash/` for 30 days
 - A shadow git repo runs in the background — export to GitHub PR anytime
+- Checkpoints create recoverable snapshots before destructive restore and conflict-resolution actions
+
+## Shortcuts
+
+- `Cmd/Ctrl + P` — Quick Open
+- `Cmd/Ctrl + K` — Command Palette
+- `Cmd/Ctrl + S` — Save the open file
+- `Cmd/Ctrl + 1–5` — Home, Activity, Files, Team, Conflicts
+- `Cmd/Ctrl + ,` — Settings
+- In Hackathon Mode, `←` / `→` changes the scene when focus is not in an editor
 
 ## Development
 
@@ -129,6 +143,13 @@ npm run build       # build for production
 npm run dist:mac    # build macOS app
 npm run dist:win    # build Windows app (on Windows)
 ```
+
+## Known limitations
+
+- Cairn does not claim confirmed full-project convergence because the protocol has no acknowledgement model.
+- Session rollback remains analysis-only; a safe three-way revert is not implemented.
+- Binary conflict comparison is limited to metadata rather than a visual binary diff.
+- macOS and Windows artifacts are not code-signed yet.
 
 ## Privacy
 

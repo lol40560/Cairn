@@ -4,9 +4,10 @@ import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
 import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, PeerState, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'checkpoints' | 'trash'
+export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'checkpoints' | 'trash' | 'settings'
 export type ActiveView = ViewType
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
+export type ActivityViewMode = 'grouped' | 'raw'
 
 export interface DownloadProgress {
   receivedBytes: number
@@ -45,7 +46,11 @@ export interface AppState {
   identityMismatches: IdentityMismatch[]
   peerStatuses: Record<string, PeerState>
   githubConfigured: boolean
+  unseenActivityCount: number
+  activityViewMode: ActivityViewMode
   sidebarCollapsed: boolean
+  fileTreeWidth: number
+  dirtyFilePaths: string[]
   setFolder(folder: string): void
   setActiveView(view: ActiveView): void
   setProjects(projects: AvailableProjectEntry[]): void
@@ -80,7 +85,12 @@ export interface AppState {
   setPeerStatus(state: PeerState): void
   clearPeerStatuses(): void
   setGithubConfigured(value: boolean): void
+  incrementUnseenActivity(): void
+  clearUnseenActivity(): void
+  setActivityViewMode(mode: ActivityViewMode): void
   setSidebarCollapsed(collapsed: boolean): void
+  setFileTreeWidth(width: number): void
+  setFileDirty(path: string, dirty: boolean): void
   replaceOps(ops: Op[]): void
   prependOp(op: Op): void
 }
@@ -90,6 +100,23 @@ function readSidebarCollapsed(): boolean {
     return globalThis.localStorage?.getItem('cairn.sidebarCollapsed') === 'true'
   } catch {
     return false
+  }
+}
+
+function readFileTreeWidth(): number {
+  try {
+    const width = Number(globalThis.localStorage?.getItem('cairn.fileTreeWidth'))
+    return Number.isFinite(width) ? Math.min(440, Math.max(190, width)) : 260
+  } catch {
+    return 260
+  }
+}
+
+function readActivityViewMode(): ActivityViewMode {
+  try {
+    return globalThis.localStorage?.getItem('cairn.activityViewMode') === 'raw' ? 'raw' : 'grouped'
+  } catch {
+    return 'grouped'
   }
 }
 
@@ -123,7 +150,11 @@ export const useAppStore = create<AppState>((set) => ({
   identityMismatches: [],
   peerStatuses: {},
   githubConfigured: false,
+  unseenActivityCount: 0,
+  activityViewMode: readActivityViewMode(),
   sidebarCollapsed: readSidebarCollapsed(),
+  fileTreeWidth: readFileTreeWidth(),
+  dirtyFilePaths: [],
   setFolder: (folder) => set({ folder }),
   setActiveView: (activeView) => set({ activeView }),
   setProjects: (projects) => set({ projects }),
@@ -172,6 +203,16 @@ export const useAppStore = create<AppState>((set) => ({
   })),
   clearPeerStatuses: () => set({ peerStatuses: {} }),
   setGithubConfigured: (githubConfigured) => set({ githubConfigured }),
+  incrementUnseenActivity: () => set((state) => ({ unseenActivityCount: state.unseenActivityCount + 1 })),
+  clearUnseenActivity: () => set({ unseenActivityCount: 0 }),
+  setActivityViewMode: (activityViewMode) => {
+    try {
+      globalThis.localStorage?.setItem('cairn.activityViewMode', activityViewMode)
+    } catch {
+      // 儲存空間不可用時仍套用本次工作階段的偏好。
+    }
+    set({ activityViewMode })
+  },
   setSidebarCollapsed: (sidebarCollapsed) => {
     try {
       globalThis.localStorage?.setItem('cairn.sidebarCollapsed', String(sidebarCollapsed))
@@ -180,6 +221,20 @@ export const useAppStore = create<AppState>((set) => ({
     }
     set({ sidebarCollapsed })
   },
+  setFileTreeWidth: (fileTreeWidth) => {
+    const width = Math.min(440, Math.max(190, Math.round(fileTreeWidth)))
+    try {
+      globalThis.localStorage?.setItem('cairn.fileTreeWidth', String(width))
+    } catch {
+      // 儲存空間不可用時，仍保留本次工作階段的寬度。
+    }
+    set({ fileTreeWidth: width })
+  },
+  setFileDirty: (path, dirty) => set((state) => ({
+    dirtyFilePaths: dirty
+      ? [...new Set([...state.dirtyFilePaths, path])]
+      : state.dirtyFilePaths.filter((current) => current !== path),
+  })),
   replaceOps: (ops) => set({ ops }),
   prependOp: (op) =>
     set((state) => {

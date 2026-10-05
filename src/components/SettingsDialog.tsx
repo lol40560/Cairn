@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
@@ -6,8 +6,6 @@ import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { LicensesDialog } from './LicensesDialog'
 import { PrivacyDialog } from './PrivacyDialog'
 import {
-  shouldCloseDialogFromBackdrop,
-  shouldCloseDialogFromKey,
   updateGeneralSettings,
 } from '@/lib/settingsDialog'
 import type { IpcResult } from '@/types/cairn'
@@ -19,19 +17,17 @@ function getIpcData<T>(result: IpcResult<T>): T {
   return result.data
 }
 
-export function SettingsDialog({
-  open,
-  onClose,
+/** 設定作為獨立工作區呈現，避免重要偏好被暫時性的彈窗遮住。 */
+export function SettingsView({
   onConfigured,
   onShowOnboarding,
+  onStartHackathonMode,
 }: {
-  open: boolean
-  onClose(): void
   onConfigured(value: boolean): void
   onShowOnboarding(): void
+  onStartHackathonMode?(): void
 }) {
   const { t } = useTranslation()
-  const inputRef = useRef<HTMLInputElement>(null)
   const [token, setToken] = useState('')
   const [owner, setOwner] = useState('')
   const [repo, setRepo] = useState('')
@@ -45,10 +41,6 @@ export function SettingsDialog({
   const [privacyOpen, setPrivacyOpen] = useState(false)
 
   useEffect(() => {
-    if (!open) {
-      return
-    }
-
     void Promise.all([window.cairn.getGithubConfig(), window.cairn.getSettings()])
       .then(([configResult, settingsResult]) => {
         const config = getIpcData(configResult)
@@ -61,14 +53,12 @@ export function SettingsDialog({
         setRememberLastFolder(settings.rememberLastFolder)
         setAutoStartWatching(settings.autoStartWatching)
         setTrashRetentionDays(settings.trashRetentionDays)
-        inputRef.current?.focus()
       })
       .catch((cause) => {
         console.error('[cairn] 无法读取设置', cause)
         setError(normalizeError(cause, t))
-        inputRef.current?.focus()
       })
-  }, [open, t])
+  }, [t])
 
   const save = async (): Promise<void> => {
     setSaving(true)
@@ -77,7 +67,6 @@ export function SettingsDialog({
       getIpcData(await window.cairn.saveGithubConfig({ token: token || undefined, owner, repo }))
       setHasToken(true)
       onConfigured(true)
-      onClose()
     } catch (cause) {
       console.error('[cairn] 无法保存 GitHub 配置', cause)
       setError(normalizeError(cause, t))
@@ -127,32 +116,16 @@ export function SettingsDialog({
     }
   }
 
-  if (!open) {
-    return null
-  }
-
   return (
-    <div
-      className="modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      onClick={(event) => {
-        if (shouldCloseDialogFromBackdrop(event.target, event.currentTarget)) {
-          onClose()
-        }
-      }}
-      onKeyDown={(event) => {
-        if (shouldCloseDialogFromKey(event.key)) {
-          onClose()
-        }
-      }}
-    >
-      <section className="modal" aria-labelledby="settings-dialog-title">
-        <header className="modal-header">
-          <h2 id="settings-dialog-title" className="modal-title">{t('settings')}</h2>
-          <button aria-label={t('close')} className="btn btn-ghost modal-close" type="button" onClick={onClose}>×</button>
-        </header>
-        <div className="modal-body">
+    <section className="view active settings-view" aria-labelledby="settings-view-title">
+      <header className="view-header settings-view-header">
+        <div>
+          <h1 id="settings-view-title" className="view-title">{t('settings')}</h1>
+          <p className="settings-view-description">{t('settingsGeneral')}</p>
+        </div>
+      </header>
+      <div className="settings-view-content">
+        <div className="settings-view-body">
           <fieldset className="modal-section">
             <legend className="modal-section-title">{t('settingsGeneral')}</legend>
             <label className="checkbox-row">
@@ -183,10 +156,9 @@ export function SettingsDialog({
               className="btn btn-ghost"
               type="button"
               onClick={() => {
-                void window.cairn.resetOnboarding()
+                    void window.cairn.resetOnboarding()
                   .then((result) => {
                     getIpcData(result)
-                    onClose()
                     onShowOnboarding()
                   })
                   .catch((cause) => {
@@ -198,6 +170,12 @@ export function SettingsDialog({
               {t('settingsShowOnboarding')}
             </button>
           </fieldset>
+
+          {onStartHackathonMode ? <section className="modal-section">
+            <h3 className="modal-section-title">{t('hackathonMode')}</h3>
+            <p className="checkbox-hint">{t('demoSimulationNotice')}</p>
+            <button className="btn btn-ghost" type="button" onClick={onStartHackathonMode}>{t('startHackathonMode')}</button>
+          </section> : null}
 
           <section className="modal-section">
             <h3 className="modal-section-title">{t('trash')}</h3>
@@ -222,7 +200,6 @@ export function SettingsDialog({
             <label className="field">
               <span className="field-label">{t('githubToken')}</span>
               <input
-                ref={inputRef}
                 className="input"
                 placeholder={hasToken ? t('savedToken') : t('githubToken')}
                 type="password"
@@ -297,9 +274,9 @@ export function SettingsDialog({
             </button>
           </footer>
         </div>
-      </section>
+      </div>
       <LicensesDialog open={licensesOpen} onClose={() => setLicensesOpen(false)} />
       <PrivacyDialog open={privacyOpen} onClose={() => setPrivacyOpen(false)} />
-    </div>
+    </section>
   )
 }

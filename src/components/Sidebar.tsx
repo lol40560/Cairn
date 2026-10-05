@@ -27,11 +27,12 @@ const recoveryItems: NavItem[] = [
   { icon: Trash2, id: 'trash', labelKey: 'trash' },
 ]
 
-export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }) {
+export function Sidebar() {
   const { t } = useTranslation()
   const activeView = useAppStore((state) => state.activeView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const conflicts = useAppStore((state) => state.conflicts)
+  const unseenActivityCount = useAppStore((state) => state.unseenActivityCount)
   const setActiveView = useAppStore((state) => state.setActiveView)
   const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed)
 
@@ -54,6 +55,9 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }) {
           collapsed ? <span aria-label={`${conflicts.length} ${label}`} className="sidebar-badge-dot" /> : (
             <span aria-label={`${conflicts.length} ${label}`} className="sidebar-badge">{conflicts.length}</span>
           )
+        ) : null}
+        {item.id === 'activity' && unseenActivityCount > 0 ? (
+          <span aria-label={`${unseenActivityCount} new changes`} className="sidebar-activity-badge">{unseenActivityCount > 99 ? '99+' : unseenActivityCount}</span>
         ) : null}
       </button>
     )
@@ -89,7 +93,13 @@ export function Sidebar({ onOpenSettings }: { onOpenSettings(): void }) {
         </div>
       </nav>
       <div className="sidebar-bottom">
-        <button className="sidebar-nav-item" title={collapsed ? t('settings') : undefined} type="button" onClick={onOpenSettings}>
+        <button
+          aria-current={activeView === 'settings' ? 'page' : undefined}
+          className={`sidebar-nav-item ${activeView === 'settings' ? 'active' : ''}`}
+          title={collapsed ? t('settings') : undefined}
+          type="button"
+          onClick={() => setActiveView('settings')}
+        >
           <Settings aria-hidden="true" size={16} strokeWidth={1.8} />
           {!collapsed ? <span>{t('settings')}</span> : null}
         </button>

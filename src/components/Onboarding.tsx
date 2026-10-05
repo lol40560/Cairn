@@ -24,6 +24,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
   const [selectedFolder, setSelectedFolder] = useState('')
   const [inviteInput, setInviteInput] = useState('')
   const [directAddressInput, setDirectAddressInput] = useState('')
+  const [showAdvancedConnection, setShowAdvancedConnection] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
   const [busy, setBusy] = useState(false)
   const roomCode = useAppStore((state) => state.roomCode)
@@ -225,6 +226,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
               <button className="btn btn-primary onboarding-btn" type="button" onClick={() => setStep('project')}>{t('onboardingStartProject')}</button>
               <button className="btn onboarding-btn" type="button" onClick={() => setStep('join')}>{t('onboardingJoinTeam')}</button>
             </div>
+            <p className="onboarding-trust-line">{t('onboardingTrustLine')}</p>
           </>
         )}
 
@@ -233,7 +235,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
             <h1 id="onboarding-title" className="onboarding-title">{t('onboardingChooseFolderTitle')}</h1>
             <p className="onboarding-subtitle">{t('onboardingChooseFolderSubtitle')}</p>
             <div className="onboarding-actions">
-              <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void chooseProjectFolder()}>{t('onboardingChooseFolder')}</button>
+              <button aria-busy={busy} className="btn btn-primary" disabled={busy} type="button" onClick={() => void chooseProjectFolder()}>{busy ? t('creating') : t('onboardingChooseFolder')}</button>
               {selectedFolder && <p className="onboarding-folder-path" title={selectedFolder}>{selectedFolder}</p>}
             </div>
             <button className="onboarding-back" type="button" onClick={back}>{t('onboardingBack')}</button>
@@ -248,10 +250,20 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
               <span>{t('inviteCodeLabel')}</span>
               <input className="onboarding-input" placeholder={t('inviteCodeLabel')} value={inviteInput} onChange={(event) => setInviteInput(event.target.value)} />
             </label>
-            <label className="onboarding-field">
-              <span>{t('directAddressLabel')}</span>
-              <input className="onboarding-input" placeholder={t('directAddressPlaceholder')} value={directAddressInput} onChange={(event) => setDirectAddressInput(event.target.value)} />
-            </label>
+            <button
+              aria-expanded={showAdvancedConnection}
+              className="onboarding-advanced-toggle"
+              type="button"
+              onClick={() => setShowAdvancedConnection((value) => !value)}
+            >
+              {t('advancedConnection')}
+            </button>
+            {showAdvancedConnection ? (
+              <label className="onboarding-field">
+                <span>{t('directAddressLabel')}</span>
+                <input className="onboarding-input" placeholder={t('directAddressPlaceholder')} value={directAddressInput} onChange={(event) => setDirectAddressInput(event.target.value)} />
+              </label>
+            ) : null}
             <div className="onboarding-folder-row">
               <div>
                 <span className="onboarding-field-label">{t('onboardingFolderLabel')}</span>
@@ -260,7 +272,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
               <button className="btn btn-ghost" disabled={busy} type="button" onClick={() => void chooseFolder()}>{t('onboardingChooseFolderAction')}</button>
             </div>
             <div className="onboarding-actions">
-              <button className="btn btn-primary" disabled={!selectedFolder || !inviteInput.trim() || busy} type="button" onClick={() => void joinTeam()}>{t('onboardingJoin')}</button>
+              <button aria-busy={busy} className="btn btn-primary" disabled={!selectedFolder || !inviteInput.trim() || busy} type="button" onClick={() => void joinTeam()}>{busy ? t('joining') : t('onboardingJoin')}</button>
             </div>
             <button className="onboarding-back" type="button" onClick={back}>{t('onboardingBack')}</button>
           </>

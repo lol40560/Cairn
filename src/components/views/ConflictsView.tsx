@@ -9,10 +9,11 @@ import type { ConflictRecord } from '@/types/cairn'
 interface ConflictsViewProps {
   conflicts?: ConflictRecord[]
   onResolve?(opHash: string, resolution: 'local' | 'remote' | 'merged'): Promise<void>
+  dirtyFilePaths?: string[]
 }
 
 /** 将持久化冲突直接呈现在独立视图中，解决后由调用方刷新 store。 */
-export function ConflictsView({ conflicts: conflictsOverride, onResolve }: ConflictsViewProps) {
+export function ConflictsView({ conflicts: conflictsOverride, onResolve, dirtyFilePaths }: ConflictsViewProps) {
   const { t } = useTranslation()
   const storedConflicts = useAppStore((state) => state.conflicts)
   const conflicts = conflictsOverride ?? storedConflicts
@@ -35,7 +36,7 @@ export function ConflictsView({ conflicts: conflictsOverride, onResolve }: Confl
       ) : (
         <div className="conflict-list conflict-view-list">
           {conflicts.map((conflict) => (
-            <ConflictCard key={conflict.opHash} conflict={conflict} onResolve={handleResolve} />
+            <ConflictCard key={conflict.opHash} conflict={conflict} dirty={dirtyFilePaths?.includes(conflict.filePath)} onResolve={handleResolve} />
           ))}
         </div>
       )}

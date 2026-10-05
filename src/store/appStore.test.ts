@@ -27,6 +27,7 @@ afterEach(() => {
     status: 'idle',
     showDownloadPrompt: false,
     sidebarCollapsed: false,
+    activityViewMode: 'grouped',
   })
 })
 
@@ -133,6 +134,25 @@ describe('appStore', () => {
       vi.resetModules()
       const { useAppStore: freshStore } = await import('./appStore')
       expect(freshStore.getState().sidebarCollapsed).toBe(true)
+    } finally {
+      if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
+      else Reflect.deleteProperty(globalThis, 'localStorage')
+    }
+  })
+
+  it('切換 Activity 模式時會保存偏好', () => {
+    const storage = new Map<string, string>()
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) },
+    })
+
+    try {
+      useAppStore.getState().setActivityViewMode('raw')
+
+      expect(useAppStore.getState().activityViewMode).toBe('raw')
+      expect(storage.get('cairn.activityViewMode')).toBe('raw')
     } finally {
       if (descriptor) Object.defineProperty(globalThis, 'localStorage', descriptor)
       else Reflect.deleteProperty(globalThis, 'localStorage')

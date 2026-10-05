@@ -12,7 +12,7 @@ import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import type { ProjectIdentity } from './core/identity'
 import type { PeerState } from './core/sync/reconnect'
 import type { ProjectFileContent, ProjectFileEntry } from './main'
-import type { Checkpoint } from './core/checkpoints'
+import type { Checkpoint, CheckpointComparison, CheckpointFileContents } from './core/checkpoints'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -26,8 +26,10 @@ const cairn = {
   listRecentOps: (limit: number): Promise<IpcResult<Op[]>> =>
     invoke('cairn:listRecentOps', limit),
   listCheckpoints: (): Promise<IpcResult<Checkpoint[]>> => invoke('cairn:listCheckpoints'),
-  createCheckpoint: (name: string): Promise<IpcResult<Checkpoint>> => invoke('cairn:createCheckpoint', name),
-  restoreCheckpoint: (id: string): Promise<IpcResult<{ restored: number }>> => invoke('cairn:restoreCheckpoint', id),
+  createCheckpoint: (name?: string): Promise<IpcResult<Checkpoint>> => invoke('cairn:createCheckpoint', name),
+  compareCheckpoint: (id: string): Promise<IpcResult<CheckpointComparison>> => invoke('cairn:compareCheckpoint', id),
+  readCheckpointComparisonFile: (id: string, path: string): Promise<IpcResult<CheckpointFileContents>> => invoke('cairn:readCheckpointComparisonFile', id, path),
+  restoreCheckpoint: (id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]): Promise<IpcResult<{ restored: number; removed: number; recoveryCheckpoint: Checkpoint }>> => invoke('cairn:restoreCheckpoint', id, expectedCurrentRevision, dirtyFilePaths),
   deleteCheckpoint: (id: string): Promise<IpcResult<void>> => invoke('cairn:deleteCheckpoint', id),
   listProjectFiles: (): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>> =>
     invoke('cairn:listProjectFiles'),
@@ -146,8 +148,8 @@ const cairn = {
   listConflicts: (): Promise<IpcResult<ConflictRecord[]>> => invoke('cairn:listConflicts'),
   getConflict: (opHash: string): Promise<IpcResult<ConflictRecord | undefined>> =>
     invoke('cairn:getConflict', opHash),
-  resolveConflict: (opHash: string, resolution: ConflictResolution, content?: string): Promise<IpcResult<void>> =>
-    invoke('cairn:resolveConflict', opHash, resolution, content),
+  resolveConflict: (opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]): Promise<IpcResult<{ recoveryCheckpoint: Checkpoint } | undefined>> =>
+    invoke('cairn:resolveConflict', opHash, resolution, content, dirtyFilePaths),
   deleteConflict: (opHash: string): Promise<IpcResult<void>> => invoke('cairn:deleteConflict', opHash),
 }
 

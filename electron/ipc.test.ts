@@ -509,6 +509,7 @@ describe('IPC bridge', () => {
       'cairn:checkProjectAvailability',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
+      'cairn:compareCheckpoint',
       'cairn:completeOnboarding',
       'cairn:connectToAddress',
       'cairn:copyToClipboard',
@@ -544,6 +545,7 @@ describe('IPC bridge', () => {
       'cairn:openExternal',
       'cairn:openInFileManager',
       'cairn:purgeFromTrash',
+      'cairn:readCheckpointComparisonFile',
       'cairn:readProjectFile',
       'cairn:removeProject',
       'cairn:resetGithubConfig',
@@ -833,7 +835,10 @@ describe('IPC bridge', () => {
 
     await expect(list?.({})).resolves.toMatchObject({ ok: true, data: [expect.objectContaining({ opHash })] })
     await expect(get?.({}, opHash)).resolves.toMatchObject({ ok: true, data: { opHash } })
-    await expect(resolve?.({}, opHash, 'local')).resolves.toEqual({ ok: true, data: undefined })
+    await expect(resolve?.({}, opHash, 'local')).resolves.toMatchObject({
+      ok: true,
+      data: { recoveryCheckpoint: { source: 'auto-before-conflict-resolution' } },
+    })
     await expect(remove?.({}, opHash)).resolves.toEqual({ ok: true, data: undefined })
   })
 
@@ -892,6 +897,7 @@ describe('IPC bridge', () => {
       'checkProjectAvailability',
       'clearGithubConfig',
       'clearLastSession',
+      'compareCheckpoint',
       'completeOnboarding',
       'connectToAddress',
       'copyToClipboard',
@@ -933,6 +939,7 @@ describe('IPC bridge', () => {
       'openExternal',
       'openInFileManager',
       'purgeFromTrash',
+      'readCheckpointComparisonFile',
       'readProjectFile',
       'removeProject',
       'resetGithubConfig',

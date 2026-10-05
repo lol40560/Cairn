@@ -12,7 +12,7 @@ import { ConflictsManager } from './core/conflicts'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
 import { BlobStore } from './core/blobs'
 import { CheckpointManager } from './core/checkpoints'
-import type { Checkpoint } from './core/checkpoints'
+import type { Checkpoint, CheckpointComparison, CheckpointFileContents, CheckpointSource } from './core/checkpoints'
 import { computeProjectIdentity } from './core/identity'
 import type { ProjectIdentity } from './core/identity'
 import { AppError, wrapIpcHandler } from './core/errors'
@@ -985,19 +985,35 @@ export async function listCheckpoints(): Promise<Checkpoint[]> {
   return activeCheckpointManager ? activeCheckpointManager.list() : []
 }
 
-export async function createCheckpoint(name: string): Promise<Checkpoint> {
+export async function createCheckpoint(name?: string, source: CheckpointSource = 'manual'): Promise<Checkpoint> {
   if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
-  if (typeof name !== 'string' || name.trim().length === 0) throw new AppError('Checkpoint name is required', 'config')
-  if (name.length > 100) throw new AppError('Checkpoint name too long', 'config')
-  return activeCheckpointManager.create(name.trim())
+  if (name !== undefined && typeof name !== 'string') throw new AppError('Checkpoint name must be a string', 'config')
+  return activeCheckpointManager.create(name?.trim(), { source })
 }
 
-export async function restoreCheckpoint(id: string): Promise<{ restored: number }> {
+export async function compareCheckpoint(id: string): Promise<CheckpointComparison> {
+  if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
+  return activeCheckpointManager.compare(id)
+}
+
+export async function readCheckpointComparisonFile(id: string, path: string): Promise<CheckpointFileContents> {
+  if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
+  return activeCheckpointManager.readComparisonFile(id, path)
+}
+
+export async function restoreCheckpoint(id: string, expectedCurrentRevision?: string, dirtyFilePaths: string[] = []): Promise<{ restored: number; removed: number; recoveryCheckpoint: Checkpoint }> {
   if (!activeCheckpointManager || !activeProject) throw new AppError('请先选择项目', 'config')
+  if (!Array.isArray(dirtyFilePaths) || dirtyFilePaths.some((path) => typeof path !== 'string')) throw new AppError('Invalid dirty file list', 'config')
+  if (dirtyFilePaths.length > 0) {
+    throw new AppError(`Cannot restore while unsaved files are open: ${dirtyFilePaths.join(', ')}`, 'config')
+  }
   const project = activeProject
+  // 安全不变量：先完整保存當前狀態；失敗就絕不寫入目標 checkpoint。
+  const recoveryCheckpoint = await activeCheckpointManager.create('Before restoring checkpoint', { source: 'auto-before-restore' })
   await project.watcher.stop()
   try {
-    return await activeCheckpointManager.restore(id)
+    const result = await activeCheckpointManager.restore(id, expectedCurrentRevision)
+    return { ...result, recoveryCheckpoint }
   } finally {
     await project.watcher.start()
   }
@@ -1142,9 +1158,22 @@ export async function resolveConflict(
   opHash: string,
   resolution: ConflictResolution,
   content?: string,
-): Promise<void> {
-  if (!activeProject) return
+  dirtyFilePaths: string[] = [],
+): Promise<{ recoveryCheckpoint: Checkpoint } | undefined> {
+  if (!activeProject) return undefined
+  if (!Array.isArray(dirtyFilePaths) || dirtyFilePaths.some((path) => typeof path !== 'string')) {
+    throw new AppError('Invalid dirty file list', 'config')
+  }
+  const record = await activeProject.conflicts.get(opHash)
+  if (!record) throw new AppError('Conflict record not found', 'config')
+  if (dirtyFilePaths.includes(record.filePath)) {
+    throw new AppError(`Cannot resolve conflict while ${record.filePath} has unsaved edits`, 'config')
+  }
+  if (!activeCheckpointManager) throw new AppError('请先选择项目', 'config')
+  // 解析会保留一个选择并移除另一版本，先创建可恢复的安全点，失败即中止。
+  const recoveryCheckpoint = await activeCheckpointManager.create(`Before resolving conflict in ${record.filePath}`, { source: 'auto-before-conflict-resolution' })
   await activeProject.conflicts.resolve(opHash, resolution, content)
+  return { recoveryCheckpoint }
 }
 
 export async function deleteConflict(opHash: string): Promise<void> {
@@ -1174,8 +1203,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:stopWatching', wrapIpcHandler(() => stopWatching()))
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
   ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(listCheckpoints))
-  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler((name: string) => createCheckpoint(name)))
-  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler((id: string) => restoreCheckpoint(id)))
+  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler((name?: string) => createCheckpoint(name)))
+  ipcMain.handle('cairn:compareCheckpoint', wrapIpcHandler((id: string) => compareCheckpoint(id)))
+  ipcMain.handle('cairn:readCheckpointComparisonFile', wrapIpcHandler((id: string, path: string) => readCheckpointComparisonFile(id, path)))
+  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler((id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]) => restoreCheckpoint(id, expectedCurrentRevision, dirtyFilePaths)))
   ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler((id: string) => deleteCheckpoint(id)))
   ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
   ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
@@ -1228,7 +1259,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(emptyTrash))
   ipcMain.handle('cairn:listConflicts', wrapIpcHandler(listConflicts))
   ipcMain.handle('cairn:getConflict', wrapIpcHandler((opHash: string) => getConflict(opHash)))
-  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler((opHash: string, resolution: ConflictResolution, content?: string) => resolveConflict(opHash, resolution, content)))
+  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler((opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]) => resolveConflict(opHash, resolution, content, dirtyFilePaths)))
   ipcMain.handle('cairn:deleteConflict', wrapIpcHandler((opHash: string) => deleteConflict(opHash)))
   ipcMain.handle('cairn:getTrashRetentionDays', wrapIpcHandler(getTrashRetentionDays))
   ipcMain.handle('cairn:setTrashRetentionDays', wrapIpcHandler((days: number) => setTrashRetentionDays(days)))

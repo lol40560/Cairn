@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import { SettingsDialog } from './SettingsDialog'
+import { SettingsView } from './SettingsDialog'
 
 import {
   shouldCloseDialogFromBackdrop,
@@ -10,17 +10,15 @@ import {
   updateGeneralSettings,
 } from '../lib/settingsDialog'
 
-describe('SettingsDialog', () => {
+describe('SettingsView', () => {
   it('渲染 About 分组与 package.json 版本', () => {
-    const html = renderToStaticMarkup(createElement(SettingsDialog, {
-      onClose: () => undefined,
+    const html = renderToStaticMarkup(createElement(SettingsView, {
       onConfigured: () => undefined,
       onShowOnboarding: () => undefined,
-      open: true,
     }))
 
     expect(html).toContain('About')
-    expect(html).toContain('1.1.0')
+    expect(html).toContain('1.8.0')
   })
 
   it('Esc 按下后会触发关闭条件', () => {

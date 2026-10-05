@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -22,14 +22,24 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const confirmButtonRef = useRef<HTMLButtonElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open) return undefined
+
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusTimer = window.setTimeout(() => confirmButtonRef.current?.focus(), 0)
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onCancel()
     }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.clearTimeout(focusTimer)
+      window.removeEventListener('keydown', handleKeyDown)
+      returnFocusRef.current?.focus()
+    }
   }, [onCancel, open])
 
   if (!open) return null
@@ -51,7 +61,7 @@ export function ConfirmDialog({
         </div>
         <footer className="modal-actions confirm-dialog-actions">
           <button className="btn btn-ghost" type="button" onClick={onCancel}>{cancelLabel}</button>
-          <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} type="button" onClick={onConfirm}>
+          <button ref={confirmButtonRef} className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} type="button" onClick={onConfirm}>
             {confirmLabel}
           </button>
         </footer>

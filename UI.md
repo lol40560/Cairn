@@ -1,118 +1,64 @@
-# Cairn UI 结构
+# Cairn Design System v2
 
-本文件定义 UI 的结构和数据契约，不定义视觉风格。
-视觉一律使用 shadcn/ui 默认样式 + Tailwind，不手写 CSS，不定制主题。
+Cairn is a calm, local-first desktop workspace for developers and their AI tools. The interface should make project state, collaboration, and recovery actions easy to understand without competing with the code.
 
----
+## Product principles
 
-## v1：单页应用
+1. **State before decoration.** Sync, connection, conflict, and save state must be legible at a glance.
+2. **Local-first confidence.** Paths, room codes, timestamps, hashes, and file names may use monospace; ordinary interface text should remain human and quiet.
+3. **Progressive disclosure.** Direct addresses, room diagnostics, and other networking details are available when needed, not presented as the primary flow.
+4. **Files are the unit of work.** Activity groups changes by file, and file-oriented actions remain close to their context.
+5. **Recovery is never hidden.** Conflicts, trash, and checkpoints stay reachable from the primary navigation.
+6. **Functionality is not styling.** All renderer file and collaboration actions continue through the preload IPC boundary.
 
-### 布局
+## Visual language
 
-+------------------------------------------------------+
-| [选择文件夹]  /Users/alice/project          [状态]    |
-+------------------------------------------------------+
-| 时间       | 作者    | 文件            | +/-         |
-+------------------------------------------------------+
-| 14:32:05  | alice   | src/auth.ts     | +12 -3      |
-| 14:32:18  | bob     | src/login.ts    | +5 -0       |
-| 14:33:02  | cursor  | src/api.ts      | +48 -12     |
-+------------------------------------------------------+
+- Dark neutral surfaces: `--bg-0`, `--bg-1`, `--bg-2`, and `--bg-hover` define hierarchy without glass effects or large gradients.
+- Inter is used for interface text. JetBrains Mono is reserved for technical content.
+- Brand coral identifies Cairn navigation and primary actions. It is not the universal error color.
+- Success is muted green; warnings are amber; failures and destructive actions are red.
+- Buttons use 8px corners; cards use 12px; dialogs use 16px. Pills are reserved for compact status, filters, and tags.
+- Motion is short and informative: hover 120ms, expansion 150ms, popovers 160ms, dialogs 180ms. Respect reduced-motion preferences.
 
-### 顶部栏
+## Layout
 
-- 左侧：选择文件夹按钮 → 调用 window.cairn.selectFolder()
-- 中间：当前文件夹路径（完整路径，超长时省略中间）
-- 右侧：状态指示，三种状态：
-  - 未监控（灰色）
-  - 监控中（绿色）
-  - 已停止（黄色）
+- The sidebar owns navigation: Project, Collaboration, Recovery, then Settings.
+- The top bar owns the active project and compact live sync state.
+- Views own their content hierarchy. Do not place every section inside a card; use spacing, section labels, and subtle separators first.
+- The Files view keeps Monaco and provides a user-resizable tree/editor split.
 
-### op 日志列表
+## Accessibility
 
-- 表头固定：时间 | 作者 | 文件 | +/-
-- 每行对应一个 op
-- 新 op 从顶部插入，旧 op 向下推
-- 最多保留 200 条，超出丢弃最旧的
-- 列表可滚动，表头不滚动
-- 空状态：显示"暂无变更，选择一个文件夹开始监控"
+- Every interactive control has a visible keyboard focus state and an accessible name.
+- Color never carries state alone; use text, icons, or labels with semantic color.
+- Keep disabled controls readable and avoid hover-only access to important status.
 
-### 每条 op 显示的字段
+## Implementation guardrails
 
-| 显示项 | 来源 | 格式 |
-|---|---|---|
-| 时间 | op.timestamp | HH:mm:ss |
-| 作者 | op.author | 直接显示 |
-| 文件 | op.filePath | 相对于项目根目录 |
-| +/- | op.diff | 统计新增/删除行数，+N -M |
+- Prefer existing React components and CSS tokens over adding a UI framework.
+- Preserve Electron, Zustand, Monaco, translations, IPC contracts, and collaboration behavior.
+- Add a component only when it reduces real duplication or makes interaction semantics clearer.
 
-### 数据来源
+## Collaboration intelligence
 
-- 页面加载：window.cairn.listRecentOps(200)
-- 实时更新：window.cairn.onOp(op => prepend(op))
-- 状态更新：本地 Zustand 状态
+- Activity sessions derive from real operations; people and AI tools remain visually attributable.
+- Shared-recent activity, potential overlap, and confirmed conflict are distinct states. A warning is not a claim of conflict.
+- Team Health uses only observable states: Watching, Connected, Reconnecting, Offline, and local-only. Do not label a project “Synced” without an acknowledgement protocol.
 
-### 交互
+## Recovery philosophy
 
-- 点击"选择文件夹" → 打开系统文件夹选择器
-- 选中后自动开始监控
-- 再次点击 → 切换文件夹，先 stopWatching 旧的
+- Checkpoint restore always compares against the current revision and creates a recovery checkpoint before mutation.
+- Dirty editor content blocks destructive conflict and restore actions.
+- Session rollback remains analysis-only until a safe three-way revert exists.
 
-### 不做的（v1）
+## Power-user interaction
 
-- 不显示 op.hash
-- 不显示 parentHashes
-- 不显示 op.id
-- 不做搜索、筛选、排序
-- 不做详情弹窗
-- 不做设置页
-- 不做暗黑模式
-- 不做动画
-- 不做响应式
-- 不做多标签页
-- 不做右键菜单
-- 不做快捷键
+- `Cmd/Ctrl+P` opens files, `Cmd/Ctrl+K` opens commands, and `Cmd/Ctrl+S` saves the active editor.
+- The collapsed sidebar must retain accessible labels and visible focus states.
+- Hackathon controls support left/right scene navigation outside editable controls.
 
-### v1.1 扩展
+## Hackathon Simulation
 
-- 顶部栏右侧在状态 Badge 后新增语言切换按钮。
-- 按钮文案随当前语言变化，用于切换中文和英文界面。
-- 这是对 v1「不加多余元素」约束的显式例外。
-
----
-
-## v2 计划（暂不实现）
-
-布局扩展：
-- 顶部栏右侧增加房间码显示 + 复制按钮
-- 左侧增加可折叠边栏：peer 列表
-  - 每个 peer 显示：名称、在线状态、最后同步时间
-
-peer 列表元素：
-- 名称：peer.name
-- 状态：online / offline
-- 最后同步：peer.lastSyncAt
-
----
-
-## v3 计划（暂不实现）
-
-布局扩展：
-- 顶部栏右侧增加"导出 PR"按钮
-- 右侧增加可折叠抽屉：冲突面板
-
-冲突面板元素：
-- 冲突文件路径
-- 冲突内容（本地版 vs 远端版）
-- 三个按钮：接受本地 / 接受远端 / AI 建议
-- AI 建议区域：显示建议内容 + 采用按钮
-
----
-
-## 设计原则
-
-1. 结构先于视觉。v1 不追求好看，追求能用。
-2. 所有组件来自 shadcn/ui，不自己写样式。
-3. 不添加 ui.md 里没有的元素。想加先改 ui.md。
-4. 桌面窗口，不考虑移动端和响应式。
-5. 实时性优先。op 日志必须 1 秒内更新。
+- Simulation is a renderer-memory demo boundary, not a project mode.
+- It may reuse pure derivation helpers and product presentation components.
+- It must never call filesystem mutation, room/network actions, real checkpoint IPC, oplog persistence, project mutations, sharing, or GitHub export.

@@ -2,6 +2,27 @@
 
 All notable changes to Cairn.
 
+## [1.8.0] - 2026-10-05
+
+### Added
+
+- Human and AI attribution, grouped Activity sessions, filters, search, and Quick Open
+- Collaboration intelligence for shared activity, potential overlaps, and confirmed conflicts
+- Team Health and connection diagnostics with truthful connection terminology
+- Checkpoints with comparison, stale-revision protection, automatic recovery snapshots, and safer restore flows
+- Hackathon Mode with an isolated in-memory project, Monaco editing, conflicts, and checkpoint recovery
+
+### Changed
+
+- Activity is file-centric and the desktop navigation, settings, and Files workspace received a developer-tool polish pass
+- Supported images and fonts can be synchronized as content-addressed blobs
+
+### Safety
+
+- Destructive checkpoint and conflict-resolution flows create automatic safety checkpoints
+- Hackathon Simulation never accesses real project files, rooms, checkpoints, oplog storage, or GitHub actions
+- `.gitignore`, `.cairnignore`, and sensitive-file rules are respected by watching and snapshots
+
 ## [1.0.1] - 2026-10-01
 
 ### Fixed

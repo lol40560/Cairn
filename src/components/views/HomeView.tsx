@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type MouseEvent } from 'react'
 
-import { FolderOpen, Plus, X } from 'lucide-react'
+import { FolderOpen, MoreHorizontal, Plus } from 'lucide-react'
 
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu'
 import { EmptyState } from '@/components/EmptyState'
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { useTranslation, type TranslateFn } from '@/i18n'
@@ -47,7 +48,10 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
   const setFolder = useAppStore((state) => state.setFolder)
   const setProjects = useAppStore((state) => state.setProjects)
   const setStatus = useAppStore((state) => state.setStatus)
+  const peers = useAppStore((state) => state.peers)
+  const ops = useAppStore((state) => state.ops)
   const [pendingRemove, setPendingRemove] = useState<AvailableProjectEntry | undefined>()
+  const [projectMenu, setProjectMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | undefined>()
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
 
   const refreshProjects = useCallback(async (): Promise<void> => {
@@ -121,6 +125,21 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
     }
   }
 
+  const showProjectMenu = (event: MouseEvent<HTMLElement>, project: AvailableProjectEntry): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    setProjectMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: t('openProject'), onSelect: () => void openProject(project) },
+        { label: t('copyPath'), onSelect: () => void window.cairn.copyToClipboard(project.path) },
+        { label: t('revealInFinder'), onSelect: () => void window.cairn.openInFileManager(project.path) },
+        { danger: true, label: t('remove'), onSelect: () => setPendingRemove(project), separatorBefore: true },
+      ],
+    })
+  }
+
   return (
     <section className="view active">
       <div className="view-header">
@@ -146,6 +165,7 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
                 role="button"
                 tabIndex={0}
                 onClick={() => void openProject(project)}
+                onContextMenu={(event) => showProjectMenu(event, project)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault()
@@ -158,19 +178,21 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
                   className="project-card-remove"
                   title={t('remove')}
                   type="button"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    setPendingRemove(project)
-                  }}
+                  onClick={(event) => showProjectMenu(event, project)}
                 >
-                  <X aria-hidden="true" size={14} />
+                  <MoreHorizontal aria-hidden="true" size={16} />
                 </button>
                 {project.isFavorite && <span aria-label="Favorite" className="project-card-favorite">★</span>}
                 <div>
                   <p className="project-card-name">{project.name}</p>
                   <p className="project-card-path" title={project.path}>{project.path}</p>
                 </div>
-                <p className="project-card-meta">{formatProjectRelativeTime(project.lastOpenedAt, t)}</p>
+                <div className="project-card-meta">
+                  {folder === project.path ? (
+                    <><span className="project-card-state">● {t('statusWatching')}</span><span>{t('connectedPeers').replace('{n}', String(peers.length))}</span></>
+                  ) : null}
+                  <span>{folder === project.path ? `${ops.length} ${t('changesCount').replace('{n} ', '')} · ` : ''}{formatProjectRelativeTime(project.lastOpenedAt, t)}</span>
+                </div>
               </article>
             ) : (
               <article key={project.id} className="project-card missing">
@@ -210,6 +232,7 @@ export function HomeView({ projects: projectsOverride }: HomeViewProps) {
           if (project) void removeProject(project.id)
         }}
       />
+      {projectMenu ? <ContextMenu items={projectMenu.items} position={projectMenu} onClose={() => setProjectMenu(undefined)} /> : null}
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </section>
   )

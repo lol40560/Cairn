@@ -16,8 +16,11 @@ export function Toast({ message, onDismiss }: { message: ToastMessage | Normaliz
       return
     }
 
-    const leaveTimer = window.setTimeout(() => setLeavingMessage(message), 5_850)
-    const dismissTimer = window.setTimeout(onDismiss, 6_000)
+    const tone = 'tone' in message ? message.tone ?? 'error' : 'error'
+    // 成功訊息快速淡出；錯誤保留更久，避免使用者來不及閱讀。
+    const lifetime = tone === 'success' ? 3_600 : 8_000
+    const leaveTimer = window.setTimeout(() => setLeavingMessage(message), lifetime - 150)
+    const dismissTimer = window.setTimeout(onDismiss, lifetime)
     return () => {
       window.clearTimeout(leaveTimer)
       window.clearTimeout(dismissTimer)
@@ -32,7 +35,7 @@ export function Toast({ message, onDismiss }: { message: ToastMessage | Normaliz
   const leaving = leavingMessage === message
 
   return (
-    <aside className={`toast${leaving ? ' is-leaving' : ''}`} data-tone={tone} role="status">
+    <aside aria-live={tone === 'error' ? 'assertive' : 'polite'} className={`toast${leaving ? ' is-leaving' : ''}`} data-tone={tone} role={tone === 'error' ? 'alert' : 'status'}>
       <p>{message.message}</p>
       {message.hint && <p className="toast-hint">{message.hint}</p>}
     </aside>

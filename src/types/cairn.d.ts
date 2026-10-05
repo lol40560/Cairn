@@ -31,6 +31,29 @@ export interface Checkpoint {
   createdAt: number
   sizeBytes: number
   fileCount: number
+  source: 'manual' | 'auto-before-restore' | 'auto-before-revert' | 'auto-before-conflict-resolution'
+}
+
+export interface CheckpointComparisonFile {
+  path: string
+  status: 'added' | 'modified' | 'deleted' | 'unchanged'
+  binary: boolean
+  checkpointSize?: number
+  currentSize?: number
+}
+
+export interface CheckpointComparison {
+  checkpoint: Checkpoint
+  currentRevision: string
+  files: CheckpointComparisonFile[]
+  summary: { added: number; modified: number; deleted: number; unchanged: number }
+}
+
+export interface CheckpointFileContents {
+  path: string
+  binary: boolean
+  checkpointContent?: string
+  currentContent?: string
 }
 
 export interface IdentityMismatch {
@@ -185,8 +208,10 @@ export interface CairnApi {
   stopWatching(): Promise<IpcResult<void>>
   listRecentOps(limit: number): Promise<IpcResult<Op[]>>
   listCheckpoints(): Promise<IpcResult<Checkpoint[]>>
-  createCheckpoint(name: string): Promise<IpcResult<Checkpoint>>
-  restoreCheckpoint(id: string): Promise<IpcResult<{ restored: number }>>
+  createCheckpoint(name?: string): Promise<IpcResult<Checkpoint>>
+  compareCheckpoint(id: string): Promise<IpcResult<CheckpointComparison>>
+  readCheckpointComparisonFile(id: string, path: string): Promise<IpcResult<CheckpointFileContents>>
+  restoreCheckpoint(id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]): Promise<IpcResult<{ restored: number; removed: number; recoveryCheckpoint: Checkpoint }>>
   deleteCheckpoint(id: string): Promise<IpcResult<void>>
   listProjectFiles(): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>>
   readProjectFile(path: string): Promise<IpcResult<ProjectFileContent>>
@@ -244,7 +269,7 @@ export interface CairnApi {
   setTrashRetentionDays(days: number): Promise<IpcResult<void>>
   listConflicts(): Promise<IpcResult<ConflictRecord[]>>
   getConflict(opHash: string): Promise<IpcResult<ConflictRecord | undefined>>
-  resolveConflict(opHash: string, resolution: ConflictResolution, content?: string): Promise<IpcResult<void>>
+  resolveConflict(opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]): Promise<IpcResult<{ recoveryCheckpoint: Checkpoint } | undefined>>
   deleteConflict(opHash: string): Promise<IpcResult<void>>
 }
 
