@@ -50,6 +50,14 @@ interface SyncDependencies {
   transport?: Transport
 }
 
+interface ConnectionAttempt {
+  endpoint: PeerEndpoint
+  expectedPeerId?: string
+  reject(error: Error): void
+  resolve(): void
+  timer: ReturnType<typeof setTimeout>
+}
+
 /** 避免 Sync 与快照模块产生循环依赖的最小处理器契约。 */
 export interface SnapshotSeederHandler {
   handleWantSnapshot(peerId: string, snapshotId: string): void
@@ -73,7 +81,8 @@ export class Sync extends EventEmitter {
   private seeder?: SnapshotSeederHandler
   private downloader?: SnapshotDownloaderHandler
   private localPort: number | undefined
-  private pendingDirectEndpoint: { host: string; port: number } | undefined
+  /** 每次連線有自己的承諾與計時器，不能由任何全域 connected/authFailed 事件完成。 */
+  private readonly connectionAttempts = new Map<string, ConnectionAttempt>()
   private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly pendingOps: PendingOps | undefined
   private readonly conflicts: ConflictsManager | undefined
@@ -141,7 +150,7 @@ export class Sync extends EventEmitter {
     this.started = false
     this.localPort = undefined
     this.reconnectManager.stop()
-    this.pendingDirectEndpoint = undefined
+    this.rejectConnectionAttempts(new Error('同步服务已停止'))
     for (const timer of this.directFallbackTimers) {
       clearTimeout(timer)
     }
@@ -191,33 +200,7 @@ export class Sync extends EventEmitter {
       throw new Error('直连邀请码与当前房间不一致')
     }
 
-    this.pendingDirectEndpoint = { host: normalizedHost, port }
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup()
-        reject(new Error(`连接 ${normalizedHost}:${port} 超时`))
-      }, 10_000)
-      const onConnected = (): void => {
-        cleanup()
-        resolve()
-      }
-      const onAuthFailed = (error: Error): void => {
-        cleanup()
-        reject(error)
-      }
-      const cleanup = (): void => {
-        clearTimeout(timeout)
-        this.off('connected', onConnected)
-        this.off('authFailed', onAuthFailed)
-      }
-
-      this.once('connected', onConnected)
-      this.once('authFailed', onAuthFailed)
-      void this.transport.connect(normalizedHost, port).catch((error: unknown) => {
-        cleanup()
-        reject(error)
-      })
-    })
+    await this.createConnectionAttempt({ host: normalizedHost, port })
   }
 
   listSeeders(): SeederInfo[] {
@@ -259,6 +242,7 @@ export class Sync extends EventEmitter {
     this.discovery.on('peerLeft', this.handlePeerLeft)
     this.discovery.on('error', this.handleError)
     this.transport.on('connect', this.handleConnect)
+    this.transport.on('connectionFailed', this.handleConnectionFailed)
     this.transport.on('disconnect', this.handleDisconnect)
     this.transport.on('authFailed', this.handleAuthFailed)
     this.transport.on('hello', this.handleHello)
@@ -271,6 +255,7 @@ export class Sync extends EventEmitter {
     this.discovery.off('peerLeft', this.handlePeerLeft)
     this.discovery.off('error', this.handleError)
     this.transport.off('connect', this.handleConnect)
+    this.transport.off('connectionFailed', this.handleConnectionFailed)
     this.transport.off('disconnect', this.handleDisconnect)
     this.transport.off('authFailed', this.handleAuthFailed)
     this.transport.off('hello', this.handleHello)
@@ -305,11 +290,10 @@ export class Sync extends EventEmitter {
     this.emit('peerLeft', peerId)
   }
 
-  private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint): void => {
-    const directEndpoint = this.pendingDirectEndpoint
-    this.pendingDirectEndpoint = undefined
+  private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.completeConnectionAttempt(attemptId, peerId)
     const knownPeer = this.peers.get(peerId)
-    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : directEndpoint)
+    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : undefined)
     if (!knownPeer && reconnectEndpoint) {
       this.peers.set(peerId, {
         host: reconnectEndpoint.host,
@@ -351,38 +335,58 @@ export class Sync extends EventEmitter {
 
   /** 等待完成 hello 握手，避免 TCP 已建立但认证失败时被误判为重连成功。 */
   private async reconnectPeer(peerId: string, host: string, port: number): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup()
-        reject(new Error(`重连 ${host}:${port} 超时`))
-      }, 10_000)
-      const onConnected = (connectedPeerId: string): void => {
-        if (connectedPeerId !== peerId) return
-        cleanup()
-        resolve()
-      }
-      const onAuthFailed = (error: Error): void => {
-        cleanup()
-        reject(error)
-      }
-      const cleanup = (): void => {
-        clearTimeout(timeout)
-        this.off('connected', onConnected)
-        this.off('authFailed', onAuthFailed)
-      }
+    await this.createConnectionAttempt({ host, port }, peerId)
+  }
 
-      this.on('connected', onConnected)
-      this.once('authFailed', onAuthFailed)
-      void this.transport.connect(host, port).catch((error: unknown) => {
-        cleanup()
-        reject(error)
+  private readonly handleAuthFailed = (error: Error, _peerId?: string, _endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.failConnectionAttempt(attemptId, error)
+    this.emit('authFailed', error)
+    this.emitError(error)
+  }
+
+  private readonly handleConnectionFailed = (error: Error, _endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.failConnectionAttempt(attemptId, error)
+  }
+
+  private createConnectionAttempt(endpoint: PeerEndpoint, expectedPeerId?: string): Promise<void> {
+    const attemptId = randomUUID()
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.failConnectionAttempt(attemptId, new Error(`连接 ${endpoint.host}:${endpoint.port} 超时`))
+      }, 10_000)
+      this.connectionAttempts.set(attemptId, { endpoint, expectedPeerId, reject, resolve, timer })
+      void this.transport.connect(endpoint.host, endpoint.port, attemptId).catch((error: unknown) => {
+        this.failConnectionAttempt(attemptId, toError(error))
       })
     })
   }
 
-  private readonly handleAuthFailed = (error: Error): void => {
-    this.emit('authFailed', error)
-    this.emitError(error)
+  private completeConnectionAttempt(attemptId: string | undefined, peerId: string): void {
+    if (!attemptId) return
+    const attempt = this.connectionAttempts.get(attemptId)
+    if (!attempt) return
+    if (attempt.expectedPeerId && attempt.expectedPeerId !== peerId) {
+      this.failConnectionAttempt(attemptId, new Error(`重连连接到了意外 peer：${peerId}`))
+      return
+    }
+    this.connectionAttempts.delete(attemptId)
+    clearTimeout(attempt.timer)
+    attempt.resolve()
+  }
+
+  private failConnectionAttempt(attemptId: string | undefined, error: Error): void {
+    if (!attemptId) return
+    const attempt = this.connectionAttempts.get(attemptId)
+    if (!attempt) return
+    this.connectionAttempts.delete(attemptId)
+    clearTimeout(attempt.timer)
+    attempt.reject(error)
+  }
+
+  private rejectConnectionAttempts(error: Error): void {
+    for (const attemptId of [...this.connectionAttempts.keys()]) {
+      this.failConnectionAttempt(attemptId, error)
+    }
   }
 
   /** 认证完成后交换工作区指纹；不匹配只告警，绝不阻断既有同步。 */
@@ -862,6 +866,10 @@ function splitLines(content: string): string[] {
 
 function isMissingFile(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
 }
 
 function isTerminalRemoteApplyError(error: unknown): boolean {

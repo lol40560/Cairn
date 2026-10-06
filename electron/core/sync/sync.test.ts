@@ -132,8 +132,8 @@ class MockDiscovery extends EventEmitter {
 
 class MockTransport extends EventEmitter {
   readonly broadcast = vi.fn()
-  readonly connect = vi.fn(async () => {
-    this.emit('connect', 'direct-peer')
+  readonly connect = vi.fn(async (host: string, port: number, attemptId?: string) => {
+    this.emit('connect', 'direct-peer', { host, port }, attemptId)
   })
   readonly send = vi.fn()
 
@@ -435,8 +435,8 @@ describe('transport', () => {
     const connectedSecond = waitForEvent<[string]>(second, 'connect')
 
     await first.connect('127.0.0.1', port)
-    await expect(connectedFirst).resolves.toEqual(['second', { host: '127.0.0.1', port }])
-    await expect(connectedSecond).resolves.toEqual(['first', undefined])
+    await expect(connectedFirst).resolves.toEqual(['second', { host: '127.0.0.1', port }, undefined])
+    await expect(connectedSecond).resolves.toEqual(['first', undefined, undefined])
 
     const received = waitForEvent<[string, SyncMessage]>(second, 'message')
     first.send('second', { hash: 'shared', type: 'have' })
@@ -850,7 +850,7 @@ describe('transport', () => {
     const connected = waitForEvent(receiver, 'connect')
     retry.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))
 
-    await expect(connected).resolves.toEqual(['sender', undefined])
+    await expect(connected).resolves.toEqual(['sender', undefined, undefined])
   })
 
   it('regression: 认证完成后仍拒绝旧版 sync hello，避免混用 operation hash 格式', async () => {
@@ -920,8 +920,8 @@ describe('Sync', () => {
     const { oplog } = await createTestOplog()
     const localOp = oplog.putOp(createOp('reconnect'))
     const transport = new MockTransport()
-    transport.connect.mockImplementation(async () => {
-      transport.emit('connect', 'peer-a', { host: '192.168.1.5', port: 49500 })
+    transport.connect.mockImplementation(async (host: string, port: number, attemptId?: string) => {
+      transport.emit('connect', 'peer-a', { host, port }, attemptId)
     })
     const sync = new Sync(
       { oplog, roomCode: 'ABCDEF' },
@@ -939,7 +939,7 @@ describe('Sync', () => {
     expect((await reconnecting)[0]).toMatchObject({ attempt: 1, peerId: 'peer-a', status: 'reconnecting' })
 
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(transport.connect).toHaveBeenCalledWith('192.168.1.5', 49500)
+    expect(transport.connect).toHaveBeenCalledWith('192.168.1.5', 49500, expect.any(String))
     expect(transport.send).toHaveBeenCalledWith('peer-a', { hash: localOp.hash, type: 'have' })
     await sync.stop()
     vi.useRealTimers()
@@ -1025,12 +1025,98 @@ describe('Sync', () => {
     await sync.start({ discovery: false })
     await sync.connectToAddress('192.168.1.10', 49500)
 
-    expect(transport.connect).toHaveBeenCalledWith('192.168.1.10', 49500)
+    expect(transport.connect).toHaveBeenCalledWith('192.168.1.10', 49500, expect.any(String))
     expect(sync.listPeers()).toEqual([
       { host: '192.168.1.10', lastSeen: expect.any(Number), peerId: 'direct-peer', port: 49500 },
     ])
     expect(seeder.announceToPeer).toHaveBeenCalledWith('direct-peer')
     await sync.stop()
+  })
+
+  it('regression: overlapping direct attempts only settle their own authenticated connection', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    transport.connect.mockImplementation(async () => undefined)
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    sync.on('error', () => undefined)
+    await sync.start({ discovery: false })
+
+    let firstSettled = false
+    const first = sync.connectToAddress('10.0.0.1', 41001).finally(() => { firstSettled = true })
+    const second = sync.connectToAddress('10.0.0.2', 41002)
+    const firstAttempt = transport.connect.mock.calls[0]?.[2] as string
+    const secondAttempt = transport.connect.mock.calls[1]?.[2] as string
+
+    transport.emit('connect', 'peer-b', { host: '10.0.0.2', port: 41002 }, secondAttempt)
+    await expect(second).resolves.toBeUndefined()
+    await Promise.resolve()
+    expect(firstSettled).toBe(false)
+
+    transport.emit('authFailed', new Error('first failed'), undefined, { host: '10.0.0.1', port: 41001 }, firstAttempt)
+    await expect(first).rejects.toThrow('first failed')
+    expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(0)
+    await sync.stop()
+  })
+
+  it('regression: reconnect completion cannot resolve a manual direct attempt', async () => {
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    transport.connect.mockImplementation(async () => undefined)
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    sync.on('error', () => undefined)
+    await sync.start({ discovery: false })
+
+    const reconnect = (sync as unknown as { reconnectPeer(peerId: string, host: string, port: number): Promise<void> })
+      .reconnectPeer('known-peer', '10.0.0.3', 41003)
+    const manual = sync.connectToAddress('10.0.0.4', 41004)
+    const reconnectAttempt = transport.connect.mock.calls[0]?.[2] as string
+    const manualAttempt = transport.connect.mock.calls[1]?.[2] as string
+
+    transport.emit('connect', 'known-peer', { host: '10.0.0.3', port: 41003 }, reconnectAttempt)
+    await expect(reconnect).resolves.toBeUndefined()
+    transport.emit('authFailed', new Error('manual failed'), undefined, { host: '10.0.0.4', port: 41004 }, manualAttempt)
+    await expect(manual).rejects.toThrow('manual failed')
+    expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(0)
+    await sync.stop()
+  })
+
+  it('regression: a timed-out or stale attempt cannot affect a newer direct connection', async () => {
+    vi.useFakeTimers()
+    const { oplog } = await createTestOplog()
+    const transport = new MockTransport()
+    transport.connect.mockImplementation(async () => undefined)
+    const sync = new Sync(
+      { oplog, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'local', transport: transport as never },
+    )
+    await sync.start({ discovery: false })
+
+    const first = sync.connectToAddress('10.0.0.5', 41005).then(
+      () => undefined,
+      (error: Error) => error,
+    )
+    const firstAttempt = transport.connect.mock.calls[0]?.[2] as string
+    await vi.advanceTimersByTimeAsync(9_999)
+    const second = sync.connectToAddress('10.0.0.6', 41006)
+    const secondAttempt = transport.connect.mock.calls[1]?.[2] as string
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await first).toEqual(expect.objectContaining({ message: '连接 10.0.0.5:41005 超时' }))
+    expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(1)
+
+    // 已完成 attempt 的迟到成功事件不能完成新的 promise。
+    transport.emit('connect', 'stale-peer', { host: '10.0.0.5', port: 41005 }, firstAttempt)
+    expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(1)
+    transport.emit('connect', 'fresh-peer', { host: '10.0.0.6', port: 41006 }, secondAttempt)
+    await expect(second).resolves.toBeUndefined()
+    expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(0)
+    await sync.stop()
+    vi.useRealTimers()
   })
 
   it('直连地址拒绝空 host 与越界端口', async () => {
@@ -1209,7 +1295,14 @@ describe('Sync', () => {
     firstDiscovery.emit('peer', secondInfo)
 
     await expect(remoteOp).resolves.toEqual([{ ...sourceOp, source: 'remote' }])
-    expect(second.oplog.getOp(sourceOp.hash)).toEqual(sourceOp)
+    expect(second.oplog.getOp(sourceOp.hash)).toMatchObject({
+      author: sourceOp.author,
+      diff: sourceOp.diff,
+      filePath: sourceOp.filePath,
+      hash: sourceOp.hash,
+      id: sourceOp.id,
+      source: 'remote',
+    })
     expect(secondContent).toBe('after\n')
     expect(applyRemoteChange).toHaveBeenCalledWith('src/shared.ts', 'after\n')
 
@@ -1226,7 +1319,8 @@ describe('Sync', () => {
       { discovery: discovery as unknown as never, peerId: 'target', transport: transport as never },
     )
     const input = createOp('remote')
-    const validOp: Op = { ...input, hash: computeHash(input) }
+    // wire payload 即使自稱 local，接收端仍必須依接收路徑標記為 remote。
+    const validOp: Op = { ...input, hash: computeHash(input), source: 'local' }
     const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
 
     await sync.start()
@@ -1239,6 +1333,7 @@ describe('Sync', () => {
     expect(target.oplog.getOp(validOp.hash)).toEqual({
       ...validOp,
       kind: 'modified',
+      source: 'remote',
     })
     await sync.stop()
   })

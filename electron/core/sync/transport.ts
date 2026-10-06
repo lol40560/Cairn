@@ -38,6 +38,8 @@ export class Transport extends EventEmitter {
   private readonly connections = new Map<string, Socket>()
   private readonly socketPeerIds = new Map<Socket, string>()
   private readonly socketEndpoints = new Map<Socket, PeerEndpoint>()
+  /** 只為 outbound 連線保留；讓上層可安全關聯單次連線嘗試。 */
+  private readonly socketAttemptIds = new Map<Socket, string>()
   private readonly socketHeartbeats = new Map<Socket, NodeJS.Timeout>()
   private readonly socketLastSeen = new Map<Socket, number>()
   private readonly authStates = new Map<Socket, AuthState>()
@@ -106,6 +108,7 @@ export class Transport extends EventEmitter {
     this.connections.clear()
     this.socketPeerIds.clear()
     this.socketEndpoints.clear()
+    this.socketAttemptIds.clear()
     this.sockets.clear()
     this.usedNonces.clear()
 
@@ -120,9 +123,10 @@ export class Transport extends EventEmitter {
     })
   }
 
-  async connect(host: string, port: number): Promise<void> {
+  async connect(host: string, port: number, attemptId?: string): Promise<void> {
     const socket = new Socket()
     this.attachSocket(socket, { host, port })
+    if (attemptId) this.socketAttemptIds.set(socket, attemptId)
 
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
@@ -375,7 +379,7 @@ export class Transport extends EventEmitter {
         socket.end(encodeMessage({ type: 'auth-fail', reason }))
       }
     }
-    this.emit('authFailed', new Error(reason), state?.peerId)
+    this.emit('authFailed', new Error(reason), state?.peerId, this.socketEndpoints.get(socket), this.socketAttemptIds.get(socket))
     if (received) {
       socket.destroy()
     }
@@ -410,7 +414,7 @@ export class Transport extends EventEmitter {
     this.socketPeerIds.set(socket, remotePeerId)
     this.connections.set(remotePeerId, socket)
     this.startHeartbeat(socket)
-    this.emit('connect', remotePeerId, this.socketEndpoints.get(socket))
+    this.emit('connect', remotePeerId, this.socketEndpoints.get(socket), this.socketAttemptIds.get(socket))
   }
 
   /** 通过轻量 ping/pong 识别静默失效的 TCP 长连接。 */
@@ -451,8 +455,14 @@ export class Transport extends EventEmitter {
     this.sockets.delete(socket)
     this.socketLastSeen.delete(socket)
     const remotePeerId = this.socketPeerIds.get(socket)
+    const endpoint = this.socketEndpoints.get(socket)
+    const attemptId = this.socketAttemptIds.get(socket)
     this.socketPeerIds.delete(socket)
     this.socketEndpoints.delete(socket)
+    this.socketAttemptIds.delete(socket)
+    if (!remotePeerId && attemptId) {
+      this.emit('connectionFailed', new Error(`连接 ${endpoint?.host ?? 'remote'}:${endpoint?.port ?? 0} 在认证完成前关闭`), endpoint, attemptId)
+    }
     if (!remotePeerId || this.connections.get(remotePeerId) !== socket) {
       return
     }
