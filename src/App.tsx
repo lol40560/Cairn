@@ -24,6 +24,7 @@ import { restoreLastSession } from '@/lib/sessionRestore'
 import { isEditableTarget, shortcutLabel } from '@/lib/shortcuts'
 import { getDemoScenario, type HackathonExecutionMode, type HackathonSceneId } from '@/lib/hackathonMode'
 import { createDemoWorkspace } from '@/lib/demoWorkspace'
+import { createSimulationCapabilityController, type RealWorkspaceAction } from '@/lib/simulationCapabilities'
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
 import type { AvailableProjectEntry, IpcResult } from '@/types/cairn'
@@ -114,12 +115,29 @@ export function App() {
   const [demoDirty, setDemoDirty] = useState(false)
   const [demoConflictResolved, setDemoConflictResolved] = useState(false)
   const activeViewRef = useRef(activeView)
+  const [simulationGate] = useState(() => createSimulationCapabilityController(
+    () => setToast({ message: t('simulationActionUnavailable'), tone: 'error' }),
+  ))
+
+  const permitRealWorkspaceAction = useCallback((action: RealWorkspaceAction): boolean => (
+    simulationGate.permit(action)
+  ), [simulationGate])
+  const setSimulationIsolation = useCallback((active: boolean): void => {
+    simulationGate.setSimulationActive(active)
+    void window.cairn.setSimulationMode(active)
+  }, [simulationGate])
 
   useEffect(() => {
     activeViewRef.current = activeView
   }, [activeView])
 
+  useEffect(() => {
+    const active = hackathonEnabled && hackathonMode === 'simulation'
+    setSimulationIsolation(active)
+  }, [hackathonEnabled, hackathonMode, setSimulationIsolation])
+
   const activateProject = useCallback(async (project: AvailableProjectEntry): Promise<void> => {
+    if (!permitRealWorkspaceAction('switch-project')) return
     try {
       getIpcData(await window.cairn.startWatching(project.path))
       setFolder(project.path)
@@ -129,30 +147,33 @@ export function App() {
     } catch (error) {
       setToast(normalizeError(error, t))
     }
-  }, [replaceOps, setActiveView, setFolder, setStatus, t])
+  }, [permitRealWorkspaceAction, replaceOps, setActiveView, setFolder, setStatus, t])
 
   const openQuickOpen = useCallback(async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('quick-open')) return
     if (projectFiles.length === 0 && folder) {
       const result = await window.cairn.listProjectFiles()
       if (result.ok) setProjectFiles(result.data.files)
     }
     setQuickOpenOpen(true)
-  }, [folder, projectFiles.length, setProjectFiles])
+  }, [folder, permitRealWorkspaceAction, projectFiles.length, setProjectFiles])
 
   const openProjectSwitcher = useCallback(async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('switch-project')) return
     const result = await window.cairn.listProjects()
     if (result.ok) setProjects(result.data)
     setProjectSwitcherOpen(true)
-  }, [setProjects])
+  }, [permitRealWorkspaceAction, setProjects])
 
   const openFileFromPalette = useCallback((path: string): void => {
+    if (!permitRealWorkspaceAction('project-file')) return
     if (activeView === 'files') {
       window.dispatchEvent(new CustomEvent('cairn:open-file', { detail: path }))
       return
     }
     setSelectedFilePath(path)
     setActiveView('files')
-  }, [activeView, setActiveView, setSelectedFilePath])
+  }, [activeView, permitRealWorkspaceAction, setActiveView, setSelectedFilePath])
 
   useEffect(() => {
     let disposed = false
@@ -291,6 +312,7 @@ export function App() {
   }, [folder, setConflicts])
 
   const handleOpenDifferentProject = async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('switch-project')) return
     try {
       const selectedFolder = getIpcData(await window.cairn.selectFolder())
       if (selectedFolder === '') return
@@ -314,6 +336,7 @@ export function App() {
   }
 
   const handleCreateRoom = async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('room-connect')) return
     try {
       clearIdentityMismatches()
       clearPeerStatuses()
@@ -328,6 +351,7 @@ export function App() {
   }
 
   const handleJoinRoom = async (code: string): Promise<void> => {
+    if (!permitRealWorkspaceAction('room-connect')) return
     try {
       clearIdentityMismatches()
       clearPeerStatuses()
@@ -342,6 +366,7 @@ export function App() {
   }
 
   const handleLeaveRoom = useCallback(async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('leave-team')) return
     try {
       getIpcData(await window.cairn.leaveRoom())
       setPeers([])
@@ -353,9 +378,10 @@ export function App() {
       console.error('[cairn] 无法离开房间', error)
       setToast(normalizeError(error, t))
     }
-  }, [clearIdentityMismatches, clearPeerStatuses, setIsHost, setPeers, setRoomCode, t])
+  }, [clearIdentityMismatches, clearPeerStatuses, permitRealWorkspaceAction, setIsHost, setPeers, setRoomCode, t])
 
   const handleExportSnapshot = useCallback(async (): Promise<void> => {
+    if (!permitRealWorkspaceAction('export-snapshot')) return
     try {
       const result = await window.cairn.exportSnapshot()
       if (!result.ok) {
@@ -384,15 +410,24 @@ export function App() {
       console.error('[cairn] 无法导出项目快照', error)
       setToast(normalizeError(error, t))
     }
-  }, [t])
+  }, [permitRealWorkspaceAction, t])
 
-  const exportPRSubmit = async (title: string) => window.cairn.exportPR({
-    branch: 'main',
-    prBranch: createPRBranchName(roomCode),
-    title,
-  })
+  const exportPRSubmit = async (title: string) => {
+    if (!permitRealWorkspaceAction('export-pr')) {
+      return {
+        ok: false as const,
+        error: { category: 'permission' as const, message: t('simulationActionUnavailable'), raw: 'SIMULATION_ISOLATED' },
+      }
+    }
+    return window.cairn.exportPR({
+      branch: 'main',
+      prBranch: createPRBranchName(roomCode),
+      title,
+    })
+  }
 
   const dismissToast = useCallback(() => setToast(null), [])
+  const simulationActive = hackathonEnabled && hackathonMode === 'simulation'
 
   const commands = useMemo(() => {
     const list: Array<SearchPaletteItem & { action(): void }> = [
@@ -404,19 +439,25 @@ export function App() {
       { id: 'nav-checkpoints', label: t('checkpoints'), group: t('groupRecovery'), action: () => setActiveView('checkpoints') },
       { id: 'nav-trash', label: t('trash'), group: t('groupRecovery'), action: () => setActiveView('trash') },
       { id: 'settings', label: t('settings'), group: t('settings'), shortcut: shortcutLabel(','), action: () => setActiveView('settings') },
-      { id: 'switch-project', label: t('switchProject'), group: t('groupProject'), action: () => void openProjectSwitcher() },
-      { id: 'add-project', label: t('addProject'), group: t('groupProject'), action: () => setActiveView('home') },
-      { id: 'quick-open', label: t('quickOpen'), group: t('files'), shortcut: shortcutLabel('P'), action: () => void openQuickOpen() },
     ]
-    if (activeView === 'files' && selectedFilePath) list.push({ id: 'save-file', label: t('filesSave'), group: t('files'), shortcut: shortcutLabel('S'), action: () => window.dispatchEvent(new Event('cairn:save-current-file')) })
-    if (roomCode) {
-      list.push({ id: 'copy-invite', label: t('copyInviteCode'), group: t('room'), action: () => void window.cairn.copyToClipboard(roomCode) })
+    if (!simulationActive) {
+      list.push(
+        { id: 'switch-project', label: t('switchProject'), group: t('groupProject'), action: () => void openProjectSwitcher() },
+        { id: 'add-project', label: t('addProject'), group: t('groupProject'), action: () => setActiveView('home') },
+        { id: 'quick-open', label: t('quickOpen'), group: t('files'), shortcut: shortcutLabel('P'), action: () => void openQuickOpen() },
+      )
+    }
+    if (!simulationActive && activeView === 'files' && selectedFilePath) list.push({ id: 'save-file', label: t('filesSave'), group: t('files'), shortcut: shortcutLabel('S'), action: () => window.dispatchEvent(new Event('cairn:save-current-file')) })
+    if (!simulationActive && roomCode) {
+      list.push({ id: 'copy-invite', label: t('copyInviteCode'), group: t('room'), action: () => {
+        if (permitRealWorkspaceAction('copy-invite')) void window.cairn.copyToClipboard(roomCode)
+      } })
       list.push({ id: 'leave-team', label: t('leaveRoom'), group: t('room'), action: () => void handleLeaveRoom() })
     }
-    if (folder) list.push({ id: 'export-snapshot', label: t('exportSnapshot'), group: t('exportPR'), action: () => void handleExportSnapshot() })
-    if (roomCode) list.push({ id: 'export-pr', label: t('exportPR'), group: t('exportPR'), action: () => setExportDialogOpen(true) })
+    if (!simulationActive && folder) list.push({ id: 'export-snapshot', label: t('exportSnapshot'), group: t('exportPR'), action: () => void handleExportSnapshot() })
+    if (!simulationActive && roomCode) list.push({ id: 'export-pr', label: t('exportPR'), group: t('exportPR'), action: () => setExportDialogOpen(true) })
     return list
-  }, [activeView, folder, handleExportSnapshot, handleLeaveRoom, openProjectSwitcher, openQuickOpen, roomCode, selectedFilePath, setActiveView, t])
+  }, [activeView, folder, handleExportSnapshot, handleLeaveRoom, openProjectSwitcher, openQuickOpen, permitRealWorkspaceAction, roomCode, selectedFilePath, setActiveView, simulationActive, t])
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent): void => {
@@ -461,7 +502,7 @@ export function App() {
     opHash: string,
     resolution: 'local' | 'remote' | 'merged',
   ): Promise<void> => {
-    if (hackathonEnabled && hackathonMode === 'simulation') {
+    if (simulationGate.isSimulationActive()) {
       const conflict = getDemoScenario(hackathonScene).conflicts.find((item) => item.opHash === opHash)
       if (conflict) {
         demoWorkspace.saveFile(conflict.filePath, resolution === 'remote' ? conflict.remoteContent ?? conflict.localContent : conflict.localContent)
@@ -493,6 +534,7 @@ export function App() {
     setDemoConflictResolved(false)
   }
   const exitHackathonMode = (): void => {
+    setSimulationIsolation(false)
     setHackathonEnabled(false)
     setPresentationMode(false)
     setActiveView(viewBeforeHackathon)
@@ -500,14 +542,14 @@ export function App() {
   const demoData = hackathonEnabled && hackathonMode === 'simulation' ? getDemoScenario(hackathonScene) : undefined
   const displayedOps = demoData?.ops ?? ops
   const displayedConflicts = demoData ? demoData.conflicts.filter(() => !demoConflictResolved) : conflicts
-  const simulationLocksCurrentView = hackathonEnabled && hackathonMode === 'simulation' && !['activity', 'conflicts', 'files', 'checkpoints'].includes(activeView)
+  const simulationLocksCurrentView = simulationActive && !['activity', 'conflicts', 'files', 'checkpoints'].includes(activeView)
 
   return (
     <>
       <div aria-label="Cairn" className={`app-shell${presentationMode ? ' presentation-mode' : ''}`}>
         <Sidebar />
         <main className="app-main">
-        <TopBar folder={folder} opCount={displayedOps.length} peerCount={peers.length} roomCode={roomCode} status={status} onSwitchProject={() => void openProjectSwitcher()} />
+        <TopBar folder={simulationActive ? 'demo-app' : folder} opCount={displayedOps.length} peerCount={simulationActive ? 0 : peers.length} roomCode={simulationActive ? '' : roomCode} status={status} onSwitchProject={() => void openProjectSwitcher()} />
         <div className="app-content">
           {simulationLocksCurrentView ? <section className="view active demo-isolation-view"><h1 className="view-title">{t('simulation')}</h1><p>{t('demoSimulationNotice')}</p></section> : <>
           {activeView === 'home' && <HomeView />}
@@ -548,7 +590,7 @@ export function App() {
         </main>
       <ExportPRDialog
         defaultTitle={`Cairn ${roomCode}`}
-        open={exportDialogOpen}
+        open={exportDialogOpen && !simulationActive}
         onClose={() => setExportDialogOpen(false)}
         onOpenSettings={() => {
           setExportDialogOpen(false)
@@ -569,7 +611,22 @@ export function App() {
         presentationMode={presentationMode}
         scene={hackathonScene}
         onExit={exitHackathonMode}
-        onModeChange={(mode) => { setHackathonMode(mode); if (mode === 'simulation') { setDemoWorkspace(createDemoWorkspace(hackathonScene)); setDemoWorkspaceVersion((version) => version + 1); setDemoDirty(false); setDemoConflictResolved(false); setActiveView('activity') } }}
+        onModeChange={(mode) => {
+          const isSimulation = mode === 'simulation'
+          setSimulationIsolation(isSimulation)
+          setHackathonMode(mode)
+          if (isSimulation) {
+            setQuickOpenOpen(false)
+            setProjectSwitcherOpen(false)
+            setExportDialogOpen(false)
+            setConflictDialogOpen(false)
+            setDemoWorkspace(createDemoWorkspace(hackathonScene))
+            setDemoWorkspaceVersion((version) => version + 1)
+            setDemoDirty(false)
+            setDemoConflictResolved(false)
+            setActiveView('activity')
+          }
+        }}
         onPresentationChange={setPresentationMode}
         onSceneChange={(scene) => { if (hackathonMode === 'simulation' && demoDirty) { setToast({ message: t('demoDiscardBeforeSceneChange'), tone: 'error' }); return } setHackathonScene(scene); if (hackathonMode === 'simulation') { setDemoWorkspace(createDemoWorkspace(scene)); setDemoWorkspaceVersion((version) => version + 1); setDemoConflictResolved(false); setActiveView(scene === 'conflict' ? 'conflicts' : scene === 'recovery' ? 'checkpoints' : 'activity') } }}
       /> : null}
@@ -584,7 +641,7 @@ export function App() {
       />
       <SearchPalette
         emptyLabel={t('noFilesFound')}
-        items={projectFiles.map((file) => ({
+        items={(simulationActive ? [] : projectFiles).map((file) => ({
           id: file.path,
           label: file.name,
           detail: file.path.slice(0, Math.max(0, file.path.length - file.name.length)).replace(/\/$/, ''),
@@ -601,7 +658,7 @@ export function App() {
       <SearchPalette
         emptyLabel={t('noProjectsFound')}
         items={[
-          ...projects
+          ...(simulationActive ? [] : projects)
             .filter((project) => project.available)
             .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
             .map((project) => ({ id: project.id, label: project.name, detail: project.path, keywords: project.path })),

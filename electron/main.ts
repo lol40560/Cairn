@@ -90,6 +90,8 @@ let projectsManager: ProjectsManager | undefined
 let handlersRegistered = false
 let isQuitting = false
 let mainWindow: BrowserWindow | undefined
+// 模擬模式是能力邊界的一部分：即使 renderer 有舊 callback，也不能觸及真實工作區。
+let hackathonSimulationActive = false
 // 串行化监控启动，避免开发模式初始化与用户操作并发创建多个 watcher。
 let startWatchingPromise: Promise<void> | undefined
 
@@ -102,6 +104,25 @@ const FILE_COUNT_IGNORED_DIRECTORIES = new Set([
 ])
 
 app.setName('Cairn')
+
+export function setHackathonSimulationActive(active: boolean): void {
+  hackathonSimulationActive = active
+}
+
+function requireRealWorkspaceCapability(): void {
+  if (hackathonSimulationActive) {
+    throw new AppError('此操作在 Hackathon Simulation 期間不可用', 'permission', { code: 'SIMULATION_ISOLATED' })
+  }
+}
+
+function guardRealWorkspaceAction<Args extends unknown[], Result>(
+  fn: (...args: Args) => Result | Promise<Result>,
+): (...args: Args) => Result | Promise<Result> {
+  return (...args) => {
+    requireRealWorkspaceCapability()
+    return fn(...args)
+  }
+}
 
 // 开发进程与正式安装版使用独立用户数据目录，便于本机双实例联调。
 if (!app.isPackaged && typeof app.setPath === 'function') {
@@ -1192,36 +1213,36 @@ export function registerIpcHandlers(): void {
   }
 
   handlersRegistered = true
-  ipcMain.handle('cairn:selectFolder', wrapIpcHandler(selectFolder))
-  ipcMain.handle('cairn:startWatching', wrapIpcHandler((folder: string) => startWatching(folder)))
-  ipcMain.handle('cairn:stopWatching', wrapIpcHandler(() => stopWatching()))
+  ipcMain.handle('cairn:selectFolder', wrapIpcHandler(guardRealWorkspaceAction(selectFolder)))
+  ipcMain.handle('cairn:startWatching', wrapIpcHandler(guardRealWorkspaceAction((folder: string) => startWatching(folder))))
+  ipcMain.handle('cairn:stopWatching', wrapIpcHandler(guardRealWorkspaceAction(() => stopWatching())))
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
-  ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(listCheckpoints))
-  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler((name?: string) => createCheckpoint(name)))
-  ipcMain.handle('cairn:compareCheckpoint', wrapIpcHandler((id: string) => compareCheckpoint(id)))
-  ipcMain.handle('cairn:readCheckpointComparisonFile', wrapIpcHandler((id: string, path: string) => readCheckpointComparisonFile(id, path)))
-  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler((id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]) => restoreCheckpoint(id, expectedCurrentRevision, dirtyFilePaths)))
-  ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler((id: string) => deleteCheckpoint(id)))
-  ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
-  ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
+  ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(guardRealWorkspaceAction(listCheckpoints)))
+  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((name?: string) => createCheckpoint(name))))
+  ipcMain.handle('cairn:compareCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string) => compareCheckpoint(id))))
+  ipcMain.handle('cairn:readCheckpointComparisonFile', wrapIpcHandler(guardRealWorkspaceAction((id: string, path: string) => readCheckpointComparisonFile(id, path))))
+  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]) => restoreCheckpoint(id, expectedCurrentRevision, dirtyFilePaths))))
+  ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string) => deleteCheckpoint(id))))
+  ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(guardRealWorkspaceAction(listProjectFiles)))
+  ipcMain.handle('cairn:readProjectFile', wrapIpcHandler(guardRealWorkspaceAction((filePath: string) => readProjectFile(filePath))))
   ipcMain.handle(
     'cairn:saveProjectFile',
-    wrapIpcHandler((filePath: string, content: string) => saveProjectFile(filePath, content)),
+    wrapIpcHandler(guardRealWorkspaceAction((filePath: string, content: string) => saveProjectFile(filePath, content))),
   )
-  ipcMain.handle('cairn:createRoom', wrapIpcHandler(createRoom))
-  ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
-  ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
+  ipcMain.handle('cairn:createRoom', wrapIpcHandler(guardRealWorkspaceAction(createRoom)))
+  ipcMain.handle('cairn:joinRoom', wrapIpcHandler(guardRealWorkspaceAction((roomCode: string) => joinRoom(roomCode))))
+  ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(guardRealWorkspaceAction(leaveRoom)))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
-  ipcMain.handle('cairn:retryPeer', wrapIpcHandler((peerId: string) => retryPeer(peerId)))
+  ipcMain.handle('cairn:retryPeer', wrapIpcHandler(guardRealWorkspaceAction((peerId: string) => retryPeer(peerId))))
   ipcMain.handle('cairn:getProjectIdentity', wrapIpcHandler(getProjectIdentity))
   ipcMain.handle('cairn:getLocalEndpoint', wrapIpcHandler(getLocalEndpoint))
-  ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
+  ipcMain.handle('cairn:connectToAddress', wrapIpcHandler(guardRealWorkspaceAction((input) => connectToAddress(input))))
   ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
-  ipcMain.handle('cairn:listProjects', wrapIpcHandler(listProjects))
-  ipcMain.handle('cairn:addProject', wrapIpcHandler((projectPath: string) => addProject(projectPath)))
-  ipcMain.handle('cairn:removeProject', wrapIpcHandler((id: string) => removeProject(id)))
-  ipcMain.handle('cairn:setActiveProject', wrapIpcHandler((id: string) => setActiveProject(id)))
+  ipcMain.handle('cairn:listProjects', wrapIpcHandler(guardRealWorkspaceAction(listProjects)))
+  ipcMain.handle('cairn:addProject', wrapIpcHandler(guardRealWorkspaceAction((projectPath: string) => addProject(projectPath))))
+  ipcMain.handle('cairn:removeProject', wrapIpcHandler(guardRealWorkspaceAction((id: string) => removeProject(id))))
+  ipcMain.handle('cairn:setActiveProject', wrapIpcHandler(guardRealWorkspaceAction((id: string) => setActiveProject(id))))
   ipcMain.handle('cairn:getActiveProject', wrapIpcHandler(getActiveProject))
   ipcMain.handle('cairn:checkProjectAvailability', wrapIpcHandler((id: string) => checkProjectAvailability(id)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))
@@ -1235,26 +1256,27 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:getGithubConfig', wrapIpcHandler(getGithubConfig))
   ipcMain.handle('cairn:clearGithubConfig', wrapIpcHandler(clearGithubConfig))
   ipcMain.handle('cairn:resetGithubConfig', wrapIpcHandler(resetGithubConfig))
-  ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
-  ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
+  ipcMain.handle('cairn:exportPR', wrapIpcHandler(guardRealWorkspaceAction((options) => exportProjectPR(options))))
+  ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(guardRealWorkspaceAction(exportProjectSnapshotFile)))
   ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
   ipcMain.handle('cairn:openExternal', wrapIpcHandler((url: string) => openExternal(url)))
   ipcMain.handle('cairn:openInFileManager', wrapIpcHandler((targetPath: string) => openInFileManager(targetPath)))
-  ipcMain.handle('cairn:startSharing', wrapIpcHandler(startSharing))
-  ipcMain.handle('cairn:stopSharing', wrapIpcHandler(stopSharing))
-  ipcMain.handle('cairn:downloadProject', wrapIpcHandler((input) => downloadProject(input)))
+  ipcMain.handle('cairn:startSharing', wrapIpcHandler(guardRealWorkspaceAction(startSharing)))
+  ipcMain.handle('cairn:stopSharing', wrapIpcHandler(guardRealWorkspaceAction(stopSharing)))
+  ipcMain.handle('cairn:downloadProject', wrapIpcHandler(guardRealWorkspaceAction((input) => downloadProject(input))))
   ipcMain.handle('cairn:listSeeders', wrapIpcHandler(listSeeders))
   ipcMain.handle('cairn:getDefaultDownloadDir', wrapIpcHandler(getDefaultDownloadDir))
   ipcMain.handle('cairn:cancelDownload', wrapIpcHandler(cancelDownload))
   ipcMain.handle('cairn:selectDownloadFolder', wrapIpcHandler(selectDownloadFolder))
   ipcMain.handle('cairn:listTrash', wrapIpcHandler(listTrash))
-  ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler((trashId: string) => restoreFromTrash(trashId)))
-  ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler((trashId: string) => purgeFromTrash(trashId)))
-  ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(emptyTrash))
+  ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler(guardRealWorkspaceAction((trashId: string) => restoreFromTrash(trashId))))
+  ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler(guardRealWorkspaceAction((trashId: string) => purgeFromTrash(trashId))))
+  ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(guardRealWorkspaceAction(emptyTrash)))
   ipcMain.handle('cairn:listConflicts', wrapIpcHandler(listConflicts))
   ipcMain.handle('cairn:getConflict', wrapIpcHandler((opHash: string) => getConflict(opHash)))
-  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler((opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]) => resolveConflict(opHash, resolution, content, dirtyFilePaths)))
-  ipcMain.handle('cairn:deleteConflict', wrapIpcHandler((opHash: string) => deleteConflict(opHash)))
+  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler(guardRealWorkspaceAction((opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]) => resolveConflict(opHash, resolution, content, dirtyFilePaths))))
+  ipcMain.handle('cairn:deleteConflict', wrapIpcHandler(guardRealWorkspaceAction((opHash: string) => deleteConflict(opHash))))
+  ipcMain.handle('cairn:setSimulationMode', wrapIpcHandler((active: boolean) => setHackathonSimulationActive(active)))
   ipcMain.handle('cairn:getTrashRetentionDays', wrapIpcHandler(getTrashRetentionDays))
   ipcMain.handle('cairn:setTrashRetentionDays', wrapIpcHandler((days: number) => setTrashRetentionDays(days)))
 }

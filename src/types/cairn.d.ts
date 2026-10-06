@@ -204,6 +204,7 @@ export type IpcResult<T> =
   | { ok: false; error: SerializedError }
 
 export interface CairnApi {
+  setSimulationMode(active: boolean): Promise<IpcResult<void>>
   selectFolder(): Promise<IpcResult<string>>
   startWatching(folder: string): Promise<IpcResult<void>>
   stopWatching(): Promise<IpcResult<void>>
