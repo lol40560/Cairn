@@ -277,7 +277,8 @@ describe('oplog', () => {
       stored.hash,
     )
 
-    const { source: _source, ...distributedOp } = stored
+    const distributedOp = { ...stored }
+    delete distributedOp.source
     expect(JSON.parse(await readFile(objectPath, 'utf8'))).toEqual(distributedOp)
   })
 
