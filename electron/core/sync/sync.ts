@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { writeFile } from 'node:fs/promises'
+import { lstat, writeFile } from 'node:fs/promises'
 
 import { applyPatch } from 'diff'
 import { merge } from 'node-diff3'
@@ -591,9 +591,7 @@ export class Sync extends EventEmitter {
     }
 
     const localContent = await this.hooks.readFile(op.filePath)
-    const exists = this.hooks.fileExists
-      ? await this.hooks.fileExists(op.filePath)
-      : localContent !== ''
+    const exists = await this.fileExists(op.filePath)
     if (op.kind === 'deleted') {
       // 刪除以存在性而非內容判斷：0-byte 檔案同樣必須移入本機廢紙簍。
       if (exists) {
@@ -817,6 +815,30 @@ export class Sync extends EventEmitter {
     await resolveSafeProjectPath(projectRoot, relativePath)
   }
 
+  /** 空內容與不存在必須分開處理；沒有 hook 時也只能查詢真實檔案狀態。 */
+  private async fileExists(relativePath: string): Promise<boolean> {
+    if (this.hooks?.fileExists) {
+      return this.hooks.fileExists(relativePath)
+    }
+    if (!this.options.projectRoot) {
+      // 僅供沒有真實專案根目錄的受控呼叫端使用；安全預設是視為存在，
+      // 不能再從空字串推論「缺失」而跳過刪除的 filesystem side effect。
+      return true
+    }
+
+    const absolutePath = await resolveSafeProjectPath(this.options.projectRoot, relativePath)
+    try {
+      const metadata = await lstat(absolutePath)
+      if (!metadata.isFile()) {
+        throw new Error(`遠端操作目標不是一般檔案：${relativePath}`)
+      }
+      return true
+    } catch (error) {
+      if (isMissingFile(error)) return false
+      throw error
+    }
+  }
+
   private readonly handleError = (error: Error): void => {
     this.emit('error', error)
   }
@@ -836,6 +858,10 @@ function contentHash(content: string): string {
 
 function splitLines(content: string): string[] {
   return content.match(/.*(?:\n|$)/g)?.filter((line) => line.length > 0) ?? []
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 function isTerminalRemoteApplyError(error: unknown): boolean {

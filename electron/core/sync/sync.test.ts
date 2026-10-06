@@ -1370,6 +1370,7 @@ describe('Sync', () => {
       { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
       {
         applyRemoteChange,
+        fileExists: async () => true,
         moveRemoteDeletionToTrash,
         readFile: async () => '',
         writeFile,
@@ -1440,6 +1441,7 @@ describe('Sync', () => {
       { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
       {
         applyRemoteChange: vi.fn(async () => undefined),
+        fileExists: async () => content !== '',
         readFile: async () => content,
         writeFile,
       },
@@ -1490,6 +1492,7 @@ describe('Sync', () => {
       { discovery: discovery as unknown as never, peerId: 'target', transport: transport as never },
       {
         applyRemoteChange,
+        fileExists: async () => true,
         moveRemoteDeletionToTrash,
         readFile: async () => 'before\n',
         writeFile,
