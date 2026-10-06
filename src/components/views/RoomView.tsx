@@ -302,7 +302,7 @@ export function RoomView({
   }
 
   const handleCopyDiagnostics = async (): Promise<void> => {
-    const result = await window.cairn.copyToClipboard(formatDiagnostics(health, roomCode))
+    const result = await window.cairn.copyToClipboard(formatDiagnostics(health))
     if (result.ok) setToast({ message: t('diagnosticsCopied') })
     else setToast(normalizeError(result.error, t))
   }

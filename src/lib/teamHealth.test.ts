@@ -22,10 +22,17 @@ describe('team health', () => {
     expect(derivePrimaryTeamStatus(deriveTeamHealth(base({ roomCode: 'ABC123', identityMismatchCount: 1, conflicts: [{ filePath: 'a', opHash: 'a'.repeat(64), author: 'A', timestamp: 1, localContent: '' }] })))).toBe('identity-mismatch')
     expect(derivePrimaryTeamStatus(deriveTeamHealth(base({ status: 'stopped', roomCode: 'ABC123', peers: [peer] })))).toBe('watcher-stopped')
   })
-  it('creates safe diagnostics from an explicit whitelist', () => {
-    const text = formatDiagnostics(deriveTeamHealth(base({ roomCode: 'ABC123', directAddress: '127.0.0.1:1', ops: [{ id: 'x', hash: 'x', author: 'A', parentHashes: [], timestamp: 1, filePath: 'secret.env', diff: 'TOKEN=never-copy' }] })), 'ABC123')
-    expect(text).toContain('Room: ABC123')
+  it('regression: creates diagnostics without room authentication material', () => {
+    const roomCode = 'ABC123'
+    const text = formatDiagnostics(deriveTeamHealth(base({ roomCode, directAddress: '127.0.0.1:1', ops: [{ id: 'x', hash: 'x', author: 'A', parentHashes: [], timestamp: 1, filePath: 'secret.env', diff: 'TOKEN=never-copy' }] })))
+    expect(text).not.toContain(roomCode)
+    expect(text).not.toContain('Room:')
     expect(text).not.toContain('TOKEN=')
     expect(text).not.toContain('secret.env')
+  })
+  it('does not attribute legacy provenance to local activity', () => {
+    const health = deriveTeamHealth(base({ ops: [{ id: 'legacy', hash: 'legacy', author: 'Old data', parentHashes: [], timestamp: 1, filePath: 'a.ts', diff: '', source: 'unknown' }] }))
+    expect(health.lastLocalActivityAt).toBeUndefined()
+    expect(health.lastRemoteActivityAt).toBeUndefined()
   })
 })

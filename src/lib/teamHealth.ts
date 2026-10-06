@@ -55,7 +55,8 @@ export function deriveTeamHealth(input: TeamHealthInput): TeamHealth {
       : connectedPeerCount > 0 ? 'connected'
         : offlinePeerCount > 0 ? 'offline'
           : 'room-ready'
-  const lastLocalActivityAt = latest(input.ops.filter((op) => op.source !== 'remote'))
+  // 未標記的歷史操作不可錯誤地算成本機活動。
+  const lastLocalActivityAt = latest(input.ops.filter((op) => op.source === 'local'))
   const lastRemoteActivityAt = latest(input.ops.filter((op) => op.source === 'remote'))
   return {
     localWatch: input.status === 'watching' ? 'watching' : 'stopped',
@@ -86,13 +87,13 @@ export function derivePrimaryTeamStatus(health: TeamHealth): PrimaryTeamStatus {
 }
 
 /** 僅白名單目前狀態，避免診斷複製任意 store 或敏感設定。 */
-export function formatDiagnostics(health: TeamHealth, roomCode: string): string {
+export function formatDiagnostics(health: TeamHealth): string {
   const connection = health.connection === 'not-in-room' ? 'Local only' : health.connection
   return [
     'Cairn Diagnostics',
     `Local watcher: ${health.localWatch}`,
     `Team: ${connection}`,
-    ...(roomCode ? [`Room: ${roomCode}`] : []),
+    // 邀請碼是房間認證材料；診斷、剪貼簿與問題回報絕不包含它。
     `Role: ${health.isHost ? 'Host' : 'Guest'}`,
     `Peers: ${health.connectedPeerCount} connected, ${health.reconnectingPeerCount} reconnecting, ${health.offlinePeerCount} offline`,
     `Connection: ${health.connectionMethod ?? '—'}`,

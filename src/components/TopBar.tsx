@@ -51,7 +51,7 @@ export function TopBar({ folder, roomCode, status, onSwitchProject }: TopBarProp
   const peerCount = health.connectedPeerCount
   const primaryLabel = primaryCopy(primary, t, peerCount, health.unresolvedConflictCount)
   const copyDiagnostics = async (): Promise<void> => {
-    const result = await window.cairn.copyToClipboard(formatDiagnostics(health, roomCode))
+    const result = await window.cairn.copyToClipboard(formatDiagnostics(health))
     if (result.ok) { setCopied(true); window.setTimeout(() => setCopied(false), 1_500) }
   }
 
