@@ -14,10 +14,14 @@ import Database from 'better-sqlite3'
 
 import { ensureCairnDataDir } from '../data-dir'
 import { computeHash, CURRENT_OP_HASH_VERSION, deriveOpKind, LEGACY_OP_HASH_VERSION } from './hash'
-import type { NewOp, Op, OpKind, Oplog, RemoteOpApplyState } from './types'
+import type { NewOp, Op, OpKind, Oplog, OpSource, RemoteOpApplyState } from './types'
 
 interface HashRow {
   hash: string
+}
+
+interface OpIndexRow extends HashRow {
+  source: OpSource | null
 }
 
 interface RemoteApplyRow {
@@ -34,7 +38,8 @@ const CREATE_SCHEMA = `
     author TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
     file_path TEXT NOT NULL,
-    blob_hash TEXT
+    blob_hash TEXT,
+    source TEXT CHECK (source IN ('local', 'remote', 'unknown') OR source IS NULL)
   );
   CREATE INDEX IF NOT EXISTS idx_ops_timestamp ON ops(timestamp DESC);
   CREATE TABLE IF NOT EXISTS remote_op_apply (
@@ -88,7 +93,7 @@ class SqliteOplog implements Oplog {
     mkdirSync(this.objectsRoot, { recursive: true })
     this.database = new Database(join(dataRoot, 'oplog.db'))
     this.database.exec(CREATE_SCHEMA)
-    this.migrateBlobHashColumn()
+    this.migrateOpsColumns()
   }
 
   putOp(input: NewOp | Op): Op {
@@ -105,14 +110,14 @@ class SqliteOplog implements Oplog {
     this.assertOpen('getOp')
 
     const indexed = this.database
-      .prepare('SELECT hash FROM ops WHERE hash = ?')
-      .get(hash) as HashRow | undefined
+      .prepare('SELECT hash, source FROM ops WHERE hash = ?')
+      .get(hash) as OpIndexRow | undefined
 
     if (!indexed) {
       return undefined
     }
 
-    return this.readObject(hash)
+    return this.readObject(hash, indexed.source ?? 'unknown')
   }
 
   hasReceivedOp(hash: string): boolean {
@@ -145,7 +150,7 @@ class SqliteOplog implements Oplog {
          ORDER BY ops.timestamp ASC, ops.hash ASC`,
       )
       .all() as HashRow[]
-    return rows.map(({ hash }) => ({ ...this.readObject(hash), source: 'remote' }))
+    return rows.map(({ hash }) => this.readObject(hash, 'remote'))
   }
 
   setRemoteOpTargetContentHash(hash: string, targetContentHash: string): void {
@@ -208,6 +213,7 @@ class SqliteOplog implements Oplog {
       ...canonicalInput,
       hash: computedHash,
       kind: canonicalInput.kind,
+      source: receivedRemotely ? 'remote' : canonicalInput.source ?? 'local',
     }
     const objectPath = this.objectPath(op.hash)
 
@@ -218,10 +224,10 @@ class SqliteOplog implements Oplog {
     const persist = this.database.transaction(() => {
       this.database
         .prepare(
-          `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null)
+        .run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null, receivedRemotely ? 'remote' : op.source ?? 'local')
       if (receivedRemotely) {
         this.database
           .prepare("INSERT OR IGNORE INTO remote_op_apply (hash, state) VALUES (?, 'received')")
@@ -289,13 +295,13 @@ class SqliteOplog implements Oplog {
 
     const rows = this.database
       .prepare(
-        `SELECT hash FROM ops
+        `SELECT hash, source FROM ops
          ORDER BY timestamp DESC, hash ASC
          LIMIT ?`,
       )
-      .all(limit) as HashRow[]
+      .all(limit) as OpIndexRow[]
 
-    return rows.map(({ hash }) => this.readObject(hash))
+    return rows.map(({ hash, source }) => this.readObject(hash, source ?? 'unknown'))
   }
 
   listAllHashes(): string[] {
@@ -312,10 +318,10 @@ class SqliteOplog implements Oplog {
     this.assertOpen('listBlobs')
 
     const rows = this.database
-      .prepare('SELECT hash FROM ops WHERE blob_hash IS NOT NULL ORDER BY timestamp ASC, hash ASC')
-      .all() as HashRow[]
+      .prepare('SELECT hash, source FROM ops WHERE blob_hash IS NOT NULL ORDER BY timestamp ASC, hash ASC')
+      .all() as OpIndexRow[]
 
-    return rows.map(({ hash }) => this.readObject(hash))
+    return rows.map(({ hash, source }) => this.readObject(hash, source ?? 'unknown'))
   }
 
   close(): void {
@@ -337,9 +343,15 @@ class SqliteOplog implements Oplog {
     return join(this.objectsRoot, hash.slice(0, 2), hash)
   }
 
-  private migrateBlobHashColumn(): void {
+  private migrateOpsColumns(): void {
     try {
       this.database.exec('ALTER TABLE ops ADD COLUMN blob_hash TEXT')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!message.includes('duplicate column name')) throw error
+    }
+    try {
+      this.database.exec("ALTER TABLE ops ADD COLUMN source TEXT CHECK (source IN ('local', 'remote', 'unknown') OR source IS NULL)")
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (!message.includes('duplicate column name')) throw error
@@ -347,12 +359,12 @@ class SqliteOplog implements Oplog {
     this.database.exec('CREATE INDEX IF NOT EXISTS idx_ops_blob_hash ON ops(blob_hash)')
   }
 
-  private readObject(hash: string): Op {
+  private readObject(hash: string, source: OpSource = 'unknown'): Op {
     const objectPath = this.objectPath(hash)
 
     try {
       const op = JSON.parse(readFileSync(objectPath, 'utf8')) as Op
-      return op.kind ? op : { ...op, kind: inferKind(op.diff) }
+      return { ...(op.kind ? op : { ...op, kind: inferKind(op.diff) }), source }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       throw new Error(

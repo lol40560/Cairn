@@ -1,4 +1,6 @@
 export type OpKind = 'created' | 'deleted' | 'modified'
+/** 來源是接收端本機 metadata，不屬於分散式 operation identity。 */
+export type OpSource = 'local' | 'remote' | 'unknown'
 /**
  * 操作物件的雜湊格式版本。未標記的歷史物件一律視為 v1，
  * 避免在升級後重新解讀既有物件名稱或 SQLite 索引。
@@ -25,7 +27,7 @@ export interface Op {
   /** 二進制檔案的位元組大小，並参与 v2 hash。 */
   size?: number
   /** 本機來源標記，絕不參與分散式操作 identity。 */
-  source?: 'local' | 'remote'
+  source?: OpSource
 }
 
 export interface NewOp {
@@ -45,7 +47,7 @@ export interface NewOp {
   blobHash?: string
   /** 二進制檔案的位元組大小，並参与 v2 hash。 */
   size?: number
-  source?: 'local' | 'remote'
+  source?: Exclude<OpSource, 'unknown'>
 }
 
 export interface Oplog {

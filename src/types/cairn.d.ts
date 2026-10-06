@@ -9,7 +9,8 @@ export interface Op {
   /** 必须与 electron/core/oplog/types.ts 的 OpKind 保持一致。 */
   kind?: 'created' | 'deleted' | 'modified'
   baseHash?: string
-  source?: 'local' | 'remote'
+  /** 舊版資料沒有可信來源，不能歸因為本機或隊友。 */
+  source?: 'local' | 'remote' | 'unknown'
 }
 
 export interface PeerInfo {

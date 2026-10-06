@@ -161,10 +161,10 @@ describe('oplog', () => {
     expect(oplog.listAllHashes()).toEqual([earlier.hash, later.hash])
   })
 
-  it('source 不参与 hash 且对象文件不存储 source', async () => {
+  it('regression: source 不参与 hash，但会作为本机 provenance 持久化', async () => {
     const { projectRoot, oplog } = await createFixture()
     const local = oplog.putOp({ ...newOp(), source: 'local' })
-    const remote = oplog.putOp({ ...newOp(), source: 'remote' })
+    const remote = oplog.putReceivedRemoteOp({ ...newOp({ id: 'remote', timestamp: 2 }), source: 'local' })
     const objectPath = join(
       projectRoot,
       '.cairn',
@@ -173,11 +173,32 @@ describe('oplog', () => {
       local.hash,
     )
 
-    expect(local.hash).toBe(remote.hash)
     expect(local.source).toBe('local')
     expect(remote.source).toBe('remote')
     expect(JSON.parse(await readFile(objectPath, 'utf8'))).not.toHaveProperty('source')
-    expect(oplog.getOp(local.hash)?.source).toBeUndefined()
+    expect(oplog.getOp(local.hash)?.source).toBe('local')
+    expect(oplog.getOp(remote.hash)?.source).toBe('remote')
+
+    oplog.close()
+    const reopened = createOplog(projectRoot)
+    expect(reopened.getOp(local.hash)?.source).toBe('local')
+    expect(reopened.getOp(remote.hash)?.source).toBe('remote')
+    reopened.close()
+  })
+
+  it('regression: legacy objects without provenance remain unknown after reload', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const legacy = oplog.putOp(newOp({ hashVersion: LEGACY_OP_HASH_VERSION, id: 'legacy-source' }))
+    oplog.close()
+
+    const databasePath = join(projectRoot, '.cairn', 'oplog.db')
+    const database = new Database(databasePath)
+    database.prepare('UPDATE ops SET source = NULL WHERE hash = ?').run(legacy.hash)
+    database.close()
+
+    const reopened = createOplog(projectRoot)
+    expect(reopened.getOp(legacy.hash)?.source).toBe('unknown')
+    reopened.close()
   })
 
   it('regression: 旧版 v1 对象保持可读，且从 diff 推导类型', async () => {
@@ -256,7 +277,8 @@ describe('oplog', () => {
       stored.hash,
     )
 
-    expect(JSON.parse(await readFile(objectPath, 'utf8'))).toEqual(stored)
+    const { source: _source, ...distributedOp } = stored
+    expect(JSON.parse(await readFile(objectPath, 'utf8'))).toEqual(distributedOp)
   })
 
   it('重复 putOp 时幂等且不改写对象文件', async () => {

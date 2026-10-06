@@ -54,7 +54,7 @@ export function getConflictRisk({ filePath, ops, conflicts, dirty = false, now =
 
   const contributors = recentFileContributors(ops, filePath, now)
   const remoteOps = ops.filter((op) => op.filePath === filePath && op.source === 'remote' && op.timestamp >= now - RECENT_COLLABORATION_WINDOW_MS)
-  const localOps = ops.filter((op) => op.filePath === filePath && op.source !== 'remote' && op.timestamp >= now - RECENT_COLLABORATION_WINDOW_MS)
+  const localOps = ops.filter((op) => op.filePath === filePath && op.source === 'local' && op.timestamp >= now - RECENT_COLLABORATION_WINDOW_MS)
   const names = contributors.map((contributor) => contributor.author)
   const latestActivityAt = contributors[0]?.lastChangedAt ?? 0
   if (remoteOps.length === 0) return { level: 'none', filePath, contributors: names, reasons: [], latestActivityAt }

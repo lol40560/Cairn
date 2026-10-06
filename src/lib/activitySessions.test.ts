@@ -71,6 +71,14 @@ describe('groupActivitySessions', () => {
     expect(sessions[0]).toMatchObject({ totalAdded: 2, totalRemoved: 1 })
   })
 
+  it('regression: legacy provenance is not attributed to me', () => {
+    const sessions = groupActivitySessions([
+      createOp({ hash: 'legacy', source: 'unknown', timestamp: 1_000 }),
+    ])
+
+    expect(sessions[0]?.attribution).toBe('unknown')
+  })
+
   it('is stable for unordered input, empty input, and a large history', () => {
     const input = Array.from({ length: 400 }, (_, index) => createOp({
       filePath: `src/${index % 5}.ts`,
