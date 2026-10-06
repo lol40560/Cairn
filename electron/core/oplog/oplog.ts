@@ -68,7 +68,7 @@ function canonicalize(input: NewOp | Op): NewOp {
     hashVersion: isStoredOp(input)
       ? input.hashVersion ?? LEGACY_OP_HASH_VERSION
       : input.hashVersion ?? CURRENT_OP_HASH_VERSION,
-    source: input.source,
+    source: input.source === 'unknown' ? undefined : input.source,
   }
 }
 
