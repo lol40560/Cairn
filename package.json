@@ -2,6 +2,7 @@
   "name": "cairn",
   "version": "1.8.0",
   "private": true,
+  "author": "Quentin Chih",
   "description": "Local-first collaboration for vibecoding teams",
   "license": "MIT",
   "main": "out/main/main.js",
