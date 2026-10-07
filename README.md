@@ -41,7 +41,7 @@ Every file change appears here in real time. Click any row to see the full diff.
 
 Browse your project, preview files with syntax highlighting, and edit directly in Cairn.
 
-The current UI also includes grouped Activity sessions, Team Health, Conflict Center, Checkpoints, and Hackathon Mode. Replace the three screenshots above with current captures before a public announcement; the existing images predate those screens.
+The current UI also includes grouped Activity sessions, Team Health, Conflict Center, Checkpoints, and Hackathon Mode.
 
 ## Download
 
