@@ -4,7 +4,7 @@ import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import Database from 'better-sqlite3'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
@@ -14,7 +14,7 @@ import { CheckpointManager } from './core/checkpoints'
 import type { Checkpoint, CheckpointComparison, CheckpointFileContents, CheckpointSource } from './core/checkpoints'
 import { computeProjectIdentity } from './core/identity'
 import type { ProjectIdentity } from './core/identity'
-import { AppError, wrapIpcHandler } from './core/errors'
+import { AppError, serializeAppError, type IpcResult, wrapIpcHandler as wrapUncheckedIpcHandler } from './core/errors'
 import { prepareSafeProjectWritePath, resolveSafeProjectPath } from './core/fs/project-path'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
@@ -121,6 +121,41 @@ function guardRealWorkspaceAction<Args extends unknown[], Result>(
   return (...args) => {
     requireRealWorkspaceCapability()
     return fn(...args)
+  }
+}
+
+/**
+ * 所有 renderer IPC 都必须来自当前主窗口的主 frame。
+ * Electron 总会提供 sender；缺少 sender 的调用一律拒绝。
+ */
+export function isTrustedIpcSender(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'> | Record<string, never>): boolean {
+  if (!('sender' in event)) return false
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false
+
+  const url = event.senderFrame.url
+  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  if (developmentUrl) {
+    try {
+      return new URL(url).origin === new URL(developmentUrl).origin
+    } catch {
+      return false
+    }
+  }
+  return new URL(url).protocol === 'file:'
+}
+
+/** 统一先验证 renderer 身份，再进入 simulation capability 与业务参数检查。 */
+function wrapIpcHandler<Args extends unknown[], Result>(
+  fn: (...args: Args) => Result | Promise<Result>,
+): (event: IpcMainInvokeEvent, ...args: Args) => Promise<IpcResult<Result>> {
+  const wrapped = wrapUncheckedIpcHandler(fn)
+  return async (event, ...args) => {
+    if (!isTrustedIpcSender(event)) {
+      const error = new AppError('未经授权的 renderer IPC 调用', 'permission', { code: 'IPC_UNTRUSTED_SENDER' })
+      return { ok: false, error: serializeAppError(error) }
+    }
+    return wrapped(event, ...args)
   }
 }
 
@@ -1283,10 +1318,22 @@ export function createWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
   mainWindow = window
+
+  // Cairn 不需要 renderer navigation、弹窗或 Web permissions；一律在主进程收紧。
+  window.webContents.on('will-navigate', (event) => event.preventDefault())
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      if (new URL(url).protocol === 'https:') void shell.openExternal(url)
+    } catch {
+      // 非 URL 直接拒绝。
+    }
+    return { action: 'deny' }
+  })
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
   window.once('ready-to-show', () => window.show())
   window.once('closed', () => {

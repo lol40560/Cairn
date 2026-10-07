@@ -20,7 +20,11 @@ const mocks = vi.hoisted(() => {
     }),
     show: vi.fn(),
     webContents: {
+      mainFrame: { url: 'file:///renderer/index.html' },
+      on: vi.fn(),
       send: vi.fn(),
+      session: { setPermissionRequestHandler: vi.fn() },
+      setWindowOpenHandler: vi.fn(),
     },
   }
   const BrowserWindow = vi.fn(function BrowserWindow() {
@@ -125,7 +129,14 @@ const mocks = vi.hoisted(() => {
     handlers,
     ipcMain: {
       handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers.set(channel, handler)
+        handlers.set(channel, (event: unknown, ...args: unknown[]) => {
+          // 旧测试直接传入 {}；真实 Electron 永远提供 sender 与 main frame。
+          if (!event || typeof event !== 'object' || !('sender' in event)) currentMain?.createWindow()
+          const trustedEvent = event && typeof event === 'object' && 'sender' in event
+            ? event
+            : { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+          return handler(trustedEvent, ...args)
+        })
       }),
     },
     ipcRenderer: {
@@ -917,6 +928,62 @@ describe('IPC bridge', () => {
     })
 
     expect(mocks.window.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('regression: privileged IPC rejects an untrusted renderer before side effects', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    main.registerIpcHandlers()
+    const handler = mocks.handlers.get('cairn:setSimulationMode')
+    const untrustedEvent = {
+      sender: { mainFrame: { url: 'file:///renderer/index.html' } },
+      senderFrame: { url: 'file:///renderer/index.html' },
+    }
+
+    await expect(handler?.(untrustedEvent, true)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'IPC_UNTRUSTED_SENDER' },
+    })
+    expect(main.isTrustedIpcSender(untrustedEvent as never)).toBe(false)
+    expect(main.isTrustedIpcSender({})).toBe(false)
+  })
+
+  it('regression: only the main frame of the current window is trusted', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    const subframe = { url: 'file:///renderer/frame.html' }
+    expect(main.isTrustedIpcSender({
+      sender: mocks.window.webContents,
+      senderFrame: subframe,
+    } as never)).toBe(false)
+    expect(main.isTrustedIpcSender({
+      sender: mocks.window.webContents,
+      senderFrame: mocks.window.webContents.mainFrame,
+    } as never)).toBe(true)
+    expect(mocks.BrowserWindow).toHaveBeenLastCalledWith(expect.objectContaining({
+      webPreferences: expect.objectContaining({
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      }),
+    }))
+  })
+
+  it('regression: navigation, popup, and web permissions are denied by default', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    const navigate = mocks.window.webContents.on.mock.calls.find((call: unknown[]) => call[0] === 'will-navigate')?.[1]
+    const preventDefault = vi.fn()
+    navigate?.({ preventDefault })
+    expect(preventDefault).toHaveBeenCalledOnce()
+
+    const openHandler = mocks.window.webContents.setWindowOpenHandler.mock.calls[0]?.[0]
+    expect(openHandler?.({ url: 'https://example.test/' })).toEqual({ action: 'deny' })
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith('https://example.test/')
+    const permissionHandler = mocks.window.webContents.session.setPermissionRequestHandler.mock.calls[0]?.[0]
+    const callback = vi.fn()
+    permissionHandler?.({}, 'camera', callback)
+    expect(callback).toHaveBeenCalledWith(false)
   })
 
   it('preload 只暴露契约白名单 API', async () => {
