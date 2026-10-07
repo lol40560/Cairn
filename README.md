@@ -153,7 +153,7 @@ npm run dist:win    # build Windows app (on Windows)
 
 ## Privacy
 
-Cairn is local-first. We don't collect any data. See [PRIVACY.md](./PRIVACY.md).
+Cairn is local-first and has no developer-operated telemetry or backend collection. Collaboration and GitHub export transmit data only when you choose to use those features. See [PRIVACY.md](./PRIVACY.md).
 
 ## License
 

@@ -9,7 +9,8 @@ describe('PrivacyDialog', () => {
     const html = renderToStaticMarkup(<PrivacyDialog open onClose={() => undefined} />)
 
     expect(html).toContain('Privacy Policy')
-    expect(html).toContain('What we collect')
+    expect(html).toContain('Data Cairn Does Not Collect')
+    expect(html).toContain('Peer-to-Peer Collaboration')
     expect(html).toContain('Open on GitHub')
     expect(html).toContain('Close')
   })
