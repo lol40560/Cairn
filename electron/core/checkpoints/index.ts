@@ -1,10 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { extname, join } from 'node:path'
-import { mkdir, readdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rename, rm, unlink, writeFile } from 'node:fs/promises'
 
-import { assertSafeProjectRelativePath, prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
-import { readZipEntries } from '../snapshot/extract'
+import { assertNoCaseCollisions, assertSafeProjectRelativePath, isCaseInsensitiveFilesystem, prepareSafeProjectWritePath, resolveSafeProjectPath } from '../fs/project-path'
+import { readZipEntries, readZipEntryContents } from '../snapshot/extract'
 import { packageProjectAsZip } from '../snapshot/export'
 
 export type CheckpointSource = 'manual' | 'auto-before-restore' | 'auto-before-revert' | 'auto-before-conflict-resolution'
@@ -45,6 +45,11 @@ export interface CreateCheckpointOptions {
   source?: CheckpointSource
 }
 
+export interface CheckpointManagerOptions {
+  /** 測試用能力注入；省略時探測實際 project volume。 */
+  caseInsensitiveFilesystem?: boolean
+}
+
 interface CheckpointManifest extends Checkpoint {
   skippedCount: number
 }
@@ -58,7 +63,10 @@ const TEXT_EXTENSIONS = new Set([
  * 已納入 snapshot 的檔案，不會觸碰 ignored 或未知檔案。
  */
 export class CheckpointManager {
-  constructor(private readonly projectRoot: string) {}
+  constructor(
+    private readonly projectRoot: string,
+    private readonly options: CheckpointManagerOptions = {},
+  ) {}
 
   async list(): Promise<Checkpoint[]> {
     const root = this.checkpointsRoot()
@@ -108,7 +116,8 @@ export class CheckpointManager {
 
   async readComparisonFile(id: string, requestedPath: string): Promise<CheckpointFileContents> {
     const path = this.assertRelativePath(requestedPath)
-    const [targetEntries, currentEntries] = await Promise.all([this.readCheckpointEntries(id), this.currentEntries()])
+    const [targetFiles, currentEntries] = await Promise.all([this.readCheckpointFiles(id), this.currentEntries()])
+    const targetEntries = new Map([...targetFiles].map(([path, entry]) => [path, entry.content]))
     const checkpointContent = targetEntries.get(path)
     const currentContent = currentEntries.get(path)
     if (!checkpointContent && !currentContent) throw new Error(`Checkpoint file not found: ${path}`)
@@ -123,7 +132,12 @@ export class CheckpointManager {
 
   /** 呼叫端必須先建立 recovery checkpoint；此方法只處理受 snapshot 管理的檔案。 */
   async restore(id: string, expectedCurrentRevision?: string): Promise<{ removed: number; restored: number }> {
-    const [targetEntries, currentEntries] = await Promise.all([this.readCheckpointEntries(id), this.currentEntries()])
+    const [targetFiles, currentEntries] = await Promise.all([this.readCheckpointFiles(id), this.currentEntries()])
+    const targetEntries = new Map([...targetFiles].map(([path, entry]) => [path, entry.content]))
+    assertNoCaseCollisions(
+      [...targetEntries.keys(), ...currentEntries.keys()],
+      this.options.caseInsensitiveFilesystem ?? await isCaseInsensitiveFilesystem(this.projectRoot),
+    )
     const currentRevision = revisionFor(currentEntries)
     if (expectedCurrentRevision && expectedCurrentRevision !== currentRevision) {
       throw new Error('Project changed since the restore preview. Review the checkpoint again.')
@@ -142,10 +156,17 @@ export class CheckpointManager {
       }
     }
     for (const [path, content] of targetEntries) {
-      if (currentEntries.get(path)?.equals(content)) continue
       try {
+        if (currentEntries.get(path)?.equals(content)) {
+          await restoreExecutableMode(
+            await resolveSafeProjectPath(this.projectRoot, this.assertRelativePath(path)),
+            targetFiles.get(path)?.mode ?? '100644',
+          )
+          continue
+        }
         const destination = await prepareSafeProjectWritePath(this.projectRoot, this.assertRelativePath(path))
         await writeFile(destination, content)
+        await restoreExecutableMode(destination, targetFiles.get(path)?.mode ?? '100644')
         restored += 1
       } catch (error) {
         failedFiles.push(`${path}: ${error instanceof Error ? error.message : String(error)}`)
@@ -184,6 +205,11 @@ export class CheckpointManager {
     return readZipEntries(await readFile(join(this.checkpointDirectory(id), 'snapshot.zip')))
   }
 
+  private async readCheckpointFiles(id: string) {
+    await this.readCheckpoint(id)
+    return readZipEntryContents(await readFile(join(this.checkpointDirectory(id), 'snapshot.zip')))
+  }
+
   private assertRelativePath(path: string): string {
     return assertSafeProjectRelativePath(path)
   }
@@ -194,6 +220,11 @@ export class CheckpointManager {
   }
 
   private checkpointsRoot(): string { return join(this.projectRoot, '.cairn', 'checkpoints') }
+}
+
+async function restoreExecutableMode(path: string, mode: '100644' | '100755'): Promise<void> {
+  if (process.platform === 'win32') return
+  await chmod(path, mode === '100755' ? 0o755 : 0o644)
 }
 
 function checkpointName(name: string | undefined): string {

@@ -7,7 +7,12 @@ import { merge } from 'node-diff3'
 
 import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
-import { prepareSafeProjectWritePath, resolveSafeProjectPath, UnsafeProjectPathError } from '../fs/project-path'
+import {
+  assertNoCaseCollisionForWrite,
+  prepareSafeProjectWritePath,
+  resolveSafeProjectPath,
+  UnsafeProjectPathError,
+} from '../fs/project-path'
 import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
@@ -27,6 +32,8 @@ export interface SyncOptions {
   identity?: ProjectIdentity
   /** 用于持久化等待文件基线的远端操作。 */
   projectRoot?: string
+  /** 僅測試用：覆寫 destination volume 的大小寫能力。 */
+  caseInsensitiveFilesystem?: boolean
 }
 
 export interface SyncStartOptions {
@@ -590,6 +597,10 @@ export class Sync extends EventEmitter {
       throw new Error(`拒绝同步敏感文件：${op.filePath}`)
     }
 
+    if (op.blobHash && op.contentEncoding === 'full-text-blob') {
+      return this.applyRemoteTextBlobOp(op, retryPending)
+    }
+
     if (op.blobHash) {
       return this.applyRemoteBinaryOp(op, retryPending)
     }
@@ -707,6 +718,31 @@ export class Sync extends EventEmitter {
     return true
   }
 
+  /** 大型 UTF-8 文字以 blob 到達後再整體寫入，仍走文字 baseline 與 conflict 語義。 */
+  private async applyRemoteTextBlobOp(
+    op: import('../oplog').Op,
+    retryPending: boolean,
+  ): Promise<boolean> {
+    const blobStore = this.options.blobStore
+    const blobHash = op.blobHash
+    if (!blobStore || !blobHash) {
+      throw new Error(`无法应用大型文字 op：缺少 BlobStore 或 blob hash（${op.filePath}）`)
+    }
+    if (!await blobStore.has(blobHash)) {
+      await this.pendingOps?.add(op)
+      this.broadcast({ type: 'want-blob', hash: blobHash })
+      return false
+    }
+    const content = await blobStore.get(blobHash)
+    if (!content) throw new Error(`大型文字 blob 在存在检查后丢失：${blobHash}`)
+    const text = content.toString('utf8')
+    // Watcher 寫入時由 UTF-8 字串生成 blob；拒絕不可逆的位元組，避免二進位偽裝成文字。
+    if (!Buffer.from(text, 'utf8').equals(content)) {
+      throw new Error(`大型文字 blob 不是有效 UTF-8：${op.filePath}`)
+    }
+    return this.writeAndCompleteRemoteOp(op, text, retryPending)
+  }
+
   private async announceBlobs(peerId: string): Promise<void> {
     const blobStore = this.options.blobStore
     if (!blobStore) return
@@ -816,6 +852,9 @@ export class Sync extends EventEmitter {
       return
     }
 
+    await assertNoCaseCollisionForWrite(projectRoot, relativePath, {
+      caseInsensitive: this.options.caseInsensitiveFilesystem,
+    })
     await resolveSafeProjectPath(projectRoot, relativePath)
   }
 

@@ -1,8 +1,11 @@
 import { createRequire } from 'node:module'
-import { readFile, writeFile } from 'node:fs/promises'
+import { chmod, readFile, writeFile } from 'node:fs/promises'
+import { platform } from 'node:process'
 
 import {
+  assertNoCaseCollisions,
   assertSafeProjectRelativePath,
+  isCaseInsensitiveFilesystem,
   prepareSafeProjectWritePath,
   resolveSafeProjectPath,
 } from '../fs/project-path'
@@ -20,8 +23,16 @@ export interface ExtractOptions {
   onFile?: (relativePath: string) => void
   overwrite?: boolean
   skip?: (relativePath: string) => boolean
+  /** 僅供測試注入目標檔案系統能力；production 會在目標 volume 實測。 */
+  caseInsensitive?: boolean
   /** 测试或受控调用可收紧资源上限；生产环境使用默认硬上限。 */
   limits?: SnapshotExtractionLimitOverrides
+}
+
+/** ZIP 條目內容及 Cairn 需要保留的最小 POSIX 語義。 */
+export interface ZipEntryContents {
+  content: Buffer
+  mode: '100644' | '100755'
 }
 
 /** 以 Buffer 读取 ZIP 条目，供 checkpoint 比较使用；仍沿用同一条 Zip Slip 防线。 */
@@ -29,15 +40,27 @@ export async function readZipEntries(
   buffer: Buffer,
   limitsOverride?: SnapshotExtractionLimitOverrides,
 ): Promise<Map<string, Buffer>> {
+  const entries = await readZipEntryContents(buffer, limitsOverride)
+  return new Map([...entries].map(([path, entry]) => [path, entry.content]))
+}
+
+/**
+ * 與 readZipEntries 使用相同的 Zip Slip / 解壓上限，但同時保留 executable
+ * 語義給 checkpoint 還原。舊 ZIP 缺少 Unix mode 時安全回退為 100644。
+ */
+export async function readZipEntryContents(
+  buffer: Buffer,
+  limitsOverride?: SnapshotExtractionLimitOverrides,
+): Promise<Map<string, ZipEntryContents>> {
   const limits = resolveSnapshotExtractionLimits(limitsOverride)
-  return new Promise<Map<string, Buffer>>((resolvePromise, rejectPromise) => {
+  return new Promise<Map<string, ZipEntryContents>>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
         rejectPromise(openError ?? new Error('無法開啟 ZIP'))
         return
       }
 
-      const entries = new Map<string, Buffer>()
+      const entries = new Map<string, ZipEntryContents>()
       const budget = createExtractionBudget(limits)
       let completed = false
       const finish = (error?: Error): void => {
@@ -91,7 +114,10 @@ export async function readZipEntries(
           stream.once('error', finish)
           stream.once('end', () => {
             if (completed) return
-            entries.set(relativePath, Buffer.concat(chunks))
+            entries.set(relativePath, {
+              content: Buffer.concat(chunks),
+              mode: executableMode(entry.externalFileAttributes),
+            })
             zipfile.readEntry()
           })
         })
@@ -108,6 +134,8 @@ export async function extractZipBuffer(
   options: ExtractOptions = {},
 ): Promise<void> {
   const limits = resolveSnapshotExtractionLimits(options.limits)
+  const entryPaths = await listZipEntryPaths(buffer, limits)
+  assertNoCaseCollisions(entryPaths, options.caseInsensitive ?? await isCaseInsensitiveFilesystem(targetRoot))
   await new Promise<void>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
@@ -193,6 +221,7 @@ export async function extractZipBuffer(
                 }
                 const writePath = await prepareSafeProjectWritePath(targetRoot, relativePath)
                 await writeFile(writePath, content)
+                await restoreExecutableMode(writePath, entry.externalFileAttributes)
                 options.onFile?.(relativePath)
                 readNext()
               } catch (error) {
@@ -203,6 +232,56 @@ export async function extractZipBuffer(
         })
       })
       readNext()
+    })
+  })
+}
+
+/** ZIP 缺少 Unix mode（舊 snapshot 或 Windows 打包）時安全回退為非可執行檔。 */
+async function restoreExecutableMode(destination: string, externalAttributes: number): Promise<void> {
+  if (platform === 'win32') return
+  await chmod(destination, executableMode(externalAttributes) === '100755' ? 0o755 : 0o644)
+}
+
+function executableMode(externalAttributes: number): '100644' | '100755' {
+  const archivedMode = (externalAttributes >>> 16) & 0o777
+  return (archivedMode & 0o111) === 0 ? '100644' : '100755'
+}
+
+/** 在任何 destination write 前掃描 central directory，先拒絕邏輯路徑碰撞。 */
+async function listZipEntryPaths(buffer: Buffer, limits: SnapshotExtractionLimits): Promise<string[]> {
+  return new Promise<string[]>((resolvePromise, rejectPromise) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
+      if (openError || !zipfile) {
+        rejectPromise(openError ?? new Error('無法開啟 ZIP'))
+        return
+      }
+      const paths: string[] = []
+      let completed = false
+      const finish = (error?: Error): void => {
+        if (completed) return
+        completed = true
+        zipfile.close()
+        if (error) rejectPromise(error)
+        else resolvePromise(paths)
+      }
+      zipfile.on('error', finish)
+      zipfile.on('end', () => finish())
+      zipfile.on('entry', (entry) => {
+        if (/\/$/u.test(entry.fileName)) {
+          zipfile.readEntry()
+          return
+        }
+        const relativePath = entry.fileName.replaceAll('\\', '/')
+        try {
+          assertSafeProjectRelativePath(relativePath)
+          if (paths.length >= limits.maxEntries) throw new Error(`ZIP 条目数量超过 ${limits.maxEntries} 上限`)
+          paths.push(relativePath)
+          zipfile.readEntry()
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+        }
+      })
+      zipfile.readEntry()
     })
   })
 }

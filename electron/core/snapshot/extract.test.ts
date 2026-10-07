@@ -1,11 +1,21 @@
-import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { packageProjectAsZip } from './export'
 import { extractZipBuffer, readZipEntries } from './extract'
+
+const require = createRequire(import.meta.url)
+const { ZipArchive } = require('archiver') as { ZipArchive: new (options: { zlib: { level: number } }) => {
+  append(content: Buffer, options: { name: string }): void
+  finalize(): void
+  on(event: 'error', listener: (error: Error) => void): void
+  pipe(destination: NodeJS.WritableStream): void
+} }
 
 const roots: string[] = []
 const symlinkIt = process.platform === 'win32' ? it.skip : it
@@ -14,6 +24,20 @@ async function createDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix))
   roots.push(directory)
   return directory
+}
+
+async function createZip(entries: Array<{ path: string; content: Buffer }>): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    const output = new Writable({ write(chunk, _encoding, callback) { chunks.push(Buffer.from(chunk)); callback() } })
+    const archive = new ZipArchive({ zlib: { level: 9 } })
+    output.once('finish', () => resolve(Buffer.concat(chunks)))
+    output.once('error', reject)
+    archive.on('error', reject)
+    archive.pipe(output)
+    entries.forEach((entry) => archive.append(entry.content, { name: entry.path }))
+    archive.finalize()
+  })
 }
 
 afterEach(async () => {
@@ -44,6 +68,33 @@ describe('extractZipBuffer', () => {
     await extractZipBuffer(snapshot.buffer, target)
 
     await expect(readFile(join(target, 'src', 'file.ts'), 'utf8')).resolves.toBe('export const value = 1\n')
+  })
+
+  it('regression: restores executable and normal file modes from a snapshot', async () => {
+    const source = await createDirectory('cairn-extract-source-')
+    const target = await createDirectory('cairn-extract-target-')
+    await writeFile(join(source, 'normal.sh'), 'echo normal\n', 'utf8')
+    await writeFile(join(source, 'executable.sh'), 'echo executable\n', 'utf8')
+    if (process.platform !== 'win32') await chmod(join(source, 'executable.sh'), 0o755)
+    const snapshot = await packageProjectAsZip(source)
+
+    await extractZipBuffer(snapshot.buffer, target)
+
+    if (process.platform !== 'win32') {
+      expect((await stat(join(target, 'normal.sh'))).mode & 0o111).toBe(0)
+      expect((await stat(join(target, 'executable.sh'))).mode & 0o111).not.toBe(0)
+    }
+  })
+
+  it('regression: rejects case-colliding ZIP entries before writing on a case-insensitive target', async () => {
+    const target = await createDirectory('cairn-extract-target-')
+    const snapshot = await createZip([
+      { path: 'Foo.ts', content: Buffer.from('upper\n') },
+      { path: 'foo.ts', content: Buffer.from('lower\n') },
+    ])
+
+    await expect(extractZipBuffer(snapshot, target, { caseInsensitive: true })).rejects.toThrow('Case-colliding')
+    await expect(access(join(target, 'Foo.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('regression: rejects ZIP archives with too many file entries before extraction continues', async () => {

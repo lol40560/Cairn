@@ -1,10 +1,14 @@
-import { access, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
+  CaseCollisionError,
+  assertNoCaseCollisionForWrite,
+  assertNoCaseCollisions,
+  isCaseInsensitiveFilesystem,
   UnsafeProjectPathError,
   prepareSafeProjectWritePath,
   resolveSafeProjectPath,
@@ -27,6 +31,19 @@ afterEach(async () => {
 })
 
 describe('project-bound write paths', () => {
+  it('detects case-only logical collisions through the injectable filesystem capability seam', async () => {
+    expect(() => assertNoCaseCollisions(['Foo.ts', 'foo.ts'], true)).toThrow(CaseCollisionError)
+    expect(() => assertNoCaseCollisions(['Foo.ts', 'foo.ts'], false)).not.toThrow()
+    const { project } = await createFixture()
+    await writeFile(join(project, 'foo.ts'), 'existing', 'utf8')
+    await expect(assertNoCaseCollisionForWrite(project, 'Foo.ts', { caseInsensitive: true })).rejects.toBeInstanceOf(CaseCollisionError)
+  })
+
+  it('probes the real project volume without leaving an artifact', async () => {
+    const { project } = await createFixture()
+    await expect(isCaseInsensitiveFilesystem(project)).resolves.toEqual(expect.any(Boolean))
+    expect((await readdir(join(project, '.cairn'))).some((entry) => entry.startsWith('case-probe-'))).toBe(false)
+  })
   it('regression: permits a normal nested write', async () => {
     const { project } = await createFixture()
     const destination = await prepareSafeProjectWritePath(project, 'a/b/file.txt')

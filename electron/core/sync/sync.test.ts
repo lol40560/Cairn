@@ -10,7 +10,7 @@ import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, createOplog, CURRENT_OP_HASH_VERSION, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
-import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodeMessage, SYNC_PROTOCOL_VERSION, type PeerInfo, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodedMessageByteLength, encodeMessage, isSyncMessageWithinLimit, MAX_SYNC_MESSAGE_BYTES, SYNC_PROTOCOL_VERSION, type PeerInfo, type SyncMessage } from './protocol'
 import { Sync } from './sync'
 import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
 import { writeSnapshot } from '../watcher/snapshot'
@@ -200,6 +200,21 @@ describe('sync protocol', () => {
 
     expect(createClientProof('ABCDEF', roomHash, 'ab', 'c')).not.toBe(createClientProof('ABCDEF', roomHash, 'a', 'bc'))
     expect(createClientProof('ABCDEF', roomHash, 'client', 'server')).not.toBe(createServerProof('ABCDEF', roomHash, 'client', 'server'))
+  })
+
+  it('以实际 UTF-8 wire frame 限制 ASCII、CJK 与 emoji 内容', () => {
+    const op = {
+      ...createOp('wire-size'),
+      hash: 'a'.repeat(64),
+      hashVersion: CURRENT_OP_HASH_VERSION,
+    }
+    const ascii = { type: 'data' as const, op: { ...op, diff: 'a'.repeat(128) } }
+    const cjk = { type: 'data' as const, op: { ...op, diff: '漢'.repeat(128) } }
+    const emoji = { type: 'data' as const, op: { ...op, diff: '🧭'.repeat(128) } }
+    expect(encodedMessageByteLength(cjk)).toBeGreaterThan(encodedMessageByteLength(ascii))
+    expect(encodedMessageByteLength(emoji)).toBeGreaterThan(encodedMessageByteLength(cjk))
+    expect(isSyncMessageWithinLimit(ascii)).toBe(true)
+    expect(isSyncMessageWithinLimit({ type: 'data', op: { ...op, diff: '🧭'.repeat(MAX_SYNC_MESSAGE_BYTES) } })).toBe(false)
   })
 })
 
@@ -914,6 +929,49 @@ describe('transport', () => {
   })
 })
 
+describe('large text blob fallback', () => {
+  it('reconstructs an oversized-text fallback byte-for-byte through the normal text baseline path', async () => {
+    const target = await createTestOplog()
+    const store = new BlobStore(target.root)
+    const text = 'ASCII\n繁體中文\nemoji 🧭\n'.repeat(64)
+    const content = Buffer.from(text, 'utf8')
+    const blobHash = await store.put(content)
+    const transport = new MockTransport()
+    const input: NewOp = {
+      ...createOp('large-text'),
+      blobHash,
+      contentEncoding: 'full-text-blob',
+      diff: '',
+      filePath: 'src/large.ts',
+      kind: 'created',
+      size: content.length,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    let written = ''
+    const applyRemoteChange = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange,
+        fileExists: async () => false,
+        readFile: async () => '',
+        writeFile: async (_path, value) => { written = value },
+      },
+    )
+    const remoteOp = waitForEvent<[Op]>(sync, 'remoteOp')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+    await remoteOp
+
+    expect(Buffer.from(written, 'utf8')).toEqual(content)
+    expect(applyRemoteChange).toHaveBeenCalledWith('src/large.ts', text)
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied')
+    await sync.stop()
+  })
+})
+
 describe('Sync', () => {
   it('断线后会重连，并在重连完成后重新交换 have', async () => {
     vi.useFakeTimers()
@@ -1514,6 +1572,43 @@ describe('Sync', () => {
 
     await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('symbolic link') })])
     expect(readFile).not.toHaveBeenCalled()
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('rejected')
+    await sync.stop()
+  })
+
+  it('regression: destination volume 不分大小寫時拒絕 remote op 的 case collision', async () => {
+    const target = await createTestOplog()
+    await writeFile(join(target.root, 'foo.ts'), 'local\n', 'utf8')
+    const transport = new MockTransport()
+    const input = {
+      ...createOp('case-collision'),
+      diff: createTwoFilesPatch('Foo.ts', 'Foo.ts', '', 'remote\n'),
+      filePath: 'Foo.ts',
+      kind: 'created' as const,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const writeRemoteFile = vi.fn(async () => undefined)
+    const sync = new Sync(
+      {
+        caseInsensitiveFilesystem: true,
+        oplog: target.oplog,
+        projectRoot: target.root,
+        roomCode: 'ABCDEF',
+      },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      {
+        applyRemoteChange: vi.fn(async () => undefined),
+        readFile: vi.fn(async () => ''),
+        writeFile: writeRemoteFile,
+      },
+    )
+    const failure = waitForEvent<[Error]>(sync, 'error')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+
+    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('Case-colliding') })])
+    expect(writeRemoteFile).not.toHaveBeenCalled()
     expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('rejected')
     await sync.stop()
   })
