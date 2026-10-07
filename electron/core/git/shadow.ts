@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { access, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import * as git from 'isomorphic-git'
@@ -19,7 +19,9 @@ export interface RemoteInfo {
 }
 
 export interface ShadowFile {
-  content: string
+  content: Buffer
+  /** Git 只需要保存一般檔與 executable 一般檔兩種語義。 */
+  mode: '100644' | '100755'
   path: string
 }
 
@@ -133,9 +135,11 @@ class IsomorphicShadowGit implements ShadowGit {
       })
     }
 
-    const content = await readFile(sourcePath, 'utf8')
+    const [content, sourceStats] = await Promise.all([readFile(sourcePath), stat(sourcePath)])
+    const mode = executableMode(sourceStats.mode)
     await mkdir(dirname(targetPath), { recursive: true })
-    await writeFile(targetPath, content, 'utf8')
+    await writeFile(targetPath, content)
+    await applyExecutableMode(targetPath, mode)
     await git.add({ dir: this.workDir, filepath: op.filePath, fs, gitdir: this.gitDir })
     return git.commit({
       author: { email: `${op.author}@cairn.local`, name: op.author },
@@ -189,7 +193,8 @@ class IsomorphicShadowGit implements ShadowGit {
     for (const file of files) {
       const targetPath = await safeProjectPath(this.workDir, file.path)
       await mkdir(dirname(targetPath), { recursive: true })
-      await writeFile(targetPath, file.content, 'utf8')
+      await writeFile(targetPath, file.content)
+      await applyExecutableMode(targetPath, file.mode)
       await git.add({ dir: this.workDir, filepath: file.path, fs, gitdir: this.gitDir })
     }
 
@@ -242,7 +247,7 @@ class IsomorphicShadowGit implements ShadowGit {
           await visit(entry.oid, path)
         } else if (entry.type === 'blob') {
           const { blob } = await git.readBlob({ fs, gitdir: this.gitDir, oid: entry.oid })
-          files.push({ content: Buffer.from(blob).toString('utf8'), path })
+          files.push({ content: Buffer.from(blob), mode: entry.mode === '100755' ? '100755' : '100644', path })
         }
       }
     }
@@ -259,6 +264,14 @@ class IsomorphicShadowGit implements ShadowGit {
       throw new Error(`影子 Git 已关闭，无法执行 ${operation}`)
     }
   }
+}
+
+function executableMode(mode: number): '100644' | '100755' {
+  return (mode & 0o111) === 0 ? '100644' : '100755'
+}
+
+async function applyExecutableMode(path: string, mode: ShadowFile['mode']): Promise<void> {
+  if (process.platform !== 'win32') await chmod(path, mode === '100755' ? 0o755 : 0o644)
 }
 
 export function createShadowGit(projectRoot: string): ShadowGit {

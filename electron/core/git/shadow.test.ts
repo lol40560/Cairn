@@ -1,4 +1,4 @@
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -67,7 +67,7 @@ describe('ShadowGit', () => {
       { message: '[cairn] Squash 2 commits' },
     ])
     await expect(shadow.listFiles()).resolves.toEqual([
-      { content: 'export const value = 2\n', path: 'sample.ts' },
+      { content: Buffer.from('export const value = 2\n'), mode: '100644', path: 'sample.ts' },
     ])
   })
 
@@ -117,5 +117,19 @@ describe('ShadowGit', () => {
     await shadow.setRemoteInfo(info)
 
     await expect(shadow.getRemoteInfo()).resolves.toEqual(info)
+  })
+
+  it('regression: preserves invalid UTF-8 bytes and executable mode through Shadow Git', async () => {
+    const root = await createProject()
+    const binary = Buffer.from([0x00, 0xff, 0xfe, 0x80, 0xc0, 0xf5, 0x41])
+    await writeFile(join(root, 'tool.bin'), binary)
+    if (process.platform !== 'win32') await chmod(join(root, 'tool.bin'), 0o755)
+    const shadow = createShadowGit(root)
+
+    await shadow.commitOp({ ...createOp('f'.repeat(64)), filePath: 'tool.bin' }, root)
+
+    await expect(shadow.listFiles()).resolves.toEqual([
+      { content: binary, mode: process.platform === 'win32' ? '100644' : '100755', path: 'tool.bin' },
+    ])
   })
 })

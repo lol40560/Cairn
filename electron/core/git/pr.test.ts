@@ -19,7 +19,7 @@ function shadow(): ShadowGit {
     getRemoteInfo: vi.fn(),
     init: vi.fn(),
     listCommits: vi.fn(async () => [{ message: 'one', sha: 'local', timestamp: 1 }]),
-    listFiles: vi.fn(async () => [{ content: 'export const value = 2\n', path: 'sample.ts' }]),
+    listFiles: vi.fn(async () => [{ content: Buffer.from('export const value = 2\n'), mode: '100644' as const, path: 'sample.ts' }]),
     setRemoteInfo: vi.fn(),
     squashCommits: vi.fn(async () => 'squashed'),
   }
@@ -156,5 +156,21 @@ describe('exportPR', () => {
       expect.objectContaining({ ref: 'refs/heads/cairn-manual-1727104500000' }),
     )
     vi.restoreAllMocks()
+  })
+
+  it('regression: exports raw invalid UTF-8 bytes and executable Git mode', async () => {
+    const fake = octokit()
+    const binary = Buffer.from([0x00, 0xff, 0xfe, 0x80, 0xc0, 0xf5, 0x41])
+    const binaryShadow = shadow()
+    binaryShadow.listFiles = vi.fn(async () => [{ content: binary, mode: '100755' as const, path: 'bin/tool' }])
+
+    await exportPR(binaryShadow, options, { octokit: fake.client as never })
+
+    expect(fake.createBlob).toHaveBeenCalledWith(expect.objectContaining({
+      content: binary.toString('base64'), encoding: 'base64',
+    }))
+    expect(fake.createTree).toHaveBeenCalledWith(expect.objectContaining({
+      tree: [{ mode: '100755', path: 'bin/tool', sha: 'blob-sha', type: 'blob' }],
+    }))
   })
 })
