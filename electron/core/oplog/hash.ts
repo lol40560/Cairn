@@ -18,7 +18,7 @@ export function computeHash(input: NewOp): string {
     throw new Error(`不支援的操作 hash 版本：${version}`)
   }
 
-  return createHash('sha256').update(canonicalizeV2OrV3(input, version), 'utf8').digest('hex')
+  return createHash('sha256').update(canonicalizeV2OrV3(input, version as 2 | 3), 'utf8').digest('hex')
 }
 
 /** v2 物件必須以其原本的欄位集合驗證，不能被 v3 靜默重新解讀。 */
