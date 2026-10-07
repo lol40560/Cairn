@@ -1,12 +1,18 @@
-import { createHash, createHmac } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from 'node:crypto'
 
 import type { ProjectIdentity } from '../identity'
 import type { Op } from '../oplog'
 
 /** v2 peer 理解新版操作 identity，避免新舊 hash 格式被靜默混用。 */
-export const SYNC_PROTOCOL_VERSION = 3
+export const SYNC_PROTOCOL_VERSION = 4
 /** 與 Transport 使用同一個 frame hard limit，避免本機產生必定被拒絕的 op。 */
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
+/** 加密 envelope 使用 JSON/base64；此預算保留 tag、sequence 與 framing 空間。 */
+export const MAX_APPLICATION_MESSAGE_BYTES = Math.floor((MAX_SYNC_MESSAGE_BYTES - 256) * 3 / 4) - 4
+export const TRANSPORT_ENCRYPTION_VERSION = 1
+export const TRANSPORT_AEAD_TAG_BYTES = 16
+export const ROOM_SECRET_BYTES = 16
+export const ROOM_SECRET_LENGTH = 26
 /** Blob 分塊遠低於 wire frame 上限，保留 base64 與 JSON framing 餘裕。 */
 export const BLOB_CHUNK_SIZE = 64 * 1024
 /** 文字 fallback 的硬上限；超過此值不會無限制佔用 receiver 記憶體。 */
@@ -24,6 +30,58 @@ export interface SeederInfo {
   snapshotId: string
   projectName: string
   size: number
+}
+
+/** 以 RFC 4648 Base32 格式化 128-bit 房間密鑰，方便安全地複製與人工核對。 */
+export function generateRoomSecret(): string {
+  return encodeRoomSecret(randomBytes(ROOM_SECRET_BYTES))
+}
+
+export function normalizeRoomSecret(value: string): string {
+  const normalized = value.replace(/[\s-]/g, '').toUpperCase()
+  if (!new RegExp(`^[A-Z2-7]{${ROOM_SECRET_LENGTH}}$`).test(normalized)) {
+    throw new Error('邀请码必须是 128-bit Base32 房间密钥')
+  }
+  const decoded = decodeRoomSecret(normalized)
+  if (decoded.length !== ROOM_SECRET_BYTES || encodeRoomSecret(decoded) !== normalized) {
+    throw new Error('邀请码格式无效')
+  }
+  return normalized
+}
+
+function encodeRoomSecret(bytes: Buffer): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0
+  let value = 0
+  let output = ''
+  for (const byte of bytes) {
+    value = (value << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31]
+      bits -= 5
+    }
+  }
+  if (bits > 0) output += alphabet[(value << (5 - bits)) & 31]
+  return output
+}
+
+function decodeRoomSecret(value: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = 0
+  let accumulator = 0
+  const output: number[] = []
+  for (const char of value) {
+    const index = alphabet.indexOf(char)
+    if (index < 0) throw new Error('邀请码格式无效')
+    accumulator = (accumulator << 5) | index
+    bits += 5
+    if (bits >= 8) {
+      output.push((accumulator >>> (bits - 8)) & 0xff)
+      bits -= 8
+    }
+  }
+  return Buffer.from(output)
 }
 
 /** 用于公开发现的短房间标识，绝不暴露邀请码本身。 */
@@ -72,13 +130,122 @@ export function createClientProof(roomCode: string, roomHash: string, clientNonc
     .digest('hex')
 }
 
+export interface TransportSessionKeys {
+  clientToServerKey: Buffer
+  clientToServerNoncePrefix: Buffer
+  serverToClientKey: Buffer
+  serverToClientNoncePrefix: Buffer
+}
+
+/** 認證 transcript 綁定每條連線，HKDF 產生互不相同的雙向金鑰與 nonce prefix。 */
+export function deriveTransportSessionKeys(
+  roomCode: string,
+  roomHash: string,
+  clientNonce: string,
+  serverNonce: string,
+): TransportSessionKeys {
+  const salt = createHash('sha256')
+    .update(authTranscript('cairn-transport-session-v1', roomHash, clientNonce, serverNonce))
+    .digest()
+  const derive = (label: string, length: number): Buffer => Buffer.from(hkdfSync(
+    'sha256', deriveAuthKey(roomCode), salt, Buffer.from(label, 'utf8'), length,
+  ))
+  return {
+    clientToServerKey: derive('cairn-transport-c2s-v1:key', 32),
+    clientToServerNoncePrefix: derive('cairn-transport-c2s-v1:nonce', 4),
+    serverToClientKey: derive('cairn-transport-s2c-v1:key', 32),
+    serverToClientNoncePrefix: derive('cairn-transport-s2c-v1:nonce', 4),
+  }
+}
+
+export type TransportDirection = 'client-to-server' | 'server-to-client'
+
+export interface SecureTransportFrame {
+  type: 'secure'
+  encryptionVersion: typeof TRANSPORT_ENCRYPTION_VERSION
+  sequence: string
+  ciphertext: string
+  tag: string
+}
+
+export function encryptTransportMessage(
+  keys: TransportSessionKeys,
+  direction: TransportDirection,
+  sequence: bigint,
+  message: SyncMessage,
+): SecureTransportFrame {
+  if (message.type === 'secure' || message.type.startsWith('auth-')) {
+    throw new Error('认证或加密 envelope 不能作为加密应用消息发送')
+  }
+  const material = selectDirectionMaterial(keys, direction)
+  const nonce = transportNonce(material.noncePrefix, sequence)
+  const cipher = createCipheriv('aes-256-gcm', material.key, nonce, { authTagLength: TRANSPORT_AEAD_TAG_BYTES })
+  cipher.setAAD(transportAad(direction, sequence))
+  const ciphertext = Buffer.concat([cipher.update(Buffer.from(JSON.stringify(message), 'utf8')), cipher.final()])
+  return {
+    ciphertext: ciphertext.toString('base64'),
+    encryptionVersion: TRANSPORT_ENCRYPTION_VERSION,
+    sequence: sequence.toString(),
+    tag: cipher.getAuthTag().toString('base64'),
+    type: 'secure',
+  }
+}
+
+export function decryptTransportMessage(
+  keys: TransportSessionKeys,
+  direction: TransportDirection,
+  frame: SecureTransportFrame,
+): Exclude<SyncMessage, SecureTransportFrame> {
+  if (frame.encryptionVersion !== TRANSPORT_ENCRYPTION_VERSION) throw new Error('不支援的加密傳輸版本')
+  const sequence = parseTransportSequence(frame.sequence)
+  const material = selectDirectionMaterial(keys, direction)
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', material.key, transportNonce(material.noncePrefix, sequence), { authTagLength: TRANSPORT_AEAD_TAG_BYTES })
+    decipher.setAAD(transportAad(direction, sequence))
+    decipher.setAuthTag(Buffer.from(frame.tag, 'base64'))
+    const plaintext = Buffer.concat([decipher.update(Buffer.from(frame.ciphertext, 'base64')), decipher.final()]).toString('utf8')
+    const message: unknown = JSON.parse(plaintext)
+    if (!isSyncMessage(message) || message.type === 'secure' || message.type.startsWith('auth-')) {
+      throw new Error('加密消息内容无效')
+    }
+    return message as Exclude<SyncMessage, SecureTransportFrame>
+  } catch (error) {
+    throw new Error(`加密消息验证失败：${error instanceof Error ? error.message : String(error)}`, { cause: error })
+  }
+}
+
+export function parseTransportSequence(value: string): bigint {
+  if (!/^(0|[1-9][0-9]{0,19})$/.test(value)) throw new Error('加密消息序号无效')
+  const sequence = BigInt(value)
+  if (sequence > 0xffff_ffff_ffff_ffffn) throw new Error('加密消息序号超出范围')
+  return sequence
+}
+
+function selectDirectionMaterial(keys: TransportSessionKeys, direction: TransportDirection): { key: Buffer; noncePrefix: Buffer } {
+  return direction === 'client-to-server'
+    ? { key: keys.clientToServerKey, noncePrefix: keys.clientToServerNoncePrefix }
+    : { key: keys.serverToClientKey, noncePrefix: keys.serverToClientNoncePrefix }
+}
+
+function transportNonce(prefix: Buffer, sequence: bigint): Buffer {
+  const nonce = Buffer.alloc(12)
+  prefix.copy(nonce, 0)
+  nonce.writeBigUInt64BE(sequence, 4)
+  return nonce
+}
+
+function transportAad(direction: TransportDirection, sequence: bigint): Buffer {
+  return Buffer.from(`cairn-transport-v${TRANSPORT_ENCRYPTION_VERSION}\u0000${direction}\u0000${sequence}`, 'utf8')
+}
+
 export type SyncMessage =
-  | { type: 'hello'; peerId: string; version: 1 | typeof SYNC_PROTOCOL_VERSION; identity?: ProjectIdentity }
+  | { type: 'hello'; peerId: string; version: typeof SYNC_PROTOCOL_VERSION; identity?: ProjectIdentity }
   | { type: 'auth-request'; authVersion: 2; roomHash: string; peerId: string; clientNonce: string }
   | { type: 'auth-challenge'; authVersion: 2; serverNonce: string; serverProof: string }
   | { type: 'auth-response'; authVersion: 2; clientProof: string }
   | { type: 'auth-ok' }
   | { type: 'auth-fail'; reason: string }
+  | SecureTransportFrame
   | { type: 'have'; hash: string }
   | { type: 'want'; hash: string }
   | { type: 'data'; op: Op }
@@ -109,7 +276,7 @@ export function encodedMessageByteLength(message: SyncMessage): number {
 }
 
 export function isSyncMessageWithinLimit(message: SyncMessage): boolean {
-  return encodedMessageByteLength(message) <= MAX_SYNC_MESSAGE_BYTES
+  return encodedMessageByteLength(message) <= MAX_APPLICATION_MESSAGE_BYTES
 }
 
 export function decodeMessages(
@@ -151,7 +318,7 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
     case 'hello':
       return (
         typeof candidate.peerId === 'string' &&
-        (candidate.version === 1 || candidate.version === SYNC_PROTOCOL_VERSION) &&
+        candidate.version === SYNC_PROTOCOL_VERSION &&
         (candidate.identity === undefined || isProjectIdentity(candidate.identity))
       )
     case 'identity-mismatch':
@@ -172,6 +339,11 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
       return true
     case 'auth-fail':
       return typeof candidate.reason === 'string'
+    case 'secure':
+      return candidate.encryptionVersion === TRANSPORT_ENCRYPTION_VERSION
+        && typeof candidate.sequence === 'string'
+        && typeof candidate.ciphertext === 'string'
+        && typeof candidate.tag === 'string'
     case 'have':
     case 'want':
     case 'want-blob':

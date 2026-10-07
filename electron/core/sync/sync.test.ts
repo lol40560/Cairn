@@ -10,9 +10,9 @@ import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, createOplog, CURRENT_OP_HASH_VERSION, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
-import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveAuthKey, deriveRoomHash, encodedMessageByteLength, encodeMessage, isSyncMessageWithinLimit, MAX_SYNC_MESSAGE_BYTES, SYNC_PROTOCOL_VERSION, type PeerInfo, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, decryptTransportMessage, deriveAuthKey, deriveRoomHash, deriveTransportSessionKeys, encryptTransportMessage, encodedMessageByteLength, encodeMessage, generateRoomSecret, isSyncMessageWithinLimit, MAX_APPLICATION_MESSAGE_BYTES, MAX_SYNC_MESSAGE_BYTES, normalizeRoomSecret, SYNC_PROTOCOL_VERSION, type PeerInfo, type SyncMessage, type TransportSessionKeys } from './protocol'
 import { Sync } from './sync'
-import { MAX_SYNC_MESSAGE_BYTES, Transport } from './transport'
+import { Transport } from './transport'
 import { writeSnapshot } from '../watcher/snapshot'
 
 const roots: string[] = []
@@ -35,25 +35,49 @@ async function authenticateRawClient(
   client: Socket,
   peerId = 'sender',
   roomCode = '',
-): Promise<void> {
+): Promise<{ encode(message: SyncMessage): string; onMessage(listener: (message: SyncMessage) => void): void; send(message: SyncMessage): void }> {
   let buffer = ''
   const clientNonce = 'a'.repeat(64)
+  let serverNonce = ''
+  let keys: TransportSessionKeys | undefined
+  let receiveSequence = 0n
+  let sendSequence = 1n
+  const messages = new EventEmitter()
   client.on('data', (chunk: Buffer) => {
     const decoded = decodeMessages(buffer + chunk.toString('utf8'))
     buffer = decoded.rest
     for (const message of decoded.messages) {
       if (message.type === 'auth-challenge') {
+        serverNonce = message.serverNonce
         expect(message.serverProof).toBe(createServerProof(roomCode, deriveRoomHash(roomCode), clientNonce, message.serverNonce))
         client.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof(roomCode, deriveRoomHash(roomCode), clientNonce, message.serverNonce) }))
       }
       if (message.type === 'auth-ok') {
-        client.write(encodeMessage({ type: 'hello', peerId, version: SYNC_PROTOCOL_VERSION }))
+        keys = deriveTransportSessionKeys(roomCode, deriveRoomHash(roomCode), clientNonce, serverNonce)
+        client.write(encodeMessage(encryptTransportMessage(keys, 'client-to-server', 0n, { type: 'hello', peerId, version: SYNC_PROTOCOL_VERSION })))
+      }
+      if (message.type === 'secure' && keys) {
+        const decrypted = decryptTransportMessage(keys, 'server-to-client', message)
+        expect(message.sequence).toBe(receiveSequence.toString())
+        receiveSequence += 1n
+        messages.emit('message', decrypted)
       }
     }
   })
   const connected = waitForEvent<[string]>(receiver, 'connect')
   client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId, roomHash: deriveRoomHash(roomCode), clientNonce }))
   await connected
+  const encodeSecure = (message: SyncMessage): string => {
+    if (!keys) throw new Error('raw secure client 未完成认证')
+    const frame = encodeMessage(encryptTransportMessage(keys, 'client-to-server', sendSequence, message))
+    sendSequence += 1n
+    return frame
+  }
+  return {
+    encode: encodeSecure,
+    onMessage: (listener) => messages.on('message', listener),
+    send: (message) => client.write(encodeSecure(message)),
+  }
 }
 
 async function listenRawServer(handler: (socket: Socket) => void): Promise<number> {
@@ -215,6 +239,43 @@ describe('sync protocol', () => {
     expect(encodedMessageByteLength(emoji)).toBeGreaterThan(encodedMessageByteLength(cjk))
     expect(isSyncMessageWithinLimit(ascii)).toBe(true)
     expect(isSyncMessageWithinLimit({ type: 'data', op: { ...op, diff: '🧭'.repeat(MAX_SYNC_MESSAGE_BYTES) } })).toBe(false)
+  })
+
+  it('T-05: 新房间邀请码使用 128-bit 随机 Base32 密钥，并可规范化分组输入', () => {
+    const first = generateRoomSecret()
+    const second = generateRoomSecret()
+    expect(first).toMatch(/^[A-Z2-7]{26}$/)
+    expect(second).toMatch(/^[A-Z2-7]{26}$/)
+    expect(first).not.toBe(second)
+    expect(normalizeRoomSecret(first.match(/.{1,4}/g)!.join('-').toLowerCase())).toBe(first)
+    expect(() => normalizeRoomSecret('ABCDEF')).toThrow(/128-bit/)
+  })
+
+  it('T-05: 固定 transcript 会导出稳定且方向分离的 HKDF 金钥', () => {
+    const first = deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 's'.repeat(64))
+    const second = deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 's'.repeat(64))
+    expect(first.clientToServerKey).toEqual(second.clientToServerKey)
+    expect(first.serverToClientKey).toEqual(second.serverToClientKey)
+    expect(first.clientToServerKey).not.toEqual(first.serverToClientKey)
+    expect(first.clientToServerNoncePrefix).not.toEqual(first.serverToClientNoncePrefix)
+    expect(deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 't'.repeat(64)).clientToServerKey)
+      .not.toEqual(first.clientToServerKey)
+  })
+
+  it('T-05: AES-GCM frame 绑定方向、序号与 transcript，修改内容或 tag 会失败', () => {
+    const keys = deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 's'.repeat(64))
+    const frame = encryptTransportMessage(keys, 'client-to-server', 0n, { type: 'have', hash: 'TOP_SECRET_TEST_PAYLOAD_123' })
+    expect(decryptTransportMessage(keys, 'client-to-server', frame)).toEqual({ type: 'have', hash: 'TOP_SECRET_TEST_PAYLOAD_123' })
+    expect(() => decryptTransportMessage(keys, 'server-to-client', frame)).toThrow(/验证失败/)
+    expect(() => decryptTransportMessage(keys, 'client-to-server', { ...frame, ciphertext: `${frame.ciphertext[0] === 'A' ? 'B' : 'A'}${frame.ciphertext.slice(1)}` })).toThrow(/验证失败/)
+    expect(() => decryptTransportMessage(keys, 'client-to-server', { ...frame, tag: `${frame.tag[0] === 'A' ? 'B' : 'A'}${frame.tag.slice(1)}` })).toThrow(/验证失败/)
+  })
+
+  it('T-05: 加密 envelope 预留 base64 与 tag 开销，近上限应用消息仍不超过 frame 上限', () => {
+    const payload = { type: 'have' as const, hash: 'a'.repeat(MAX_APPLICATION_MESSAGE_BYTES - 128) }
+    expect(isSyncMessageWithinLimit(payload)).toBe(true)
+    const keys = deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 's'.repeat(64))
+    expect(encodedMessageByteLength(encryptTransportMessage(keys, 'client-to-server', 0n, payload))).toBeLessThanOrEqual(MAX_SYNC_MESSAGE_BYTES)
   })
 })
 
@@ -522,16 +583,17 @@ describe('transport', () => {
       client.once('connect', () => resolve())
       client.connect(port, '127.0.0.1')
     })
-    await authenticateRawClient(receiver, client)
+    const authenticated = await authenticateRawClient(receiver, client)
     const received = waitForEvent<[string, SyncMessage]>(receiver, 'message')
-    const message = encodeMessage({
+    const message = authenticated.encode({
       type: 'seeder-available',
       projectName: '中文 😀',
       size: 1,
       snapshotId: 'snapshot',
     })
     const bytes = Buffer.from(message)
-    const splitAt = bytes.indexOf(Buffer.from('中')) + 1
+    const splitAt = Math.floor(bytes.length / 2)
+    // 使用认证后的同一方向加密帧验证 StringDecoder 仍可处理 UTF-8 分片。
     client.write(bytes.subarray(0, splitAt))
     client.write(bytes.subarray(splitAt))
 
@@ -567,23 +629,80 @@ describe('transport', () => {
     transports.push(receiver)
     const port = await receiver.listen()
     const client = new Socket()
-    let received = ''
-    const pong = new Promise<void>((resolve) => {
-      client.on('data', (chunk: Buffer) => {
-        received += chunk.toString('utf8')
-        if (received.includes('"pong"')) resolve()
-      })
-    })
     await new Promise<void>((resolve, reject) => {
       client.once('error', reject)
       client.once('connect', resolve)
       client.connect(port, '127.0.0.1')
     })
-    await authenticateRawClient(receiver, client)
-    client.write(encodeMessage({ type: 'ping' }))
+    const authenticated = await authenticateRawClient(receiver, client)
+    const pong = new Promise<void>((resolve) => authenticated.onMessage((message) => {
+      if (message.type === 'pong') resolve()
+    }))
+    authenticated.send({ type: 'ping' })
 
     await expect(pong).resolves.toBeUndefined()
     client.destroy()
+  })
+
+  it('T-05: 认证后应用数据在 wire 上不泄露明文', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const authenticated = await authenticateRawClient(receiver, client)
+    const marker = 'TOP_SECRET_TEST_PAYLOAD_123'
+    const wire = new Promise<string>((resolve) => client.once('data', (chunk: Buffer) => resolve(chunk.toString('utf8'))))
+    const delivered = new Promise<void>((resolve) => authenticated.onMessage((message) => {
+      if (message.type === 'have' && message.hash === marker) resolve()
+    }))
+
+    receiver.send('sender', { type: 'have', hash: marker })
+
+    expect(await wire).not.toContain(marker)
+    await delivered
+  })
+
+  it('T-05: 重播或跳过加密 frame 会终止连接且不重复派发', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const authenticated = await authenticateRawClient(receiver, client)
+    const received = vi.fn()
+    receiver.on('message', received)
+    const replay = authenticated.encode({ type: 'have', hash: 'once' })
+    const first = waitForEvent<[string, SyncMessage]>(receiver, 'message')
+    client.write(replay)
+    await expect(first).resolves.toEqual(['sender', { type: 'have', hash: 'once' }])
+    const failure = waitForEvent<[Error]>(receiver, 'error')
+    client.write(replay)
+    expect((await failure)[0].message).toContain('序号不连续')
+    expect(received).toHaveBeenCalledOnce()
+
+    const secondReceiver = new Transport('receiver-two')
+    transports.push(secondReceiver)
+    const secondPort = await secondReceiver.listen()
+    const secondClient = await connectRawSocket(secondPort)
+    const secondAuthenticated = await authenticateRawClient(secondReceiver, secondClient)
+    void secondAuthenticated.encode({ type: 'have', hash: 'skipped-1' })
+    const skipped = secondAuthenticated.encode({ type: 'have', hash: 'skipped-2' })
+    const skipFailure = waitForEvent<[Error]>(secondReceiver, 'error')
+    secondClient.write(skipped)
+    expect((await skipFailure)[0].message).toContain('序号不连续')
+  })
+
+  it('T-05: 被篡改的 ciphertext 或 tag 不会进入应用层', async () => {
+    const receiver = new Transport('receiver')
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const client = await connectRawSocket(port)
+    const authenticated = await authenticateRawClient(receiver, client)
+    const encoded = authenticated.encode({ type: 'have', hash: 'tamper' })
+    const frame = JSON.parse(encoded) as Extract<SyncMessage, { type: 'secure' }>
+    frame.tag = `${frame.tag[0] === 'A' ? 'B' : 'A'}${frame.tag.slice(1)}`
+    const failure = waitForEvent<[Error]>(receiver, 'error')
+    client.write(encodeMessage(frame))
+    expect((await failure)[0].message).toContain('验证失败')
   })
 
   it('心跳超时会主动关闭静默连接', async () => {
@@ -758,12 +877,17 @@ describe('transport', () => {
     const first = await connectRawSocket(port)
     const firstNonce = 'd'.repeat(64)
     let oldProof: string | undefined
+    let firstServerNonce = ''
     onRawMessages(first, (message) => {
       if (message.type === 'auth-challenge') {
+        firstServerNonce = message.serverNonce
         oldProof = createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), firstNonce, message.serverNonce)
         first.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: oldProof }))
       }
-      if (message.type === 'auth-ok') first.write(encodeMessage({ type: 'hello', peerId: 'first', version: SYNC_PROTOCOL_VERSION }))
+      if (message.type === 'auth-ok') first.write(encodeMessage(encryptTransportMessage(
+        deriveTransportSessionKeys('ABCDEF', deriveRoomHash('ABCDEF'), firstNonce, firstServerNonce),
+        'client-to-server', 0n, { type: 'hello', peerId: 'first', version: SYNC_PROTOCOL_VERSION },
+      )))
     })
     const firstConnected = waitForEvent(receiver, 'connect')
     first.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'first', roomHash: deriveRoomHash('ABCDEF'), clientNonce: firstNonce }))
@@ -832,11 +956,11 @@ describe('transport', () => {
       const response = { type: 'auth-response' as const, authVersion: AUTH_PROTOCOL_VERSION as 2, clientProof: proof }
       client.write(`${encodeMessage(response)}${encodeMessage(response)}`)
     })
-    const failed = waitForEvent<[Error]>(receiver, 'authFailed')
+    const failed = waitForEvent<[Error]>(receiver, 'error')
 
     client.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))
 
-    expect((await failed)[0].message).toBe('无效或已使用的认证挑战')
+    expect((await failed)[0].message).toBe('认证完成后不接受明文认证消息')
   })
 
   it('regression: 认证失败后会清理 peer 状态并允许重试', async () => {
@@ -856,11 +980,16 @@ describe('transport', () => {
 
     const retry = await connectRawSocket(port)
     const clientNonce = '3'.repeat(64)
+    let retryServerNonce = ''
     onRawMessages(retry, (message) => {
       if (message.type === 'auth-challenge') {
+        retryServerNonce = message.serverNonce
         retry.write(encodeMessage({ type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce) }))
       }
-      if (message.type === 'auth-ok') retry.write(encodeMessage({ type: 'hello', peerId: 'sender', version: SYNC_PROTOCOL_VERSION }))
+      if (message.type === 'auth-ok') retry.write(encodeMessage(encryptTransportMessage(
+        deriveTransportSessionKeys('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, retryServerNonce),
+        'client-to-server', 0n, { type: 'hello', peerId: 'sender', version: SYNC_PROTOCOL_VERSION },
+      )))
     })
     const connected = waitForEvent(receiver, 'connect')
     retry.write(encodeMessage({ type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: 'sender', roomHash: deriveRoomHash('ABCDEF'), clientNonce }))
@@ -868,7 +997,7 @@ describe('transport', () => {
     await expect(connected).resolves.toEqual(['sender', undefined, undefined])
   })
 
-  it('regression: 认证完成后仍拒绝旧版 sync hello，避免混用 operation hash 格式', async () => {
+  it('regression: 认证完成后拒绝明文 sync hello，避免降级为未加密传输', async () => {
     const receiver = new Transport('receiver')
     receiver.setRoomCode('ABCDEF')
     transports.push(receiver)
@@ -886,9 +1015,7 @@ describe('transport', () => {
           clientProof: createClientProof('ABCDEF', deriveRoomHash('ABCDEF'), clientNonce, message.serverNonce),
         }))
       }
-      if (message.type === 'auth-ok') {
-        client.write(encodeMessage({ type: 'hello', peerId: 'legacy-peer', version: 1 }))
-      }
+      if (message.type === 'auth-ok') client.write(encodeMessage({ type: 'hello', peerId: 'legacy-peer', version: 4 }))
     })
 
     client.write(encodeMessage({
@@ -899,7 +1026,7 @@ describe('transport', () => {
       clientNonce,
     }))
 
-    expect((await error)[0].message).toContain('同步協議版本不相容')
+    expect((await error)[0].message).toContain('认证完成后不接受明文同步消息')
     expect(connected).not.toHaveBeenCalled()
   })
 
@@ -915,7 +1042,7 @@ describe('transport', () => {
     receiver.on('message', message)
     const failed = waitForEvent<[Error]>(receiver, 'authFailed')
 
-    helloClient.write(encodeMessage({ type: 'hello', peerId: 'attacker', version: 1 }))
+    helloClient.write(encodeMessage({ type: 'hello', peerId: 'attacker', version: SYNC_PROTOCOL_VERSION }))
 
     expect((await failed)[0].message).toBe('认证尚未完成')
     expect(hello).not.toHaveBeenCalled()
