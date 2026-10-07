@@ -1100,6 +1100,43 @@ describe('large text blob fallback', () => {
     await sync.stop()
   })
 
+  it('regression: rejects a large-text blob targeting an escaping symlink without marking it applied', async () => {
+    const target = await createTestOplog()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-large-text-outside-'))
+    roots.push(outside)
+    await symlink(outside, join(target.root, 'linked'), 'dir')
+    const store = new BlobStore(target.root)
+    const content = Buffer.from('large text must stay inside the project\n'.repeat(128), 'utf8')
+    const blobHash = await store.put(content)
+    const transport = new MockTransport()
+    const input: NewOp = {
+      ...createOp('large-text-symlink'),
+      blobHash,
+      contentEncoding: 'full-text-blob',
+      diff: '',
+      filePath: 'linked/escape.ts',
+      kind: 'created',
+      size: content.length,
+    }
+    const remote = { ...input, hash: computeHash(input) }
+    const writeFile = vi.fn(async () => undefined)
+    const sync = new Sync(
+      { blobStore: store, oplog: target.oplog, projectRoot: target.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: transport as never },
+      { applyRemoteChange: vi.fn(async () => undefined), fileExists: async () => false, readFile: async () => '', writeFile },
+    )
+    const failure = waitForEvent<[Error]>(sync, 'error')
+
+    await sync.start()
+    transport.emit('message', 'source', { op: remote, type: 'data' })
+
+    await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('symbolic link') })])
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(await readFile(join(outside, 'escape.ts')).catch(() => undefined)).toBeUndefined()
+    expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('rejected')
+    await sync.stop()
+  })
+
   it('chunks a blob whose base64 data frame would exceed the transport limit', async () => {
     const sourceFixture = await createTestOplog()
     const targetFixture = await createTestOplog()

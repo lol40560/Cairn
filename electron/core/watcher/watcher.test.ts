@@ -379,10 +379,11 @@ describe('ProjectWatcher', () => {
 
   it('创建 PNG 会产生带 blobHash 的 op', async () => {
     const { projectRoot, watcher } = await createFixture()
+    // 目录创建与文件创建会被底层 watcher 合并；预建目录让本测试只断言 PNG 文件事件。
+    await mkdir(join(projectRoot, 'assets'), { recursive: true })
     await watcher.start()
 
     const opPromise = waitForOp(watcher)
-    await mkdir(join(projectRoot, 'assets'), { recursive: true })
     await writeFile(join(projectRoot, 'assets', 'logo.png'), Buffer.from([137, 80, 78, 71]))
 
     await expect(opPromise).resolves.toMatchObject({
