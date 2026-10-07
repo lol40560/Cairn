@@ -1142,7 +1142,9 @@ describe('large text blob fallback', () => {
     const targetFixture = await createTestOplog()
     const sourceStore = new BlobStore(sourceFixture.root)
     const targetStore = new BlobStore(targetFixture.root)
-    const content = Buffer.alloc(MAX_SYNC_MESSAGE_BYTES + 1_024, 0x61)
+    // 僅比單一 Base64 application frame 的上限略大，確實跨過邊界即可；
+    // 不以 10 MiB fixture 放大真實 chunk/reassembly 路徑的 CI 成本。
+    const content = Buffer.alloc(Math.floor(MAX_APPLICATION_MESSAGE_BYTES * 3 / 4), 0x61)
     const hash = await sourceStore.put(content)
     const sourceTransport = new MockTransport()
     const targetTransport = new MockTransport()
@@ -1158,6 +1160,7 @@ describe('large text blob fallback', () => {
 
     await (source as unknown as { handleWantBlob(peerId: string, requestedHash: string): Promise<void> }).handleWantBlob('target', hash)
     const sent = sourceTransport.send.mock.calls.map(([, message]) => message as SyncMessage)
+    expect(isSyncMessageWithinLimit({ type: 'data-blob', hash, data: content.toString('base64') })).toBe(false)
     expect(sent[0]).toMatchObject({ type: 'blob-meta', hash, size: content.length })
     expect(sent.filter((message) => message.type === 'blob-chunk')).not.toHaveLength(0)
     expect(sent.every((message) => isSyncMessageWithinLimit(message))).toBe(true)

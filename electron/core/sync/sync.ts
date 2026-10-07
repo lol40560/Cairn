@@ -815,6 +815,19 @@ export class Sync extends EventEmitter {
     if (!blobStore) return
 
     const content = Buffer.from(data, 'base64')
+    await this.persistVerifiedBlob(hash, content)
+  }
+
+  /**
+   * 驗證並保存收到的原始 blob。
+   *
+   * 分塊傳輸已經在記憶體中重組為 Buffer；直接交給這個路徑可避免
+   * 將大型內容重新編碼成 Base64 後又立刻解碼的額外記憶體與 CPU 成本。
+   */
+  private async persistVerifiedBlob(hash: string, content: Buffer): Promise<void> {
+    const blobStore = this.options.blobStore
+    if (!blobStore) return
+
     const actualHash = createHash('sha256').update(content).digest('hex')
     if (actualHash !== hash) {
       this.emitError(new Error(`blob hash mismatch: expected ${hash}, got ${actualHash}`))
@@ -864,7 +877,7 @@ export class Sync extends EventEmitter {
       .sort(([left], [right]) => left - right)
       .map(([, value]) => value))
     if (content.length !== incoming.size) throw new Error(`blob size mismatch after chunks: ${hash}`)
-    await this.handleDataBlob(hash, content.toString('base64'))
+    await this.persistVerifiedBlob(hash, content)
   }
 
   private async retryPendingBinaryOps(): Promise<void> {
