@@ -73,5 +73,14 @@ export interface Oplog {
   listRecent(limit: number): Op[]
   listAllHashes(): string[]
   listBlobs(): Op[]
+  /** 本次打开是否从损坏的 SQLite 索引重建。 */
+  getRecoveryReport(): OplogRecoveryReport | undefined
   close(): void
+}
+
+/** 不含文件内容或任何协作凭证的、有界恢复摘要。 */
+export interface OplogRecoveryReport {
+  recoveredOperations: number
+  skippedInvalidObjects: number
+  provenanceUnavailable: number
 }

@@ -390,6 +390,76 @@ describe('oplog', () => {
     expect(migrated.listUnappliedRemoteOps()).toEqual([])
   })
 
+  it('regression: corrupt SQLite index is preserved and rebuilt from valid immutable objects', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const first = original.putOp(newOp({ id: 'recover-first' }))
+    const second = original.putReceivedRemoteOp(newOp({ id: 'recover-remote', timestamp: 2 }))
+    original.close()
+
+    const databasePath = join(projectRoot, '.cairn', 'oplog.db')
+    await writeFile(databasePath, 'not a sqlite database', 'utf8')
+    await writeFile(`${databasePath}-wal`, 'stale wal', 'utf8')
+    await writeFile(`${databasePath}-shm`, 'stale shm', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.listAllHashes()).toEqual([second.hash, first.hash])
+    expect(recovered.getOp(first.hash)?.source).toBe('unknown')
+    // 无法可靠重建 SQLite-only apply state；恢复历史绝不自动写回项目文件。
+    expect(recovered.getRemoteOpApplyState(second.hash)).toBeUndefined()
+    expect(recovered.getRecoveryReport()).toMatchObject({
+      recoveredOperations: 2,
+      skippedInvalidObjects: 0,
+      provenanceUnavailable: 2,
+    })
+    expect(fs.readdirSync(join(projectRoot, '.cairn')).some((name) => name.startsWith('oplog.db.corrupt-'))).toBe(true)
+
+    recovered.close()
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.listAllHashes()).toEqual([second.hash, first.hash])
+    expect(reopened.getRecoveryReport()).toBeUndefined()
+  })
+
+  it('regression: one corrupt immutable object does not poison SQLite recovery', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const valid = original.putOp(newOp({ id: 'valid-recovery-object' }))
+    original.close()
+    const invalidPath = join(projectRoot, '.cairn', 'objects', 'ff', 'f'.repeat(64))
+    await mkdir(dirname(invalidPath), { recursive: true })
+    await writeFile(invalidPath, '{not json', 'utf8')
+    await writeFile(join(projectRoot, '.cairn', 'oplog.db'), 'not a sqlite database', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.getOp(valid.hash)?.id).toBe('valid-recovery-object')
+    expect(recovered.getRecoveryReport()).toMatchObject({
+      recoveredOperations: 1,
+      skippedInvalidObjects: 1,
+    })
+  })
+
+  it('regression: recovery preserves v1, v2, and v3 object identities', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const v1 = original.putOp(newOp({ id: 'recover-v1', hashVersion: LEGACY_OP_HASH_VERSION, timestamp: 1 }))
+    const v2 = original.putOp(newOp({ id: 'recover-v2', hashVersion: 2, timestamp: 2, kind: 'modified' }))
+    const v3 = original.putOp(newOp({ id: 'recover-v3', hashVersion: CURRENT_OP_HASH_VERSION, timestamp: 3 }))
+    original.close()
+    await writeFile(join(projectRoot, '.cairn', 'oplog.db'), 'not a sqlite database', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.getOp(v1.hash)?.hashVersion).toBe(LEGACY_OP_HASH_VERSION)
+    expect(recovered.getOp(v2.hash)?.hashVersion).toBe(2)
+    expect(recovered.getOp(v3.hash)?.hashVersion).toBe(CURRENT_OP_HASH_VERSION)
+  })
+
   it('按父先子后顺序遍历三节点 DAG', async () => {
     const { oplog } = await createFixture()
     const a = oplog.putOp(newOp({ id: 'A', timestamp: 1 }))

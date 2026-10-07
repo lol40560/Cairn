@@ -5,6 +5,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   writeFileSync,
 } from 'node:fs'
@@ -14,7 +15,7 @@ import Database from 'better-sqlite3'
 
 import { ensureCairnDataDir } from '../data-dir'
 import { computeHash, CURRENT_OP_HASH_VERSION, deriveOpKind, LEGACY_OP_HASH_VERSION } from './hash'
-import type { NewOp, Op, OpKind, Oplog, OpSource, RemoteOpApplyState } from './types'
+import type { NewOp, Op, OpKind, Oplog, OplogRecoveryReport, OpSource, RemoteOpApplyState } from './types'
 
 interface HashRow {
   hash: string
@@ -27,6 +28,11 @@ interface OpIndexRow extends HashRow {
 interface RemoteApplyRow {
   state: RemoteOpApplyState
   target_content_hash: string | null
+}
+
+function isCorruptionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /SQLITE_(?:CORRUPT|NOTADB)|database disk image is malformed|file is not a database|quick_check failed/iu.test(message)
 }
 
 type StoredOp = Omit<Op, 'source'>
@@ -83,18 +89,19 @@ function isStoredOp(input: NewOp | Op): input is Op {
 }
 
 class SqliteOplog implements Oplog {
-  private readonly database: Database.Database
+  private database: Database.Database
   private readonly objectsRoot: string
+  private readonly databasePath: string
+  private recoveryReport: OplogRecoveryReport | undefined
   private closed = false
 
   constructor(projectRoot: string) {
     const dataRoot = ensureCairnDataDir(projectRoot)
     this.objectsRoot = join(dataRoot, 'objects')
+    this.databasePath = join(dataRoot, 'oplog.db')
 
     mkdirSync(this.objectsRoot, { recursive: true })
-    this.database = new Database(join(dataRoot, 'oplog.db'))
-    this.database.exec(CREATE_SCHEMA)
-    this.migrateOpsColumns()
+    this.database = this.openOrRecover()
   }
 
   putOp(input: NewOp | Op): Op {
@@ -325,6 +332,10 @@ class SqliteOplog implements Oplog {
     return rows.map(({ hash, source }) => this.readObject(hash, source ?? 'unknown'))
   }
 
+  getRecoveryReport(): OplogRecoveryReport | undefined {
+    return this.recoveryReport
+  }
+
   close(): void {
     if (this.closed) {
       return
@@ -358,6 +369,120 @@ class SqliteOplog implements Oplog {
       if (!message.includes('duplicate column name')) throw error
     }
     this.database.exec('CREATE INDEX IF NOT EXISTS idx_ops_blob_hash ON ops(blob_hash)')
+  }
+
+  /** SQLite 索引可由已验证的不可变对象重建；绝不重放历史 filesystem 操作。 */
+  private openOrRecover(): Database.Database {
+    let database: Database.Database | undefined
+    try {
+      database = new Database(this.databasePath)
+      this.assertHealthyDatabase(database)
+      database.exec(CREATE_SCHEMA)
+      this.database = database
+      this.migrateOpsColumns()
+      return database
+    } catch (error) {
+      try {
+        database?.close()
+      } catch {
+        // 已损坏的数据库可能无法正常关闭；仍保留原始证据。
+      }
+      if (!isCorruptionError(error)) throw error
+      return this.recoverDatabase(error)
+    }
+  }
+
+  private assertHealthyDatabase(database: Database.Database): void {
+    const rows = database.pragma('quick_check') as Array<{ quick_check?: string }>
+    if (rows.some((row) => Object.values(row).some((value) => value !== 'ok'))) {
+      throw new Error('SQLITE_CORRUPT: PRAGMA quick_check failed')
+    }
+  }
+
+  private recoverDatabase(trigger: unknown): Database.Database {
+    const suffix = `.corrupt-${Date.now()}-${process.pid}`
+    for (const path of [this.databasePath, `${this.databasePath}-wal`, `${this.databasePath}-shm`]) {
+      if (existsSync(path)) renameSync(path, `${path}${suffix}`)
+    }
+
+    const temporaryPath = `${this.databasePath}.recovery-${process.pid}-${Date.now()}.tmp`
+    let recovered: Database.Database | undefined
+    let recoveredOperations = 0
+    let skippedInvalidObjects = 0
+    try {
+      recovered = new Database(temporaryPath)
+      recovered.exec(CREATE_SCHEMA)
+      const insert = recovered.prepare(
+        `INSERT OR IGNORE INTO ops (hash, id, author, timestamp, file_path, blob_hash, source)
+         VALUES (?, ?, ?, ?, ?, ?, 'unknown')`,
+      )
+      for (const op of this.readRecoverableObjects()) {
+        if (!op) {
+          skippedInvalidObjects += 1
+          continue
+        }
+        insert.run(op.hash, op.id, op.author, op.timestamp, op.filePath, op.blobHash ?? null)
+        recoveredOperations += 1
+      }
+      this.database = recovered
+      this.migrateOpsColumns()
+      this.assertHealthyDatabase(recovered)
+      recovered.close()
+      recovered = undefined
+      renameSync(temporaryPath, this.databasePath)
+      const opened = new Database(this.databasePath)
+      this.database = opened
+      this.migrateOpsColumns()
+      this.recoveryReport = {
+        recoveredOperations,
+        skippedInvalidObjects,
+        // SQLite-only local provenance cannot be inferred from distributed objects.
+        provenanceUnavailable: recoveredOperations,
+      }
+      console.warn(
+        `[cairn:oplog] 数据库恢复完成：恢复操作 ${recoveredOperations}，跳过无效对象 ${skippedInvalidObjects}，来源未知 ${recoveredOperations}`,
+      )
+      return opened
+    } catch (error) {
+      try {
+        recovered?.close()
+      } catch {
+        // 保留失败现场即可。
+      }
+      if (existsSync(temporaryPath)) renameSync(temporaryPath, `${temporaryPath}.failed`)
+      const reason = error instanceof Error ? error.message : String(error)
+      const original = trigger instanceof Error ? trigger.message : String(trigger)
+      throw new Error(`oplog SQLite 恢复失败（原始错误：${original}；恢复错误：${reason}）`, { cause: error })
+    }
+  }
+
+  private *readRecoverableObjects(): Generator<Op | undefined> {
+    for (const prefix of readdirSync(this.objectsRoot, { withFileTypes: true })) {
+      if (!prefix.isDirectory() || !/^[a-f0-9]{2}$/u.test(prefix.name)) continue
+      for (const entry of readdirSync(join(this.objectsRoot, prefix.name), { withFileTypes: true })) {
+        if (!entry.isFile() || !/^[a-f0-9]{64}$/u.test(entry.name)) continue
+        try {
+          const parsed = JSON.parse(readFileSync(join(this.objectsRoot, prefix.name, entry.name), 'utf8')) as Op
+          const hashVersion = parsed.hashVersion ?? LEGACY_OP_HASH_VERSION
+          if (parsed.hash !== entry.name || parsed.hash !== computeHash({
+            ...parsed,
+            hashVersion,
+            source: parsed.source === 'unknown' ? undefined : parsed.source,
+          })) {
+            yield undefined
+            continue
+          }
+          if (!parsed.id || !parsed.author || !Array.isArray(parsed.parentHashes) || typeof parsed.timestamp !== 'number'
+            || !parsed.filePath || typeof parsed.diff !== 'string') {
+            yield undefined
+            continue
+          }
+          yield { ...parsed, hashVersion, source: 'unknown' }
+        } catch {
+          yield undefined
+        }
+      }
+    }
   }
 
   private readObject(hash: string, source: OpSource = 'unknown'): Op {
