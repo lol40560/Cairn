@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { PRIVACY_SUMMARY_EN, PRIVACY_SUMMARY_ZH } from '@/lib/legal-content'
 import { LicensesDialog } from './LicensesDialog'
 import { PrivacyDialog } from './PrivacyDialog'
 import {
@@ -27,7 +28,7 @@ export function SettingsView({
   onShowOnboarding(): void
   onStartHackathonMode?(): void
 }) {
-  const { t } = useTranslation()
+  const { locale, t } = useTranslation()
   const [token, setToken] = useState('')
   const [owner, setOwner] = useState('')
   const [repo, setRepo] = useState('')
@@ -231,7 +232,7 @@ export function SettingsView({
               <div><dt>{t('aboutVersion')}</dt><dd>{appPackage.version}</dd></div>
               <div><dt>{t('aboutLicense')}</dt><dd>MIT</dd></div>
             </dl>
-            <p className="about-privacy">{t('aboutPrivacy')}</p>
+            <p className="about-privacy">{locale === 'zh' ? PRIVACY_SUMMARY_ZH : PRIVACY_SUMMARY_EN}</p>
             <div className="about-actions">
               <button className="btn btn-ghost" type="button" onClick={() => setLicensesOpen(true)}>{t('aboutViewLicenses')}</button>
               <button className="btn btn-ghost" type="button" onClick={() => setPrivacyOpen(true)}>{t('aboutViewPrivacy')}</button>

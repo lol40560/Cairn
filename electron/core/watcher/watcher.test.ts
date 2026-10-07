@@ -89,6 +89,9 @@ describe('ProjectWatcher', () => {
   it('新建文件产生从空内容到当前内容的一条 op', async () => {
     const { projectRoot, watcher } = await createFixture()
     await watcher.start()
+    // chokidar 的 ready 代表初始扫描完成；macOS FSEvents 仍可能在极短时间内完成底层订阅。
+    // 让测试等待一个极小观察窗口，确保断言的是 add 事件而不是平台订阅时序。
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
     const opPromise = waitForOp(watcher)
     await writeFile(join(projectRoot, 'new.ts'), 'export const value = 1\n', 'utf8')
@@ -101,6 +104,24 @@ describe('ProjectWatcher', () => {
     expect(op.kind).toBe('created')
     expect(op.baseHash).toBe(createHash('sha256').update('').digest('hex'))
   })
+
+  it('regression: wire frame 超限的 Unicode 文字改以完整 UTF-8 blob 产生 op', async () => {
+    const { projectRoot, watcher } = await createFixture({ debounceMs: 10 })
+    await watcher.start()
+
+    const opPromise = waitForOp(watcher, 30_000)
+    const text = '🧭'.repeat(2_700_000)
+    await writeFile(join(projectRoot, 'oversized.ts'), text, 'utf8')
+    const op = await opPromise
+
+    expect(op).toMatchObject({
+      contentEncoding: 'full-text-blob',
+      diff: '',
+      filePath: 'oversized.ts',
+      size: Buffer.byteLength(text, 'utf8'),
+    })
+    expect(op.blobHash).toMatch(/^[a-f0-9]{64}$/)
+  }, 45_000)
 
   it('applyRemoteChange 更新基线但不产生 op，后续本地修改仍会产生 op', async () => {
     const { projectRoot, watcher } = await createFixture()
@@ -361,10 +382,11 @@ describe('ProjectWatcher', () => {
 
   it('创建 PNG 会产生带 blobHash 的 op', async () => {
     const { projectRoot, watcher } = await createFixture()
+    // 目录创建与文件创建会被底层 watcher 合并；预建目录让本测试只断言 PNG 文件事件。
+    await mkdir(join(projectRoot, 'assets'), { recursive: true })
     await watcher.start()
 
     const opPromise = waitForOp(watcher)
-    await mkdir(join(projectRoot, 'assets'), { recursive: true })
     await writeFile(join(projectRoot, 'assets', 'logo.png'), Buffer.from([137, 80, 78, 71]))
 
     await expect(opPromise).resolves.toMatchObject({

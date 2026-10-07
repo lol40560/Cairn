@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { CheckpointManager } from './index'
 
 const roots: string[] = []
+const symlinkIt = process.platform === 'win32' ? it.skip : it
 
 async function createProject(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'cairn-checkpoint-'))
@@ -113,5 +114,45 @@ describe('CheckpointManager', () => {
     const checkpoint = await manager.create('Before restoring checkpoint', { source: 'auto-before-restore' })
     expect(checkpoint.source).toBe('auto-before-restore')
     expect((await manager.list())[0]).toMatchObject({ id: checkpoint.id, source: 'auto-before-restore' })
+  })
+
+  it('regression: restores executable mode from a checkpoint', async () => {
+    const root = await createProject()
+    const manager = new CheckpointManager(root)
+    await writeFile(join(root, 'deploy.sh'), 'echo deploy\n', 'utf8')
+    if (process.platform !== 'win32') await chmod(join(root, 'deploy.sh'), 0o755)
+    const checkpoint = await manager.create('Executable')
+    if (process.platform !== 'win32') await chmod(join(root, 'deploy.sh'), 0o644)
+
+    await manager.restore(checkpoint.id)
+
+    if (process.platform !== 'win32') expect((await stat(join(root, 'deploy.sh'))).mode & 0o111).not.toBe(0)
+  })
+
+  it('regression: rejects checkpoint restore into a case-colliding logical path', async () => {
+    const root = await createProject()
+    const manager = new CheckpointManager(root, { caseInsensitiveFilesystem: true })
+    await writeFile(join(root, 'Foo.ts'), 'checkpoint\n', 'utf8')
+    const checkpoint = await manager.create('Case safe')
+    await rm(join(root, 'Foo.ts'))
+    await writeFile(join(root, 'foo.ts'), 'current\n', 'utf8')
+
+    await expect(manager.restore(checkpoint.id)).rejects.toThrow('Case-colliding')
+    await expect(readFile(join(root, 'foo.ts'), 'utf8')).resolves.toBe('current\n')
+  })
+
+  symlinkIt('regression: restore rejects a symlink parent escaping the project', async () => {
+    const root = await createProject()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-checkpoint-outside-'))
+    roots.push(outside)
+    const manager = new CheckpointManager(root)
+    await mkdir(join(root, 'src'))
+    await writeFile(join(root, 'src', 'app.ts'), 'safe\n', 'utf8')
+    const checkpoint = await manager.create('Safe')
+    await rm(join(root, 'src'), { force: true, recursive: true })
+    await symlink(outside, join(root, 'src'), 'dir')
+
+    await expect(manager.restore(checkpoint.id)).rejects.toThrow('symbolic link')
+    await expect(access(join(outside, 'app.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

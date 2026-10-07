@@ -20,7 +20,11 @@ const mocks = vi.hoisted(() => {
     }),
     show: vi.fn(),
     webContents: {
+      mainFrame: { url: 'file:///renderer/index.html' },
+      on: vi.fn(),
       send: vi.fn(),
+      session: { setPermissionRequestHandler: vi.fn() },
+      setWindowOpenHandler: vi.fn(),
     },
   }
   const BrowserWindow = vi.fn(function BrowserWindow() {
@@ -125,7 +129,14 @@ const mocks = vi.hoisted(() => {
     handlers,
     ipcMain: {
       handle: vi.fn((channel: string, handler: (...args: unknown[]) => unknown) => {
-        handlers.set(channel, handler)
+        handlers.set(channel, (event: unknown, ...args: unknown[]) => {
+          // 旧测试直接传入 {}；真实 Electron 永远提供 sender 与 main frame。
+          if (!event || typeof event !== 'object' || !('sender' in event)) currentMain?.createWindow()
+          const trustedEvent = event && typeof event === 'object' && 'sender' in event
+            ? event
+            : { sender: window.webContents, senderFrame: window.webContents.mainFrame }
+          return handler(trustedEvent, ...args)
+        })
       }),
     },
     ipcRenderer: {
@@ -559,6 +570,7 @@ describe('IPC bridge', () => {
       'cairn:selectDownloadFolder',
       'cairn:selectFolder',
       'cairn:setActiveProject',
+      'cairn:setSimulationMode',
       'cairn:setTrashRetentionDays',
       'cairn:startSharing',
       'cairn:startWatching',
@@ -574,6 +586,40 @@ describe('IPC bridge', () => {
     const handler = mocks.handlers.get('cairn:cancelDownload')
 
     await expect(handler?.({})).resolves.toEqual({ data: undefined, ok: true })
+  })
+
+  it('Hackathon Simulation 在 IPC 层拒绝真实项目与协作操作，并在退出后恢复（regression）', async () => {
+    const main = await loadMain()
+    const root = await createDirectory()
+    await main.startWatching(root)
+    main.registerIpcHandlers()
+
+    const setSimulation = mocks.handlers.get('cairn:setSimulationMode')
+    const listFiles = mocks.handlers.get('cairn:listProjectFiles')
+    const exportSnapshot = mocks.handlers.get('cairn:exportSnapshot')
+    const createRoom = mocks.handlers.get('cairn:createRoom')
+
+    await expect(setSimulation?.({}, true)).resolves.toEqual({ data: undefined, ok: true })
+    for (const [channel, args] of [
+      ['cairn:listProjectFiles', []], ['cairn:saveProjectFile', ['src/a.ts', 'export {}']],
+      ['cairn:setActiveProject', ['project-id']], ['cairn:exportPR', [{ title: 'Demo' }]],
+      ['cairn:exportSnapshot', []], ['cairn:createRoom', []], ['cairn:joinRoom', ['ROOM']],
+      ['cairn:leaveRoom', []], ['cairn:connectToAddress', [{ host: '127.0.0.1', port: 49500, roomCode: 'ROOM' }]],
+      ['cairn:createCheckpoint', ['Demo']], ['cairn:restoreCheckpoint', ['checkpoint-id']],
+      ['cairn:restoreFromTrash', ['trash-id']], ['cairn:emptyTrash', []],
+      ['cairn:resolveConflict', ['op-hash', 'local']], ['cairn:startSharing', []],
+      ['cairn:downloadProject', [{ snapshotId: 'snapshot-id', targetDir: root }]],
+    ] as const) {
+      const handler = mocks.handlers.get(channel)
+      await expect(handler?.({}, ...args)).resolves.toMatchObject({ ok: false, error: { code: 'SIMULATION_ISOLATED' } })
+    }
+
+    await expect(listFiles?.({})).resolves.toMatchObject({ ok: false, error: { code: 'SIMULATION_ISOLATED' } })
+    await expect(exportSnapshot?.({})).resolves.toMatchObject({ ok: false, error: { code: 'SIMULATION_ISOLATED' } })
+    await expect(createRoom?.({})).resolves.toMatchObject({ ok: false, error: { code: 'SIMULATION_ISOLATED' } })
+
+    await expect(setSimulation?.({}, false)).resolves.toEqual({ data: undefined, ok: true })
+    await expect(listFiles?.({})).resolves.toMatchObject({ ok: true })
   })
 
   it('About 外部链接仅允许 HTTPS 地址', async () => {
@@ -884,6 +930,62 @@ describe('IPC bridge', () => {
     expect(mocks.window.webContents.send).not.toHaveBeenCalled()
   })
 
+  it('regression: privileged IPC rejects an untrusted renderer before side effects', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    main.registerIpcHandlers()
+    const handler = mocks.handlers.get('cairn:setSimulationMode')
+    const untrustedEvent = {
+      sender: { mainFrame: { url: 'file:///renderer/index.html' } },
+      senderFrame: { url: 'file:///renderer/index.html' },
+    }
+
+    await expect(handler?.(untrustedEvent, true)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'IPC_UNTRUSTED_SENDER' },
+    })
+    expect(main.isTrustedIpcSender(untrustedEvent as never)).toBe(false)
+    expect(main.isTrustedIpcSender({})).toBe(false)
+  })
+
+  it('regression: only the main frame of the current window is trusted', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    const subframe = { url: 'file:///renderer/frame.html' }
+    expect(main.isTrustedIpcSender({
+      sender: mocks.window.webContents,
+      senderFrame: subframe,
+    } as never)).toBe(false)
+    expect(main.isTrustedIpcSender({
+      sender: mocks.window.webContents,
+      senderFrame: mocks.window.webContents.mainFrame,
+    } as never)).toBe(true)
+    expect(mocks.BrowserWindow).toHaveBeenLastCalledWith(expect.objectContaining({
+      webPreferences: expect.objectContaining({
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      }),
+    }))
+  })
+
+  it('regression: navigation, popup, and web permissions are denied by default', async () => {
+    const main = await loadMain()
+    main.createWindow()
+    const navigate = mocks.window.webContents.on.mock.calls.find((call: unknown[]) => call[0] === 'will-navigate')?.[1]
+    const preventDefault = vi.fn()
+    navigate?.({ preventDefault })
+    expect(preventDefault).toHaveBeenCalledOnce()
+
+    const openHandler = mocks.window.webContents.setWindowOpenHandler.mock.calls[0]?.[0]
+    expect(openHandler?.({ url: 'https://example.test/' })).toEqual({ action: 'deny' })
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith('https://example.test/')
+    const permissionHandler = mocks.window.webContents.session.setPermissionRequestHandler.mock.calls[0]?.[0]
+    const callback = vi.fn()
+    permissionHandler?.({}, 'camera', callback)
+    expect(callback).toHaveBeenCalledWith(false)
+  })
+
   it('preload 只暴露契约白名单 API', async () => {
     vi.resetModules()
     await import('./preload')
@@ -953,6 +1055,7 @@ describe('IPC bridge', () => {
       'selectDownloadFolder',
       'selectFolder',
       'setActiveProject',
+      'setSimulationMode',
       'setTrashRetentionDays',
       'startSharing',
       'startWatching',
@@ -1024,8 +1127,9 @@ describe('IPC bridge', () => {
     const firstSync = mocks.syncs[0]
     const secondRoom = await main.createRoom()
 
-    expect(firstRoom).toMatch(/^[2-9A-HJ-NP-Z]{6}$/)
-    expect(secondRoom).toMatch(/^[2-9A-HJ-NP-Z]{6}$/)
+    expect(firstRoom).toMatch(/^[A-Z2-7]{26}$/)
+    expect(secondRoom).toMatch(/^[A-Z2-7]{26}$/)
+    expect(firstRoom).not.toBe(secondRoom)
     expect(firstSync?.stop).toHaveBeenCalledOnce()
     expect(mocks.syncs).toHaveLength(2)
   })
@@ -1035,8 +1139,8 @@ describe('IPC bridge', () => {
     const root = await createDirectory()
     await main.startWatching(root)
 
-    await expect(main.joinRoom('O0I1ZZ')).rejects.toThrow(/房间码/)
-    await main.joinRoom('ABCDEF')
+    await expect(main.joinRoom('O0I1ZZ')).rejects.toThrow(/邀请码/)
+    await main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA')
     const sync = mocks.syncs[0]
     sync?.listPeers.mockReturnValue([
       { host: '127.0.0.1', lastSeen: 1, peerId: 'peer', port: 1234 },

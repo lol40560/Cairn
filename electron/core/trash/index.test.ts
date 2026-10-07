@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { TrashManager } from './index'
 
 const roots: string[] = []
+const symlinkIt = process.platform === 'win32' ? it.skip : it
 
 async function createFixture(): Promise<{ root: string; trash: TrashManager }> {
   const root = await mkdtemp(join(tmpdir(), 'cairn-trash-'))
@@ -87,5 +88,17 @@ describe('TrashManager', () => {
 
     await expect(trash.cleanup(30)).resolves.toBe(1)
     expect((await trash.list()).map((entry) => entry.trashId)).toEqual([freshId])
+  })
+
+  symlinkIt('regression: restore rejects a symlink parent escaping the project', async () => {
+    const { root, trash } = await createFixture()
+    const outside = await mkdtemp(join(tmpdir(), 'cairn-trash-outside-'))
+    roots.push(outside)
+    const id = await trash.moveToTrash('restored/file.ts', await addFile(root, 'restored/file.ts', 'content'), 'tester', 'a'.repeat(64))
+    await rm(join(root, 'restored'), { force: true, recursive: true })
+    await symlink(outside, join(root, 'restored'), 'dir')
+
+    await expect(trash.restore(id)).rejects.toThrow('symbolic link')
+    await expect(access(join(outside, 'file.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

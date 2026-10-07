@@ -16,10 +16,10 @@ describe('LicensesDialog', () => {
 
   it('按包名过滤许可证列表', () => {
     const results = filterLicenses([
-      { license: 'MIT', name: 'alpha@1.0.0' },
-      { license: 'ISC', name: 'bravo@1.0.0' },
+      { license: 'MIT', licenseText: 'MIT text', name: 'alpha', version: '1.0.0' },
+      { license: 'ISC', licenseText: 'ISC text', name: 'bravo', version: '1.0.0' },
     ], 'bravo')
 
-    expect(results).toEqual([{ license: 'ISC', name: 'bravo@1.0.0' }])
+    expect(results).toEqual([{ license: 'ISC', licenseText: 'ISC text', name: 'bravo', version: '1.0.0' }])
   })
 })

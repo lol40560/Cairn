@@ -92,8 +92,8 @@ export async function exportPR(
   const files = await shadowGit.listFiles()
   const tree = []
   for (const file of files) {
-    const blob = await octokit.git.createBlob({ owner: options.owner, repo: options.repo, content: Buffer.from(file.content).toString('base64'), encoding: 'base64' })
-    tree.push({ path: file.path, mode: '100644' as const, type: 'blob' as const, sha: blob.data.sha })
+    const blob = await octokit.git.createBlob({ owner: options.owner, repo: options.repo, content: file.content.toString('base64'), encoding: 'base64' })
+    tree.push({ path: file.path, mode: file.mode, type: 'blob' as const, sha: blob.data.sha })
   }
   const createdTree = await octokit.git.createTree({ owner: options.owner, repo: options.repo, base_tree: baseTree, tree })
   const commit = await octokit.git.createCommit({ owner: options.owner, repo: options.repo, message: options.title, tree: createdTree.data.sha, parents: baseSha ? [baseSha] : [] })

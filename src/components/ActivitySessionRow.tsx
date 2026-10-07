@@ -42,7 +42,8 @@ export function ActivitySessionRow({ copied, expanded, session, onCopySummary, o
   const fileGroups = useMemo(() => groupOpsByFile(session.operations), [session.operations])
   const attribution = session.attribution === 'me'
     ? t('contributorMe')
-    : session.attribution === 'ai' ? t('contributorAi') : t('contributorTeammate')
+    : session.attribution === 'ai' ? t('contributorAi')
+      : session.attribution === 'teammate' ? t('contributorTeammate') : t('contributorUnknown')
   const duration = durationLabel(session.durationMs, t)
 
   useEffect(() => {

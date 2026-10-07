@@ -249,8 +249,8 @@ export function RoomView({
   }, [downloadStatus, pendingAutoDownload, seeders, setPendingAutoDownload, setShowDownloadPrompt])
 
   const handleJoin = async (): Promise<void> => {
-    const roomCodeInput = joinCode.trim().toUpperCase()
-    if (!/^[A-Z0-9]{6}$/i.test(roomCodeInput)) {
+    const roomCodeInput = joinCode.replace(/[\s-]/g, '').toUpperCase()
+    if (!/^[A-Z2-7\s-]{26,32}$/i.test(roomCodeInput) || roomCodeInput.replace(/[\s-]/g, '').length !== 26) {
       setToast({ message: t('wrongRoom'), tone: 'error' })
       return
     }
@@ -302,7 +302,7 @@ export function RoomView({
   }
 
   const handleCopyDiagnostics = async (): Promise<void> => {
-    const result = await window.cairn.copyToClipboard(formatDiagnostics(health, roomCode))
+    const result = await window.cairn.copyToClipboard(formatDiagnostics(health))
     if (result.ok) setToast({ message: t('diagnosticsCopied') })
     else setToast(normalizeError(result.error, t))
   }

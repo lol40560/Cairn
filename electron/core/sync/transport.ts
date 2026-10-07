@@ -3,10 +3,27 @@ import { EventEmitter } from 'node:events'
 import { createServer, Socket, type Server } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 
-import { createAuthHmac, decodeMessages, deriveRoomHash, encodeMessage, type SyncMessage } from './protocol'
+import {
+  AUTH_PROTOCOL_VERSION,
+  createClientProof,
+  createServerProof,
+  decodeMessages,
+  decryptTransportMessage,
+  deriveRoomHash,
+  deriveTransportSessionKeys,
+  encryptTransportMessage,
+  encodeMessage,
+  MAX_APPLICATION_MESSAGE_BYTES,
+  MAX_SYNC_MESSAGE_BYTES,
+  parseTransportSequence,
+  SYNC_PROTOCOL_VERSION,
+  type SyncMessage,
+  type TransportDirection,
+  type TransportSessionKeys,
+} from './protocol'
 import type { ProjectIdentity } from '../identity'
 
-export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
+export { MAX_SYNC_MESSAGE_BYTES } from './protocol'
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const HEARTBEAT_TIMEOUT_MS = 60_000
 export const AUTH_TIMEOUT_MS = 10_000
@@ -28,19 +45,34 @@ export interface PeerEndpoint {
 interface AuthState {
   peerId?: string
   nonce?: string
+  clientNonce?: string
+  phase: 'awaiting-challenge' | 'awaiting-client-proof' | 'awaiting-auth-ok'
   timeout: NodeJS.Timeout
   role: 'client' | 'server'
 }
+
+interface SecureSession {
+  keys: TransportSessionKeys
+  receiveDirection: TransportDirection
+  receiveSequence: bigint
+  sendDirection: TransportDirection
+  sendSequence: bigint
+}
+
+type ApplicationSyncMessage = Exclude<SyncMessage, { type: 'secure' }>
 
 export class Transport extends EventEmitter {
   private readonly connections = new Map<string, Socket>()
   private readonly socketPeerIds = new Map<Socket, string>()
   private readonly socketEndpoints = new Map<Socket, PeerEndpoint>()
+  /** 只為 outbound 連線保留；讓上層可安全關聯單次連線嘗試。 */
+  private readonly socketAttemptIds = new Map<Socket, string>()
   private readonly socketHeartbeats = new Map<Socket, NodeJS.Timeout>()
   private readonly socketLastSeen = new Map<Socket, number>()
   private readonly authStates = new Map<Socket, AuthState>()
   private readonly pendingAuthPeers = new Map<string, Socket>()
   private readonly authenticatedSockets = new Set<Socket>()
+  private readonly secureSessions = new Map<Socket, SecureSession>()
   private readonly usedNonces = new Set<string>()
   private readonly sockets = new Set<Socket>()
   private identity: ProjectIdentity | undefined
@@ -104,8 +136,10 @@ export class Transport extends EventEmitter {
     this.connections.clear()
     this.socketPeerIds.clear()
     this.socketEndpoints.clear()
+    this.socketAttemptIds.clear()
     this.sockets.clear()
     this.usedNonces.clear()
+    this.secureSessions.clear()
 
     const server = this.server
     this.server = undefined
@@ -118,9 +152,10 @@ export class Transport extends EventEmitter {
     })
   }
 
-  async connect(host: string, port: number): Promise<void> {
+  async connect(host: string, port: number, attemptId?: string): Promise<void> {
     const socket = new Socket()
     this.attachSocket(socket, { host, port })
+    if (attemptId) this.socketAttemptIds.set(socket, attemptId)
 
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
@@ -143,11 +178,11 @@ export class Transport extends EventEmitter {
     if (!socket || socket.destroyed) {
       return
     }
-    socket.write(encodeMessage(message), (error) => {
-      if (error) {
-        this.emit('error', error)
-      }
-    })
+    if (message.type === 'secure' || message.type.startsWith('auth-')) {
+      this.emit('error', new Error('不允许通过应用通道发送认证或加密 envelope'))
+      return
+    }
+    this.writeApplication(socket, message)
   }
 
   broadcast(message: SyncMessage, excludePeerId?: string): void {
@@ -220,23 +255,76 @@ export class Transport extends EventEmitter {
     socket.destroy()
   }
 
+  /** 不容許不同操作 identity 格式的 peer 進入同步層。 */
+  private rejectProtocolVersion(socket: Socket, receivedVersion: number): void {
+    this.emit('error', new Error(
+      `同步協議版本不相容：本機 v${SYNC_PROTOCOL_VERSION}，遠端 v${receivedVersion}`,
+    ))
+    socket.destroy()
+  }
+
   private sendHello(socket: Socket): void {
-    if (!socket.destroyed) {
-      socket.write(
-        encodeMessage({ identity: this.identity, type: 'hello', peerId: this.peerId, version: 1 }),
-      )
-    }
+    this.writeApplication(socket, { identity: this.identity, type: 'hello', peerId: this.peerId, version: SYNC_PROTOCOL_VERSION })
   }
 
   private handleMessage(socket: Socket, message: SyncMessage): void {
+    if (message.type === 'secure') {
+      this.handleSecureFrame(socket, message)
+      return
+    }
+
     if (message.type.startsWith('auth-')) {
+      if (this.authenticatedSockets.has(socket)) {
+        this.failSecureTransport(socket, new Error('认证完成后不接受明文认证消息'))
+        return
+      }
       this.handleAuthenticationMessage(socket, message)
       return
     }
 
+    if (this.authenticatedSockets.has(socket)) {
+      this.failSecureTransport(socket, new Error('认证完成后不接受明文同步消息'))
+      return
+    }
     if (message.type === 'hello') {
-      if (!this.authenticatedSockets.has(socket)) {
-        this.failAuthentication(socket, '认证尚未完成')
+      this.failAuthentication(socket, '认证尚未完成')
+    } else {
+      this.emit('error', new Error('收到握手前的同步消息'))
+      socket.destroy()
+    }
+  }
+
+  private handleSecureFrame(socket: Socket, frame: Extract<SyncMessage, { type: 'secure' }>): void {
+    const session = this.secureSessions.get(socket)
+    if (!this.authenticatedSockets.has(socket) || !session) {
+      this.failAuthentication(socket, '认证完成前不接受加密同步消息')
+      return
+    }
+    let sequence: bigint
+    try {
+      sequence = parseTransportSequence(frame.sequence)
+    } catch (error) {
+      this.failSecureTransport(socket, error)
+      return
+    }
+    if (sequence !== session.receiveSequence) {
+      this.failSecureTransport(socket, new Error('加密消息序号不连续'))
+      return
+    }
+    try {
+      const message = decryptTransportMessage(session.keys, session.receiveDirection, frame)
+      session.receiveSequence += 1n
+      this.handleApplicationMessage(socket, message)
+    } catch (error) {
+      this.failSecureTransport(socket, error)
+    }
+  }
+
+  private handleApplicationMessage(socket: Socket, message: ApplicationSyncMessage): void {
+
+    if (message.type === 'hello') {
+      if (message.version !== SYNC_PROTOCOL_VERSION) {
+        this.rejectProtocolVersion(socket, message.version)
         return
       }
       this.registerPeer(socket, message.peerId)
@@ -280,48 +368,54 @@ export class Transport extends EventEmitter {
       }
       const nonce = randomBytes(32).toString('hex')
       const timeout = setTimeout(() => this.failAuthentication(socket, '认证超时'), this.options.authTimeoutMs ?? AUTH_TIMEOUT_MS)
-      this.authStates.set(socket, { peerId: message.peerId, nonce, role: 'server', timeout })
+      this.authStates.set(socket, { peerId: message.peerId, nonce, clientNonce: message.clientNonce, phase: 'awaiting-client-proof', role: 'server', timeout })
       this.pendingAuthPeers.set(message.peerId, socket)
-      this.write(socket, { type: 'auth-challenge', nonce })
+      this.writeHandshake(socket, { type: 'auth-challenge', authVersion: AUTH_PROTOCOL_VERSION, serverNonce: nonce, serverProof: createServerProof(this.roomCode, message.roomHash, message.clientNonce, nonce) })
       return
     }
 
     if (message.type === 'auth-challenge') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'client' || !message.nonce) {
+      if (!state || state.role !== 'client' || state.phase !== 'awaiting-challenge') {
         this.failAuthentication(socket, '无效认证挑战')
         return
       }
-      this.write(socket, { type: 'auth-response', hmac: createAuthHmac(this.roomCode, message.nonce) })
+      const roomHash = deriveRoomHash(this.roomCode)
+      if (!state.clientNonce || !isMatchingHmac(createServerProof(this.roomCode, roomHash, state.clientNonce, message.serverNonce), message.serverProof)) { this.failAuthentication(socket, 'Invalid server proof'); return }
+      state.nonce = message.serverNonce
+      state.phase = 'awaiting-auth-ok'
+      this.writeHandshake(socket, { type: 'auth-response', authVersion: AUTH_PROTOCOL_VERSION, clientProof: createClientProof(this.roomCode, roomHash, state.clientNonce, message.serverNonce) })
       return
     }
 
     if (message.type === 'auth-response') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'server' || !state.nonce || this.usedNonces.has(state.nonce)) {
+      if (!state || state.role !== 'server' || state.phase !== 'awaiting-client-proof' || !state.nonce || !state.clientNonce || this.usedNonces.has(state.nonce)) {
         this.failAuthentication(socket, '无效或已使用的认证挑战')
         return
       }
-      const expected = createAuthHmac(this.roomCode, state.nonce)
-      if (!isMatchingHmac(expected, message.hmac)) {
+      const expected = createClientProof(this.roomCode, deriveRoomHash(this.roomCode), state.clientNonce, state.nonce)
+      if (!isMatchingHmac(expected, message.clientProof)) {
         this.failAuthentication(socket, '认证失败')
         return
       }
       this.usedNonces.add(state.nonce)
       setTimeout(() => this.usedNonces.delete(state.nonce!), this.options.authTimeoutMs ?? AUTH_TIMEOUT_MS)
+      this.establishSecureSession(socket, state)
       this.clearAuthState(socket)
       this.authenticatedSockets.add(socket)
-      this.write(socket, { type: 'auth-ok' })
+      this.writeHandshake(socket, { type: 'auth-ok' })
       this.sendHello(socket)
       return
     }
 
     if (message.type === 'auth-ok') {
       const state = this.authStates.get(socket)
-      if (!state || state.role !== 'client') {
+      if (!state || state.role !== 'client' || state.phase !== 'awaiting-auth-ok') {
         this.failAuthentication(socket, '无效认证确认')
         return
       }
+      this.establishSecureSession(socket, state)
       this.clearAuthState(socket)
       this.authenticatedSockets.add(socket)
       this.sendHello(socket)
@@ -336,11 +430,54 @@ export class Transport extends EventEmitter {
 
   private beginClientAuthentication(socket: Socket): void {
     const timeout = setTimeout(() => this.failAuthentication(socket, '认证超时'), this.options.authTimeoutMs ?? AUTH_TIMEOUT_MS)
-    this.authStates.set(socket, { role: 'client', timeout })
-    this.write(socket, { type: 'auth-request', peerId: this.peerId, roomHash: deriveRoomHash(this.roomCode) })
+    const clientNonce = randomBytes(32).toString('hex')
+    this.authStates.set(socket, { role: 'client', clientNonce, phase: 'awaiting-challenge', timeout })
+    this.writeHandshake(socket, { type: 'auth-request', authVersion: AUTH_PROTOCOL_VERSION, peerId: this.peerId, roomHash: deriveRoomHash(this.roomCode), clientNonce })
   }
 
-  private write(socket: Socket, message: SyncMessage): void {
+  private establishSecureSession(socket: Socket, state: AuthState): void {
+    if (!state.clientNonce || !state.nonce) {
+      throw new Error('认证 transcript 不完整')
+    }
+    const keys = deriveTransportSessionKeys(this.roomCode, deriveRoomHash(this.roomCode), state.clientNonce, state.nonce)
+    const client = state.role === 'client'
+    this.secureSessions.set(socket, {
+      keys,
+      receiveDirection: client ? 'server-to-client' : 'client-to-server',
+      receiveSequence: 0n,
+      sendDirection: client ? 'client-to-server' : 'server-to-client',
+      sendSequence: 0n,
+    })
+  }
+
+  private writeApplication(socket: Socket, message: ApplicationSyncMessage): void {
+    const session = this.secureSessions.get(socket)
+    if (!session || socket.destroyed) {
+      this.emit('error', new Error('安全传输尚未就绪'))
+      return
+    }
+    if (Buffer.byteLength(encodeMessage(message), 'utf8') > MAX_APPLICATION_MESSAGE_BYTES) {
+      this.emit('error', new Error(`同步应用消息超过 ${MAX_APPLICATION_MESSAGE_BYTES} 字节加密预算`))
+      return
+    }
+    if (session.sendSequence > 0xffff_ffff_ffff_ffffn) {
+      this.failSecureTransport(socket, new Error('加密消息序号已耗尽'))
+      return
+    }
+    const frame = encryptTransportMessage(session.keys, session.sendDirection, session.sendSequence, message)
+    if (Buffer.byteLength(encodeMessage(frame), 'utf8') > MAX_SYNC_MESSAGE_BYTES) {
+      this.failSecureTransport(socket, new Error('加密同步帧超过上限'))
+      return
+    }
+    session.sendSequence += 1n
+    this.writeRaw(socket, frame)
+  }
+
+  private writeHandshake(socket: Socket, message: Extract<SyncMessage, { type: `auth-${string}` }>): void {
+    this.writeRaw(socket, message)
+  }
+
+  private writeRaw(socket: Socket, message: SyncMessage): void {
     if (!socket.destroyed) {
       socket.write(encodeMessage(message), (error) => {
         if (error) this.emit('error', error)
@@ -348,15 +485,23 @@ export class Transport extends EventEmitter {
     }
   }
 
+  private failSecureTransport(socket: Socket, cause: unknown): void {
+    const error = cause instanceof Error ? cause : new Error(String(cause))
+    this.secureSessions.delete(socket)
+    this.emit('error', error)
+    socket.destroy()
+  }
+
   private failAuthentication(socket: Socket, reason: string, received = false): void {
     const state = this.authStates.get(socket)
     this.clearAuthState(socket)
+    this.secureSessions.delete(socket)
     if (!received) {
       if (!socket.destroyed) {
         socket.end(encodeMessage({ type: 'auth-fail', reason }))
       }
     }
-    this.emit('authFailed', new Error(reason), state?.peerId)
+    this.emit('authFailed', new Error(reason), state?.peerId, this.socketEndpoints.get(socket), this.socketAttemptIds.get(socket))
     if (received) {
       socket.destroy()
     }
@@ -391,7 +536,7 @@ export class Transport extends EventEmitter {
     this.socketPeerIds.set(socket, remotePeerId)
     this.connections.set(remotePeerId, socket)
     this.startHeartbeat(socket)
-    this.emit('connect', remotePeerId, this.socketEndpoints.get(socket))
+    this.emit('connect', remotePeerId, this.socketEndpoints.get(socket), this.socketAttemptIds.get(socket))
   }
 
   /** 通过轻量 ping/pong 识别静默失效的 TCP 长连接。 */
@@ -429,11 +574,18 @@ export class Transport extends EventEmitter {
     this.stopHeartbeat(socket)
     this.clearAuthState(socket)
     this.authenticatedSockets.delete(socket)
+    this.secureSessions.delete(socket)
     this.sockets.delete(socket)
     this.socketLastSeen.delete(socket)
     const remotePeerId = this.socketPeerIds.get(socket)
+    const endpoint = this.socketEndpoints.get(socket)
+    const attemptId = this.socketAttemptIds.get(socket)
     this.socketPeerIds.delete(socket)
     this.socketEndpoints.delete(socket)
+    this.socketAttemptIds.delete(socket)
+    if (!remotePeerId && attemptId) {
+      this.emit('connectionFailed', new Error(`连接 ${endpoint?.host ?? 'remote'}:${endpoint?.port ?? 0} 在认证完成前关闭`), endpoint, attemptId)
+    }
     if (!remotePeerId || this.connections.get(remotePeerId) !== socket) {
       return
     }

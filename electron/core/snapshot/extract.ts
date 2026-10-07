@@ -1,6 +1,19 @@
 import { createRequire } from 'node:module'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
+import { chmod, readFile, writeFile } from 'node:fs/promises'
+import { platform } from 'node:process'
+
+import {
+  assertNoCaseCollisions,
+  assertSafeProjectRelativePath,
+  isCaseInsensitiveFilesystem,
+  prepareSafeProjectWritePath,
+  resolveSafeProjectPath,
+} from '../fs/project-path'
+import {
+  resolveSnapshotExtractionLimits,
+  type SnapshotExtractionLimitOverrides,
+  type SnapshotExtractionLimits,
+} from './limits'
 
 const require = createRequire(import.meta.url)
 const yauzl = require('yauzl') as typeof import('yauzl')
@@ -10,18 +23,45 @@ export interface ExtractOptions {
   onFile?: (relativePath: string) => void
   overwrite?: boolean
   skip?: (relativePath: string) => boolean
+  /** 僅供測試注入目標檔案系統能力；production 會在目標 volume 實測。 */
+  caseInsensitive?: boolean
+  /** 测试或受控调用可收紧资源上限；生产环境使用默认硬上限。 */
+  limits?: SnapshotExtractionLimitOverrides
+}
+
+/** ZIP 條目內容及 Cairn 需要保留的最小 POSIX 語義。 */
+export interface ZipEntryContents {
+  content: Buffer
+  mode: '100644' | '100755'
 }
 
 /** 以 Buffer 读取 ZIP 条目，供 checkpoint 比较使用；仍沿用同一条 Zip Slip 防线。 */
-export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer>> {
-  return new Promise<Map<string, Buffer>>((resolvePromise, rejectPromise) => {
+export async function readZipEntries(
+  buffer: Buffer,
+  limitsOverride?: SnapshotExtractionLimitOverrides,
+): Promise<Map<string, Buffer>> {
+  const entries = await readZipEntryContents(buffer, limitsOverride)
+  return new Map([...entries].map(([path, entry]) => [path, entry.content]))
+}
+
+/**
+ * 與 readZipEntries 使用相同的 Zip Slip / 解壓上限，但同時保留 executable
+ * 語義給 checkpoint 還原。舊 ZIP 缺少 Unix mode 時安全回退為 100644。
+ */
+export async function readZipEntryContents(
+  buffer: Buffer,
+  limitsOverride?: SnapshotExtractionLimitOverrides,
+): Promise<Map<string, ZipEntryContents>> {
+  const limits = resolveSnapshotExtractionLimits(limitsOverride)
+  return new Promise<Map<string, ZipEntryContents>>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
         rejectPromise(openError ?? new Error('無法開啟 ZIP'))
         return
       }
 
-      const entries = new Map<string, Buffer>()
+      const entries = new Map<string, ZipEntryContents>()
+      const budget = createExtractionBudget(limits)
       let completed = false
       const finish = (error?: Error): void => {
         if (completed) return
@@ -40,8 +80,16 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
         }
 
         const relativePath = entry.fileName.replaceAll('\\', '/')
-        if (!safeTargetPath('.', relativePath)) {
+        try {
+          assertSafeProjectRelativePath(relativePath)
+        } catch {
           finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
+          return
+        }
+        try {
+          budget.beginEntry(entry.uncompressedSize)
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
           return
         }
 
@@ -51,10 +99,25 @@ export async function readZipEntries(buffer: Buffer): Promise<Map<string, Buffer
             return
           }
           const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+          let entryBytes = 0
+          stream.on('data', (chunk: Buffer) => {
+            if (completed) return
+            try {
+              entryBytes += chunk.length
+              budget.consume(entryBytes, chunk.length)
+              chunks.push(chunk)
+            } catch (error) {
+              stream.destroy()
+              finish(error instanceof Error ? error : new Error(String(error)))
+            }
+          })
           stream.once('error', finish)
           stream.once('end', () => {
-            entries.set(relativePath, Buffer.concat(chunks))
+            if (completed) return
+            entries.set(relativePath, {
+              content: Buffer.concat(chunks),
+              mode: executableMode(entry.externalFileAttributes),
+            })
             zipfile.readEntry()
           })
         })
@@ -70,6 +133,9 @@ export async function extractZipBuffer(
   targetRoot: string,
   options: ExtractOptions = {},
 ): Promise<void> {
+  const limits = resolveSnapshotExtractionLimits(options.limits)
+  const entryPaths = await listZipEntryPaths(buffer, limits)
+  assertNoCaseCollisions(entryPaths, options.caseInsensitive ?? await isCaseInsensitiveFilesystem(targetRoot))
   await new Promise<void>((resolvePromise, rejectPromise) => {
     yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
       if (openError || !zipfile) {
@@ -78,6 +144,7 @@ export async function extractZipBuffer(
       }
 
       let completed = false
+      const budget = createExtractionBudget(limits)
       const finish = (error?: Error): void => {
         if (completed) return
         completed = true
@@ -96,13 +163,20 @@ export async function extractZipBuffer(
         }
 
         const relativePath = entry.fileName.replaceAll('\\', '/')
-        if (options.skip?.(relativePath)) {
-          readNext()
+        try {
+          assertSafeProjectRelativePath(relativePath)
+        } catch {
+          finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
           return
         }
-        const destination = safeTargetPath(targetRoot, relativePath)
-        if (!destination) {
-          finish(new Error(`ZIP 包含越界路徑：${entry.fileName}`))
+        try {
+          budget.beginEntry(entry.uncompressedSize)
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
+        if (options.skip?.(relativePath)) {
+          readNext()
           return
         }
 
@@ -112,17 +186,31 @@ export async function extractZipBuffer(
             return
           }
           const chunks: Buffer[] = []
-          stream.on('data', (chunk: Buffer) => chunks.push(chunk))
+          let entryBytes = 0
+          stream.on('data', (chunk: Buffer) => {
+            if (completed) return
+            try {
+              entryBytes += chunk.length
+              budget.consume(entryBytes, chunk.length)
+              chunks.push(chunk)
+            } catch (error) {
+              stream.destroy()
+              finish(error instanceof Error ? error : new Error(String(error)))
+            }
+          })
           stream.once('error', finish)
           stream.once('end', () => {
+            if (completed) return
             void (async () => {
               try {
                 const content = Buffer.concat(chunks)
+                const destination = await resolveSafeProjectPath(targetRoot, relativePath)
                 if (options.overwrite === false) {
                   const exists = await existingContent(destination)
                   if (exists && !exists.equals(content)) {
                     options.onConflict?.(relativePath)
-                    await writeFile(`${destination}.cairn-remote`, content)
+                    const remotePath = await prepareSafeProjectWritePath(targetRoot, `${relativePath}.cairn-remote`)
+                    await writeFile(remotePath, content)
                     readNext()
                     return
                   }
@@ -131,8 +219,9 @@ export async function extractZipBuffer(
                     return
                   }
                 }
-                await mkdir(dirname(destination), { recursive: true })
-                await writeFile(destination, content)
+                const writePath = await prepareSafeProjectWritePath(targetRoot, relativePath)
+                await writeFile(writePath, content)
+                await restoreExecutableMode(writePath, entry.externalFileAttributes)
                 options.onFile?.(relativePath)
                 readNext()
               } catch (error) {
@@ -147,13 +236,86 @@ export async function extractZipBuffer(
   })
 }
 
-function safeTargetPath(targetRoot: string, entryName: string): string | undefined {
-  const normalized = normalize(entryName)
-  if (isAbsolute(normalized) || normalized === '..' || normalized.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
-    return undefined
+/** ZIP 缺少 Unix mode（舊 snapshot 或 Windows 打包）時安全回退為非可執行檔。 */
+async function restoreExecutableMode(destination: string, externalAttributes: number): Promise<void> {
+  if (platform === 'win32') return
+  await chmod(destination, executableMode(externalAttributes) === '100755' ? 0o755 : 0o644)
+}
+
+function executableMode(externalAttributes: number): '100644' | '100755' {
+  const archivedMode = (externalAttributes >>> 16) & 0o777
+  return (archivedMode & 0o111) === 0 ? '100644' : '100755'
+}
+
+/** 在任何 destination write 前掃描 central directory，先拒絕邏輯路徑碰撞。 */
+async function listZipEntryPaths(buffer: Buffer, limits: SnapshotExtractionLimits): Promise<string[]> {
+  return new Promise<string[]>((resolvePromise, rejectPromise) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (openError, zipfile) => {
+      if (openError || !zipfile) {
+        rejectPromise(openError ?? new Error('無法開啟 ZIP'))
+        return
+      }
+      const paths: string[] = []
+      let completed = false
+      const finish = (error?: Error): void => {
+        if (completed) return
+        completed = true
+        zipfile.close()
+        if (error) rejectPromise(error)
+        else resolvePromise(paths)
+      }
+      zipfile.on('error', finish)
+      zipfile.on('end', () => finish())
+      zipfile.on('entry', (entry) => {
+        if (/\/$/u.test(entry.fileName)) {
+          zipfile.readEntry()
+          return
+        }
+        const relativePath = entry.fileName.replaceAll('\\', '/')
+        try {
+          assertSafeProjectRelativePath(relativePath)
+          if (paths.length >= limits.maxEntries) throw new Error(`ZIP 条目数量超过 ${limits.maxEntries} 上限`)
+          paths.push(relativePath)
+          zipfile.readEntry()
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)))
+        }
+      })
+      zipfile.readEntry()
+    })
+  })
+}
+
+function createExtractionBudget(limits: SnapshotExtractionLimits): {
+  beginEntry: (declaredSize: number) => void
+  consume: (entryBytes: number, chunkBytes: number) => void
+} {
+  let entries = 0
+  let totalBytes = 0
+
+  return {
+    beginEntry(declaredSize: number): void {
+      entries += 1
+      if (entries > limits.maxEntries) {
+        throw new Error(`ZIP 条目数量超过 ${limits.maxEntries} 上限`)
+      }
+      if (!Number.isSafeInteger(declaredSize) || declaredSize < 0 || declaredSize > limits.maxEntryBytes) {
+        throw new Error(`ZIP 条目大小超过 ${limits.maxEntryBytes} 字节上限`)
+      }
+      if (declaredSize > limits.maxTotalUncompressedBytes - totalBytes) {
+        throw new Error(`ZIP 解压总大小超过 ${limits.maxTotalUncompressedBytes} 字节上限`)
+      }
+    },
+    consume(entryBytes: number, chunkBytes: number): void {
+      if (entryBytes > limits.maxEntryBytes) {
+        throw new Error(`ZIP 条目大小超过 ${limits.maxEntryBytes} 字节上限`)
+      }
+      if (chunkBytes > limits.maxTotalUncompressedBytes - totalBytes) {
+        throw new Error(`ZIP 解压总大小超过 ${limits.maxTotalUncompressedBytes} 字节上限`)
+      }
+      totalBytes += chunkBytes
+    },
   }
-  const target = resolve(targetRoot, normalized)
-  return relative(targetRoot, target).startsWith('..') ? undefined : target
 }
 
 async function existingContent(targetPath: string): Promise<Buffer | undefined> {

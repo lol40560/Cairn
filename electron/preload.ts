@@ -19,6 +19,7 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
 }
 
 const cairn = {
+  setSimulationMode: (active: boolean): Promise<IpcResult<void>> => invoke('cairn:setSimulationMode', active),
   selectFolder: (): Promise<IpcResult<string>> => invoke('cairn:selectFolder'),
   startWatching: (folder: string): Promise<IpcResult<void>> =>
     invoke('cairn:startWatching', folder),

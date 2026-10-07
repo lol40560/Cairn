@@ -10,6 +10,6 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['electron/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
+    include: ['electron/**/*.test.ts', 'scripts/**/*.test.js', 'src/**/*.test.{ts,tsx}'],
   },
 })

@@ -1,11 +1,10 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { randomInt } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import Database from 'better-sqlite3'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
@@ -15,7 +14,8 @@ import { CheckpointManager } from './core/checkpoints'
 import type { Checkpoint, CheckpointComparison, CheckpointFileContents, CheckpointSource } from './core/checkpoints'
 import { computeProjectIdentity } from './core/identity'
 import type { ProjectIdentity } from './core/identity'
-import { AppError, wrapIpcHandler } from './core/errors'
+import { AppError, serializeAppError, type IpcResult, wrapIpcHandler as wrapUncheckedIpcHandler } from './core/errors'
+import { prepareSafeProjectWritePath, resolveSafeProjectPath } from './core/fs/project-path'
 import { ProjectsManager } from './core/projects'
 import type { ProjectEntry } from './core/projects'
 import { exportProjectSnapshot } from './core/snapshot/export'
@@ -39,6 +39,7 @@ import {
   type SeederInfo,
   type SeederState,
 } from './core/sync'
+import { generateRoomSecret, normalizeRoomSecret } from './core/sync/protocol'
 
 interface ActiveProject {
   root: string
@@ -89,6 +90,8 @@ let projectsManager: ProjectsManager | undefined
 let handlersRegistered = false
 let isQuitting = false
 let mainWindow: BrowserWindow | undefined
+// 模擬模式是能力邊界的一部分：即使 renderer 有舊 callback，也不能觸及真實工作區。
+let hackathonSimulationActive = false
 // 串行化监控启动，避免开发模式初始化与用户操作并发创建多个 watcher。
 let startWatchingPromise: Promise<void> | undefined
 
@@ -101,6 +104,60 @@ const FILE_COUNT_IGNORED_DIRECTORIES = new Set([
 ])
 
 app.setName('Cairn')
+
+export function setHackathonSimulationActive(active: boolean): void {
+  hackathonSimulationActive = active
+}
+
+function requireRealWorkspaceCapability(): void {
+  if (hackathonSimulationActive) {
+    throw new AppError('此操作在 Hackathon Simulation 期間不可用', 'permission', { code: 'SIMULATION_ISOLATED' })
+  }
+}
+
+function guardRealWorkspaceAction<Args extends unknown[], Result>(
+  fn: (...args: Args) => Result | Promise<Result>,
+): (...args: Args) => Result | Promise<Result> {
+  return (...args) => {
+    requireRealWorkspaceCapability()
+    return fn(...args)
+  }
+}
+
+/**
+ * 所有 renderer IPC 都必须来自当前主窗口的主 frame。
+ * Electron 总会提供 sender；缺少 sender 的调用一律拒绝。
+ */
+export function isTrustedIpcSender(event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'> | Record<string, never>): boolean {
+  if (!('sender' in event)) return false
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return false
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false
+
+  const url = event.senderFrame.url
+  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  if (developmentUrl) {
+    try {
+      return new URL(url).origin === new URL(developmentUrl).origin
+    } catch {
+      return false
+    }
+  }
+  return new URL(url).protocol === 'file:'
+}
+
+/** 统一先验证 renderer 身份，再进入 simulation capability 与业务参数检查。 */
+function wrapIpcHandler<Args extends unknown[], Result>(
+  fn: (...args: Args) => Result | Promise<Result>,
+): (event: IpcMainInvokeEvent, ...args: Args) => Promise<IpcResult<Result>> {
+  const wrapped = wrapUncheckedIpcHandler(fn)
+  return async (event, ...args) => {
+    if (!isTrustedIpcSender(event)) {
+      const error = new AppError('未经授权的 renderer IPC 调用', 'permission', { code: 'IPC_UNTRUSTED_SENDER' })
+      return { ok: false, error: serializeAppError(error) }
+    }
+    return wrapped(event, ...args)
+  }
+}
 
 // 开发进程与正式安装版使用独立用户数据目录，便于本机双实例联调。
 if (!app.isPackaged && typeof app.setPath === 'function') {
@@ -609,31 +666,19 @@ export async function openInFileManager(targetPath: string): Promise<void> {
 }
 
 function generateRoomCode(): string {
-  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-  let roomCode = ''
-  for (let index = 0; index < 6; index += 1) {
-    roomCode += alphabet[randomInt(alphabet.length)]
-  }
-  return roomCode
+  return generateRoomSecret()
 }
 
-function validateRoomCode(roomCode: string): void {
-  if (!/^[2-9A-HJ-NP-Z]{6}$/.test(roomCode)) {
-    throw new Error(`房间码必须是 6 位大写字母或数字：${roomCode}`)
-  }
+function validateRoomCode(roomCode: string): string {
+  return normalizeRoomSecret(roomCode)
 }
 
 function broadcastPeers(): void {
   sendToWindow('cairn:peers', listPeers())
 }
 
-function projectFilePath(projectRoot: string, relativePath: string): string {
-  const root = resolve(projectRoot)
-  const target = resolve(root, relativePath)
-  if (!target.startsWith(`${root}${sep}`)) {
-    throw new Error(`远端文件路径越界：${relativePath}`)
-  }
-  return target
+async function projectFilePath(projectRoot: string, relativePath: string): Promise<string> {
+  return resolveSafeProjectPath(projectRoot, relativePath)
 }
 
 async function startRoom(roomCode: string, discovery = true): Promise<void> {
@@ -652,7 +697,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
         project.watcher.applyRemoteChange(relativePath, content, deleted, blobHash),
       readFile: async (relativePath) => {
         try {
-          return await readFile(projectFilePath(project.root, relativePath), 'utf8')
+          return await readFile(await projectFilePath(project.root, relativePath), 'utf8')
         } catch (error: unknown) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
             return ''
@@ -660,19 +705,17 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
           throw error
         }
       },
-      fileExists: async (relativePath) => existsSync(projectFilePath(project.root, relativePath)),
+      fileExists: async (relativePath) => existsSync(await projectFilePath(project.root, relativePath)),
       writeFile: async (relativePath, content) => {
-        const targetPath = projectFilePath(project.root, relativePath)
-        await mkdir(dirname(targetPath), { recursive: true })
+        const targetPath = await prepareSafeProjectWritePath(project.root, relativePath)
         await writeFile(targetPath, content, 'utf8')
       },
       writeBinaryFile: async (relativePath, content) => {
-        const targetPath = projectFilePath(project.root, relativePath)
-        await mkdir(dirname(targetPath), { recursive: true })
+        const targetPath = await prepareSafeProjectWritePath(project.root, relativePath)
         await writeFile(targetPath, content)
       },
       moveRemoteDeletionToTrash: async (relativePath, author, opHash) => {
-        const targetPath = projectFilePath(project.root, relativePath)
+        const targetPath = await projectFilePath(project.root, relativePath)
         if (existsSync(targetPath)) {
           await project.trash.moveToTrash(relativePath, targetPath, author, opHash)
         }
@@ -690,7 +733,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
-    console.info(`[cairn:sync] sync.start called with roomCode ${roomCode}`)
+    console.info('[cairn:sync] sync.start called')
     await sync.start({ discovery })
     activeRoom = { roomCode, sync }
     broadcastPeers()
@@ -703,15 +746,15 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
 export async function createRoom(): Promise<string> {
   await leaveRoom()
   const roomCode = generateRoomCode()
-  console.info(`[cairn:sync] createRoom requested roomCode ${roomCode}`)
+  console.info('[cairn:sync] createRoom requested')
   await startRoom(roomCode)
   return roomCode
 }
 
 export async function joinRoom(roomCode: string): Promise<void> {
-  validateRoomCode(roomCode)
+  roomCode = validateRoomCode(roomCode)
   await leaveRoom()
-  console.info(`[cairn:sync] joinRoom requested roomCode ${roomCode}`)
+  console.info('[cairn:sync] joinRoom requested')
   await startRoom(roomCode)
 }
 
@@ -778,7 +821,7 @@ export async function connectToAddress(input: { host: string; port: number; room
   if (!activeProject) {
     throw new Error('请先选择并开始监控一个项目')
   }
-  validateRoomCode(input.roomCode)
+  input.roomCode = validateRoomCode(input.roomCode)
 
   if (!activeRoom) {
     // 直连会话仅启动 TCP 传输，不发布或浏览 mDNS 服务。
@@ -1198,36 +1241,36 @@ export function registerIpcHandlers(): void {
   }
 
   handlersRegistered = true
-  ipcMain.handle('cairn:selectFolder', wrapIpcHandler(selectFolder))
-  ipcMain.handle('cairn:startWatching', wrapIpcHandler((folder: string) => startWatching(folder)))
-  ipcMain.handle('cairn:stopWatching', wrapIpcHandler(() => stopWatching()))
+  ipcMain.handle('cairn:selectFolder', wrapIpcHandler(guardRealWorkspaceAction(selectFolder)))
+  ipcMain.handle('cairn:startWatching', wrapIpcHandler(guardRealWorkspaceAction((folder: string) => startWatching(folder))))
+  ipcMain.handle('cairn:stopWatching', wrapIpcHandler(guardRealWorkspaceAction(() => stopWatching())))
   ipcMain.handle('cairn:listRecentOps', wrapIpcHandler((limit: number) => listRecentOps(limit)))
-  ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(listCheckpoints))
-  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler((name?: string) => createCheckpoint(name)))
-  ipcMain.handle('cairn:compareCheckpoint', wrapIpcHandler((id: string) => compareCheckpoint(id)))
-  ipcMain.handle('cairn:readCheckpointComparisonFile', wrapIpcHandler((id: string, path: string) => readCheckpointComparisonFile(id, path)))
-  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler((id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]) => restoreCheckpoint(id, expectedCurrentRevision, dirtyFilePaths)))
-  ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler((id: string) => deleteCheckpoint(id)))
-  ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(listProjectFiles))
-  ipcMain.handle('cairn:readProjectFile', wrapIpcHandler((filePath: string) => readProjectFile(filePath)))
+  ipcMain.handle('cairn:listCheckpoints', wrapIpcHandler(guardRealWorkspaceAction(listCheckpoints)))
+  ipcMain.handle('cairn:createCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((name?: string) => createCheckpoint(name))))
+  ipcMain.handle('cairn:compareCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string) => compareCheckpoint(id))))
+  ipcMain.handle('cairn:readCheckpointComparisonFile', wrapIpcHandler(guardRealWorkspaceAction((id: string, path: string) => readCheckpointComparisonFile(id, path))))
+  ipcMain.handle('cairn:restoreCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string, expectedCurrentRevision?: string, dirtyFilePaths?: string[]) => restoreCheckpoint(id, expectedCurrentRevision, dirtyFilePaths))))
+  ipcMain.handle('cairn:deleteCheckpoint', wrapIpcHandler(guardRealWorkspaceAction((id: string) => deleteCheckpoint(id))))
+  ipcMain.handle('cairn:listProjectFiles', wrapIpcHandler(guardRealWorkspaceAction(listProjectFiles)))
+  ipcMain.handle('cairn:readProjectFile', wrapIpcHandler(guardRealWorkspaceAction((filePath: string) => readProjectFile(filePath))))
   ipcMain.handle(
     'cairn:saveProjectFile',
-    wrapIpcHandler((filePath: string, content: string) => saveProjectFile(filePath, content)),
+    wrapIpcHandler(guardRealWorkspaceAction((filePath: string, content: string) => saveProjectFile(filePath, content))),
   )
-  ipcMain.handle('cairn:createRoom', wrapIpcHandler(createRoom))
-  ipcMain.handle('cairn:joinRoom', wrapIpcHandler((roomCode: string) => joinRoom(roomCode)))
-  ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(leaveRoom))
+  ipcMain.handle('cairn:createRoom', wrapIpcHandler(guardRealWorkspaceAction(createRoom)))
+  ipcMain.handle('cairn:joinRoom', wrapIpcHandler(guardRealWorkspaceAction((roomCode: string) => joinRoom(roomCode))))
+  ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(guardRealWorkspaceAction(leaveRoom)))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
-  ipcMain.handle('cairn:retryPeer', wrapIpcHandler((peerId: string) => retryPeer(peerId)))
+  ipcMain.handle('cairn:retryPeer', wrapIpcHandler(guardRealWorkspaceAction((peerId: string) => retryPeer(peerId))))
   ipcMain.handle('cairn:getProjectIdentity', wrapIpcHandler(getProjectIdentity))
   ipcMain.handle('cairn:getLocalEndpoint', wrapIpcHandler(getLocalEndpoint))
-  ipcMain.handle('cairn:connectToAddress', wrapIpcHandler((input) => connectToAddress(input)))
+  ipcMain.handle('cairn:connectToAddress', wrapIpcHandler(guardRealWorkspaceAction((input) => connectToAddress(input))))
   ipcMain.handle('cairn:getDiscoveryStatus', wrapIpcHandler(getDiscoveryStatus))
   ipcMain.handle('cairn:checkFolder', wrapIpcHandler((folder: string) => checkFolder(folder)))
-  ipcMain.handle('cairn:listProjects', wrapIpcHandler(listProjects))
-  ipcMain.handle('cairn:addProject', wrapIpcHandler((projectPath: string) => addProject(projectPath)))
-  ipcMain.handle('cairn:removeProject', wrapIpcHandler((id: string) => removeProject(id)))
-  ipcMain.handle('cairn:setActiveProject', wrapIpcHandler((id: string) => setActiveProject(id)))
+  ipcMain.handle('cairn:listProjects', wrapIpcHandler(guardRealWorkspaceAction(listProjects)))
+  ipcMain.handle('cairn:addProject', wrapIpcHandler(guardRealWorkspaceAction((projectPath: string) => addProject(projectPath))))
+  ipcMain.handle('cairn:removeProject', wrapIpcHandler(guardRealWorkspaceAction((id: string) => removeProject(id))))
+  ipcMain.handle('cairn:setActiveProject', wrapIpcHandler(guardRealWorkspaceAction((id: string) => setActiveProject(id))))
   ipcMain.handle('cairn:getActiveProject', wrapIpcHandler(getActiveProject))
   ipcMain.handle('cairn:checkProjectAvailability', wrapIpcHandler((id: string) => checkProjectAvailability(id)))
   ipcMain.handle('cairn:getLastSession', wrapIpcHandler(readLastSession))
@@ -1241,26 +1284,27 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:getGithubConfig', wrapIpcHandler(getGithubConfig))
   ipcMain.handle('cairn:clearGithubConfig', wrapIpcHandler(clearGithubConfig))
   ipcMain.handle('cairn:resetGithubConfig', wrapIpcHandler(resetGithubConfig))
-  ipcMain.handle('cairn:exportPR', wrapIpcHandler((options) => exportProjectPR(options)))
-  ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(exportProjectSnapshotFile))
+  ipcMain.handle('cairn:exportPR', wrapIpcHandler(guardRealWorkspaceAction((options) => exportProjectPR(options))))
+  ipcMain.handle('cairn:exportSnapshot', wrapIpcHandler(guardRealWorkspaceAction(exportProjectSnapshotFile)))
   ipcMain.handle('cairn:copyToClipboard', wrapIpcHandler((text: string) => copyToClipboard(text)))
   ipcMain.handle('cairn:openExternal', wrapIpcHandler((url: string) => openExternal(url)))
   ipcMain.handle('cairn:openInFileManager', wrapIpcHandler((targetPath: string) => openInFileManager(targetPath)))
-  ipcMain.handle('cairn:startSharing', wrapIpcHandler(startSharing))
-  ipcMain.handle('cairn:stopSharing', wrapIpcHandler(stopSharing))
-  ipcMain.handle('cairn:downloadProject', wrapIpcHandler((input) => downloadProject(input)))
+  ipcMain.handle('cairn:startSharing', wrapIpcHandler(guardRealWorkspaceAction(startSharing)))
+  ipcMain.handle('cairn:stopSharing', wrapIpcHandler(guardRealWorkspaceAction(stopSharing)))
+  ipcMain.handle('cairn:downloadProject', wrapIpcHandler(guardRealWorkspaceAction((input) => downloadProject(input))))
   ipcMain.handle('cairn:listSeeders', wrapIpcHandler(listSeeders))
   ipcMain.handle('cairn:getDefaultDownloadDir', wrapIpcHandler(getDefaultDownloadDir))
   ipcMain.handle('cairn:cancelDownload', wrapIpcHandler(cancelDownload))
   ipcMain.handle('cairn:selectDownloadFolder', wrapIpcHandler(selectDownloadFolder))
   ipcMain.handle('cairn:listTrash', wrapIpcHandler(listTrash))
-  ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler((trashId: string) => restoreFromTrash(trashId)))
-  ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler((trashId: string) => purgeFromTrash(trashId)))
-  ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(emptyTrash))
+  ipcMain.handle('cairn:restoreFromTrash', wrapIpcHandler(guardRealWorkspaceAction((trashId: string) => restoreFromTrash(trashId))))
+  ipcMain.handle('cairn:purgeFromTrash', wrapIpcHandler(guardRealWorkspaceAction((trashId: string) => purgeFromTrash(trashId))))
+  ipcMain.handle('cairn:emptyTrash', wrapIpcHandler(guardRealWorkspaceAction(emptyTrash)))
   ipcMain.handle('cairn:listConflicts', wrapIpcHandler(listConflicts))
   ipcMain.handle('cairn:getConflict', wrapIpcHandler((opHash: string) => getConflict(opHash)))
-  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler((opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]) => resolveConflict(opHash, resolution, content, dirtyFilePaths)))
-  ipcMain.handle('cairn:deleteConflict', wrapIpcHandler((opHash: string) => deleteConflict(opHash)))
+  ipcMain.handle('cairn:resolveConflict', wrapIpcHandler(guardRealWorkspaceAction((opHash: string, resolution: ConflictResolution, content?: string, dirtyFilePaths?: string[]) => resolveConflict(opHash, resolution, content, dirtyFilePaths))))
+  ipcMain.handle('cairn:deleteConflict', wrapIpcHandler(guardRealWorkspaceAction((opHash: string) => deleteConflict(opHash))))
+  ipcMain.handle('cairn:setSimulationMode', wrapIpcHandler((active: boolean) => setHackathonSimulationActive(active)))
   ipcMain.handle('cairn:getTrashRetentionDays', wrapIpcHandler(getTrashRetentionDays))
   ipcMain.handle('cairn:setTrashRetentionDays', wrapIpcHandler((days: number) => setTrashRetentionDays(days)))
 }
@@ -1274,10 +1318,22 @@ export function createWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
   mainWindow = window
+
+  // Cairn 不需要 renderer navigation、弹窗或 Web permissions；一律在主进程收紧。
+  window.webContents.on('will-navigate', (event) => event.preventDefault())
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      if (new URL(url).protocol === 'https:') void shell.openExternal(url)
+    } catch {
+      // 非 URL 直接拒绝。
+    }
+    return { action: 'deny' }
+  })
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
 
   window.once('ready-to-show', () => window.show())
   window.once('closed', () => {

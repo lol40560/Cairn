@@ -1,0 +1,38 @@
+{
+  "en": {
+    "title": "Privacy Policy",
+    "summary": "Cairn is local-first. It has no developer-operated backend, accounts, analytics, or telemetry. Collaboration and GitHub features transmit data only when you choose to use them.",
+    "sections": [
+      { "heading": "Privacy Overview", "body": "Cairn is a local-first desktop application. Cairn's developer does not operate a service that collects your project data, and the application does not include product analytics or telemetry." },
+      { "heading": "Data Cairn Does Not Collect", "body": "Cairn does not send your project files, operation history, account information, or usage activity to a Cairn-operated backend because Cairn does not operate one." },
+      { "heading": "Data Stored Locally", "body": "Cairn stores project synchronization metadata, operation history, object and blob data, session and activity history, project configuration, and recovery data on your device. If you configure GitHub integration, Cairn stores repository configuration locally and protects the GitHub token with Electron safeStorage, using the operating-system-backed protection available on your device." },
+      { "heading": "Peer-to-Peer Collaboration", "body": "When you create or join a Cairn room, collaboration data needed to synchronize the selected project is transmitted directly between participating peers over the local or chosen network connection. Synchronization traffic is encrypted in transit between authenticated Cairn peers." },
+      { "heading": "Local Network Discovery", "body": "When local discovery is enabled, Cairn uses mDNS to advertise and discover compatible peers on the local network. Discovery exposes non-secret service, peer, protocol, and network metadata needed to find peers. It does not broadcast the room secret." },
+      { "heading": "GitHub Integration", "body": "Only when you explicitly request a GitHub export or pull request does Cairn communicate with GitHub's API. GitHub may process the repository identifiers, authentication credentials, and project or file content necessary to complete that requested action, subject to GitHub's own terms and privacy practices." },
+      { "heading": "Diagnostics", "body": "Diagnostics remain local unless you manually copy and share them. Cairn does not automatically upload diagnostics. Diagnostic output excludes room credentials." },
+      { "heading": "Data Retention and Deletion", "body": "Locally stored Cairn data remains on your device until it is removed through Cairn, by deleting the relevant project or application data, or by uninstalling the application and removing its local data. Data sent to GitHub is retained under GitHub's policies." },
+      { "heading": "Third-Party Services", "body": "GitHub is used only for user-requested GitHub functionality. Cairn does not use a developer-operated analytics, telemetry, or cloud-storage service." },
+      { "heading": "Security", "body": "Cairn uses local operating-system-backed credential protection when available and encrypts peer synchronization traffic in transit. No security measure can eliminate every risk; protect your device, room credentials, and GitHub credentials." },
+      { "heading": "Changes to This Policy", "body": "Updates are published in this repository and included in released application materials." },
+      { "heading": "Contact", "body": "For privacy questions, open an issue at https://github.com/lol40560/Cairn/issues." }
+    ]
+  },
+  "zh": {
+    "title": "隱私政策",
+    "summary": "Cairn 是本地優先工具。它沒有由開發者營運的後端、帳號、分析或遙測；只有在你選擇協作或使用 GitHub 功能時，才會傳輸必要資料。",
+    "sections": [
+      { "heading": "隱私概覽", "body": "Cairn 是本地優先的桌面應用程式。Cairn 的開發者沒有營運蒐集專案資料的服務，應用程式也不包含產品分析或遙測。" },
+      { "heading": "Cairn 不蒐集的資料", "body": "Cairn 不會把你的專案檔案、操作歷史、帳號資訊或使用活動傳送至 Cairn 營運的後端，因為 Cairn 沒有此類後端。" },
+      { "heading": "本機儲存的資料", "body": "Cairn 會在你的裝置上儲存專案同步中繼資料、操作歷史、物件與 blob 資料、工作階段與活動歷史、專案設定與復原資料。若你設定 GitHub 整合，Cairn 會在本機儲存儲存庫設定，並透過 Electron safeStorage 使用裝置上可用的作業系統保護機制保護 GitHub Token。" },
+      { "heading": "點對點協作", "body": "當你建立或加入 Cairn 房間時，為同步所選專案而需要的協作資料會直接在參與的 peers 之間，透過本機或你選擇的網路連線傳輸。已驗證 Cairn peers 之間的同步流量會在傳輸中加密。" },
+      { "heading": "區域網路探索", "body": "啟用本機探索時，Cairn 使用 mDNS 在區域網路上公告及尋找相容的 peers。探索只公開尋找 peers 所需的非機密服務、peer、協定與網路中繼資料，不會廣播房間密鑰。" },
+      { "heading": "GitHub 整合", "body": "只有在你明確要求匯出 GitHub 或建立 Pull Request 時，Cairn 才會與 GitHub API 通訊。GitHub 可能會依完成該要求所需處理儲存庫識別資訊、驗證憑證，以及專案或檔案內容；此資料受 GitHub 自身條款與隱私實務約束。" },
+      { "heading": "診斷資訊", "body": "診斷資訊會保留在本機，除非你手動複製並分享。Cairn 不會自動上傳診斷資訊，且診斷輸出不包含房間憑證。" },
+      { "heading": "資料保留與刪除", "body": "本機儲存的 Cairn 資料會保留在你的裝置，直到你透過 Cairn、刪除相關專案或應用程式資料，或解除安裝應用程式並移除本機資料為止。傳送到 GitHub 的資料則依 GitHub 的政策保留。" },
+      { "heading": "第三方服務", "body": "GitHub 僅用於使用者主動要求的 GitHub 功能。Cairn 不使用由開發者營運的分析、遙測或雲端儲存服務。" },
+      { "heading": "安全性", "body": "在可用時，Cairn 使用本機作業系統支援的憑證保護，並加密 peer 同步流量。沒有任何安全措施能消除所有風險；請保護你的裝置、房間憑證與 GitHub 憑證。" },
+      { "heading": "本政策的變更", "body": "更新會發布於此儲存庫，並包含在發行的應用程式材料中。" },
+      { "heading": "聯絡方式", "body": "如有隱私問題，請在 https://github.com/lol40560/Cairn/issues 提出 issue。" }
+    ]
+  }
+}

@@ -1,20 +1,32 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { mkdir, realpath, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
+import { lstat, writeFile } from 'node:fs/promises'
 
 import { applyPatch } from 'diff'
 import { merge } from 'node-diff3'
 
 import { BlobStore } from '../blobs'
 import { ConflictsManager, type ConflictRecord } from '../conflicts'
+import {
+  assertNoCaseCollisionForWrite,
+  prepareSafeProjectWritePath,
+  resolveSafeProjectPath,
+  UnsafeProjectPathError,
+} from '../fs/project-path'
 import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
 import { isSensitiveFile } from '../watcher/watcher'
 import { Discovery } from './discovery'
 import { PendingOps } from './pending-ops'
-import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
+import {
+  BLOB_CHUNK_SIZE,
+  isSyncMessageWithinLimit,
+  MAX_TRANSFER_BLOB_BYTES,
+  type PeerInfo,
+  type SeederInfo,
+  type SyncMessage,
+} from './protocol'
 import { ReconnectManager, type PeerState } from './reconnect'
 import { Transport, type PeerEndpoint } from './transport'
 
@@ -27,6 +39,8 @@ export interface SyncOptions {
   identity?: ProjectIdentity
   /** 用于持久化等待文件基线的远端操作。 */
   projectRoot?: string
+  /** 僅測試用：覆寫 destination volume 的大小寫能力。 */
+  caseInsensitiveFilesystem?: boolean
 }
 
 export interface SyncStartOptions {
@@ -44,8 +58,25 @@ export interface SyncHooks {
 
 interface SyncDependencies {
   discovery?: Discovery
+  /** 仅供崩溃边界回归测试使用；生产环境不传入。 */
+  afterFilesystemApplyBeforeMarkApplied?: (op: import('../oplog').Op) => Promise<void>
   peerId?: string
   transport?: Transport
+}
+
+interface ConnectionAttempt {
+  endpoint: PeerEndpoint
+  expectedPeerId?: string
+  reject(error: Error): void
+  resolve(): void
+  timer: ReturnType<typeof setTimeout>
+}
+
+interface IncomingBlob {
+  chunks: Map<number, Buffer>
+  expectedChunks: number
+  receivedBytes: number
+  size: number
 }
 
 /** 避免 Sync 与快照模块产生循环依赖的最小处理器契约。 */
@@ -67,14 +98,17 @@ export class Sync extends EventEmitter {
   private readonly peers = new Map<string, PeerInfo>()
   private readonly seeders = new Map<string, SeederInfo>()
   private readonly transport: Transport
+  private readonly afterFilesystemApplyBeforeMarkApplied: ((op: import('../oplog').Op) => Promise<void>) | undefined
   private seeder?: SnapshotSeederHandler
   private downloader?: SnapshotDownloaderHandler
   private localPort: number | undefined
-  private pendingDirectEndpoint: { host: string; port: number } | undefined
+  /** 每次連線有自己的承諾與計時器，不能由任何全域 connected/authFailed 事件完成。 */
+  private readonly connectionAttempts = new Map<string, ConnectionAttempt>()
   private readonly directFallbackTimers = new Set<ReturnType<typeof setTimeout>>()
   private readonly pendingOps: PendingOps | undefined
   private readonly conflicts: ConflictsManager | undefined
   private readonly reconnectManager: ReconnectManager
+  private readonly incomingBlobs = new Map<string, IncomingBlob>()
   private retryingPending = false
   private started = false
 
@@ -87,6 +121,7 @@ export class Sync extends EventEmitter {
     this.peerId = dependencies.peerId ?? randomUUID()
     this.discovery = dependencies.discovery ?? new Discovery()
     this.transport = dependencies.transport ?? new Transport(this.peerId)
+    this.afterFilesystemApplyBeforeMarkApplied = dependencies.afterFilesystemApplyBeforeMarkApplied
     this.pendingOps = options.projectRoot ? new PendingOps(options.projectRoot) : undefined
     this.conflicts = options.projectRoot ? new ConflictsManager(options.projectRoot) : undefined
     this.reconnectManager = new ReconnectManager({
@@ -137,7 +172,7 @@ export class Sync extends EventEmitter {
     this.started = false
     this.localPort = undefined
     this.reconnectManager.stop()
-    this.pendingDirectEndpoint = undefined
+    this.rejectConnectionAttempts(new Error('同步服务已停止'))
     for (const timer of this.directFallbackTimers) {
       clearTimeout(timer)
     }
@@ -187,33 +222,7 @@ export class Sync extends EventEmitter {
       throw new Error('直连邀请码与当前房间不一致')
     }
 
-    this.pendingDirectEndpoint = { host: normalizedHost, port }
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup()
-        reject(new Error(`连接 ${normalizedHost}:${port} 超时`))
-      }, 10_000)
-      const onConnected = (): void => {
-        cleanup()
-        resolve()
-      }
-      const onAuthFailed = (error: Error): void => {
-        cleanup()
-        reject(error)
-      }
-      const cleanup = (): void => {
-        clearTimeout(timeout)
-        this.off('connected', onConnected)
-        this.off('authFailed', onAuthFailed)
-      }
-
-      this.once('connected', onConnected)
-      this.once('authFailed', onAuthFailed)
-      void this.transport.connect(normalizedHost, port).catch((error: unknown) => {
-        cleanup()
-        reject(error)
-      })
-    })
+    await this.createConnectionAttempt({ host: normalizedHost, port })
   }
 
   listSeeders(): SeederInfo[] {
@@ -255,6 +264,7 @@ export class Sync extends EventEmitter {
     this.discovery.on('peerLeft', this.handlePeerLeft)
     this.discovery.on('error', this.handleError)
     this.transport.on('connect', this.handleConnect)
+    this.transport.on('connectionFailed', this.handleConnectionFailed)
     this.transport.on('disconnect', this.handleDisconnect)
     this.transport.on('authFailed', this.handleAuthFailed)
     this.transport.on('hello', this.handleHello)
@@ -267,6 +277,7 @@ export class Sync extends EventEmitter {
     this.discovery.off('peerLeft', this.handlePeerLeft)
     this.discovery.off('error', this.handleError)
     this.transport.off('connect', this.handleConnect)
+    this.transport.off('connectionFailed', this.handleConnectionFailed)
     this.transport.off('disconnect', this.handleDisconnect)
     this.transport.off('authFailed', this.handleAuthFailed)
     this.transport.off('hello', this.handleHello)
@@ -301,11 +312,10 @@ export class Sync extends EventEmitter {
     this.emit('peerLeft', peerId)
   }
 
-  private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint): void => {
-    const directEndpoint = this.pendingDirectEndpoint
-    this.pendingDirectEndpoint = undefined
+  private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.completeConnectionAttempt(attemptId, peerId)
     const knownPeer = this.peers.get(peerId)
-    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : directEndpoint)
+    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : undefined)
     if (!knownPeer && reconnectEndpoint) {
       this.peers.set(peerId, {
         host: reconnectEndpoint.host,
@@ -347,38 +357,58 @@ export class Sync extends EventEmitter {
 
   /** 等待完成 hello 握手，避免 TCP 已建立但认证失败时被误判为重连成功。 */
   private async reconnectPeer(peerId: string, host: string, port: number): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        cleanup()
-        reject(new Error(`重连 ${host}:${port} 超时`))
-      }, 10_000)
-      const onConnected = (connectedPeerId: string): void => {
-        if (connectedPeerId !== peerId) return
-        cleanup()
-        resolve()
-      }
-      const onAuthFailed = (error: Error): void => {
-        cleanup()
-        reject(error)
-      }
-      const cleanup = (): void => {
-        clearTimeout(timeout)
-        this.off('connected', onConnected)
-        this.off('authFailed', onAuthFailed)
-      }
+    await this.createConnectionAttempt({ host, port }, peerId)
+  }
 
-      this.on('connected', onConnected)
-      this.once('authFailed', onAuthFailed)
-      void this.transport.connect(host, port).catch((error: unknown) => {
-        cleanup()
-        reject(error)
+  private readonly handleAuthFailed = (error: Error, _peerId?: string, _endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.failConnectionAttempt(attemptId, error)
+    this.emit('authFailed', error)
+    this.emitError(error)
+  }
+
+  private readonly handleConnectionFailed = (error: Error, _endpoint?: PeerEndpoint, attemptId?: string): void => {
+    this.failConnectionAttempt(attemptId, error)
+  }
+
+  private createConnectionAttempt(endpoint: PeerEndpoint, expectedPeerId?: string): Promise<void> {
+    const attemptId = randomUUID()
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.failConnectionAttempt(attemptId, new Error(`连接 ${endpoint.host}:${endpoint.port} 超时`))
+      }, 10_000)
+      this.connectionAttempts.set(attemptId, { endpoint, expectedPeerId, reject, resolve, timer })
+      void this.transport.connect(endpoint.host, endpoint.port, attemptId).catch((error: unknown) => {
+        this.failConnectionAttempt(attemptId, toError(error))
       })
     })
   }
 
-  private readonly handleAuthFailed = (error: Error): void => {
-    this.emit('authFailed', error)
-    this.emitError(error)
+  private completeConnectionAttempt(attemptId: string | undefined, peerId: string): void {
+    if (!attemptId) return
+    const attempt = this.connectionAttempts.get(attemptId)
+    if (!attempt) return
+    if (attempt.expectedPeerId && attempt.expectedPeerId !== peerId) {
+      this.failConnectionAttempt(attemptId, new Error(`重连连接到了意外 peer：${peerId}`))
+      return
+    }
+    this.connectionAttempts.delete(attemptId)
+    clearTimeout(attempt.timer)
+    attempt.resolve()
+  }
+
+  private failConnectionAttempt(attemptId: string | undefined, error: Error): void {
+    if (!attemptId) return
+    const attempt = this.connectionAttempts.get(attemptId)
+    if (!attempt) return
+    this.connectionAttempts.delete(attemptId)
+    clearTimeout(attempt.timer)
+    attempt.reject(error)
+  }
+
+  private rejectConnectionAttempts(error: Error): void {
+    for (const attemptId of [...this.connectionAttempts.keys()]) {
+      this.failConnectionAttempt(attemptId, error)
+    }
   }
 
   /** 认证完成后交换工作区指纹；不匹配只告警，绝不阻断既有同步。 */
@@ -407,7 +437,7 @@ export class Sync extends EventEmitter {
 
   private readonly handleMessage = (peerId: string, message: SyncMessage): void => {
     if (message.type === 'have') {
-      if (!this.options.oplog.hasOp(message.hash)) {
+      if (!this.options.oplog.hasReceivedOp(message.hash)) {
         this.send(peerId, { hash: message.hash, type: 'want' })
       }
       return
@@ -438,6 +468,20 @@ export class Sync extends EventEmitter {
 
     if (message.type === 'data-blob') {
       void this.handleDataBlob(message.hash, message.data).catch((error: unknown) => this.emitError(error))
+      return
+    }
+
+    if (message.type === 'blob-meta') {
+      try {
+        this.handleBlobMeta(message.hash, message.size, message.chunkCount)
+      } catch (error) {
+        this.emitError(error)
+      }
+      return
+    }
+
+    if (message.type === 'blob-chunk') {
+      void this.handleBlobChunk(message.hash, message.index, message.data).catch((error: unknown) => this.emitError(error))
       return
     }
 
@@ -500,18 +544,37 @@ export class Sync extends EventEmitter {
   }
 
   private async receiveRemoteOp(op: import('../oplog').Op): Promise<void> {
-    if (this.options.oplog.hasOp(op.hash)) {
+    const previousState = this.options.oplog.getRemoteOpApplyState(op.hash)
+    if (previousState === 'applied') {
       return
     }
 
+    let remoteOp: import('../oplog').Op | undefined
+    let newlyReceived = false
     try {
-      const remoteOp = this.options.oplog.putOp({ ...op, source: 'remote' })
+      if (previousState === 'received') {
+        const stored = this.options.oplog.getOp(op.hash)
+        if (!stored) {
+          throw new Error(`未找到已接收的远端操作：${op.hash}`)
+        }
+        remoteOp = { ...stored, source: 'remote' }
+      } else if (this.options.oplog.hasReceivedOp(op.hash)) {
+        // 没有 apply 记录的旧对象来自升级前，按 legacy-complete 处理以免重放历史。
+        return
+      } else {
+        remoteOp = this.options.oplog.putReceivedRemoteOp(op)
+        newlyReceived = true
+      }
       if (this.hooks) {
         await this.applyRemoteOp(remoteOp)
       }
-      this.emit('remoteOp', remoteOp)
     } catch (error) {
+      this.markTerminalRemoteFailure(remoteOp, error)
       this.emitError(error)
+      return
+    }
+    if (newlyReceived) {
+      this.emit('remoteOp', remoteOp)
     }
   }
 
@@ -523,15 +586,39 @@ export class Sync extends EventEmitter {
 
     this.retryingPending = true
     try {
-      await this.pendingOps.retryAll((op) => this.applyRemoteOp(op, false))
+      for (const op of this.options.oplog.listUnappliedRemoteOps()) {
+        try {
+          await this.applyRemoteOp(op, false)
+        } catch (error) {
+          this.markTerminalRemoteFailure(op, error)
+          console.warn(`[cairn:sync] 重试未完成远端操作失败：${op.hash.slice(0, 12)}`, error)
+        }
+      }
+      await this.pendingOps.retryAll(async (op) => {
+        try {
+          return await this.applyRemoteOp(op, false)
+        } catch (error) {
+          this.markTerminalRemoteFailure(op, error)
+          this.emitError(error)
+          return isTerminalRemoteApplyError(error)
+        }
+      })
     } finally {
       this.retryingPending = false
     }
   }
 
   private async applyRemoteOp(op: import('../oplog').Op, retryPending = true): Promise<boolean> {
-    if (op.source !== 'remote' || !this.hooks) {
+    if (!this.started || op.source !== 'remote' || !this.hooks) {
       return false
+    }
+    // 升级前写入 pending/ 的远端操作没有 apply marker；只有实际进入待重试队列时才补建 intent，
+    // 不会把全部旧历史操作重新标记为待应用。
+    if (!this.options.oplog.getRemoteOpApplyState(op.hash)) {
+      this.options.oplog.putReceivedRemoteOp(op)
+    }
+    if (this.options.oplog.getRemoteOpApplyState(op.hash) === 'applied') {
+      return true
     }
 
     await this.assertSafeProjectPath(op.filePath)
@@ -539,17 +626,30 @@ export class Sync extends EventEmitter {
       throw new Error(`拒绝同步敏感文件：${op.filePath}`)
     }
 
+    if (op.blobHash && op.contentEncoding === 'full-text-blob') {
+      return this.applyRemoteTextBlobOp(op, retryPending)
+    }
+
     if (op.blobHash) {
       return this.applyRemoteBinaryOp(op, retryPending)
     }
 
     const localContent = await this.hooks.readFile(op.filePath)
-    const exists = this.hooks.fileExists
-      ? await this.hooks.fileExists(op.filePath)
-      : localContent !== ''
-    if (op.kind === 'deleted' && localContent === '') {
-      // 文件已不存在时，删除操作保持幂等，不留下永远无法重试的 pending。
+    const exists = await this.fileExists(op.filePath)
+    if (op.kind === 'deleted') {
+      // 刪除以存在性而非內容判斷：0-byte 檔案同樣必須移入本機廢紙簍。
+      if (exists) {
+        await this.hooks.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      }
       await this.hooks.applyRemoteChange(op.filePath, '', true)
+      await this.afterFilesystemApply(op)
+      await this.completeRemoteOp(op, retryPending)
+      return true
+    }
+    const targetContentHash = this.options.oplog.getRemoteOpTargetContentHash(op.hash)
+    if (exists && targetContentHash === contentHash(localContent)) {
+      // 上次已写盘但在更新基线或 completion marker 前中断；只补齐后续步骤。
+      await this.hooks.applyRemoteChange(op.filePath, localContent)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
@@ -568,7 +668,8 @@ export class Sync extends EventEmitter {
       const nextContent = applyPatch(localContent, op.diff)
       if (nextContent !== false) return this.writeAndCompleteRemoteOp(op, nextContent, retryPending)
       await this.handleConflict(op, localContent)
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
 
     const projectRoot = this.options.projectRoot
@@ -577,13 +678,15 @@ export class Sync extends EventEmitter {
       const fallback = applyPatch(localContent, op.diff)
       if (fallback !== false) return this.writeAndCompleteRemoteOp(op, fallback, retryPending)
       await this.handleConflict(op, localContent)
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
 
     const remoteContent = applyPatch(baseContent, op.diff)
     if (remoteContent === false) {
       await this.handleConflict(op, localContent, { baseContent })
-      return false
+      await this.completeRemoteOp(op, retryPending)
+      return true
     }
     // node-diff3 以数组元素为最小合并单位；按保留换行符的行拆分，避免逐字符合并丢失换行。
     const merged = merge(splitLines(localContent), splitLines(baseContent), splitLines(remoteContent), {
@@ -595,7 +698,8 @@ export class Sync extends EventEmitter {
     }
 
     await this.handleConflict(op, localContent, { baseContent, remoteContent, mergedWithMarkers: mergedContent })
-    return false
+    await this.completeRemoteOp(op, retryPending)
+    return true
   }
 
   /** blob 尚未到達時先保留 op，取得且驗證內容後才寫入專案。 */
@@ -618,8 +722,12 @@ export class Sync extends EventEmitter {
     }
 
     if (op.kind === 'deleted') {
-      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      const exists = this.hooks!.fileExists ? await this.hooks!.fileExists(op.filePath) : true
+      if (exists) {
+        await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
+      }
       await this.hooks!.applyRemoteChange(op.filePath, '', true, blobHash)
+      await this.afterFilesystemApply(op)
       await this.completeRemoteOp(op, retryPending)
       return true
     }
@@ -632,11 +740,36 @@ export class Sync extends EventEmitter {
       throw new Error(`无法应用 binary op：缺少二进制写入器（${op.filePath}）`)
     }
 
-    // 先更新基线，再写磁碟，避免 watcher 將遠端落地誤判為本地變更。
-    await this.hooks!.applyRemoteChange(op.filePath, '', false, blobHash)
     await this.hooks!.writeBinaryFile(op.filePath, content)
+    await this.hooks!.applyRemoteChange(op.filePath, '', false, blobHash)
+    await this.afterFilesystemApply(op)
     await this.completeRemoteOp(op, retryPending)
     return true
+  }
+
+  /** 大型 UTF-8 文字以 blob 到達後再整體寫入，仍走文字 baseline 與 conflict 語義。 */
+  private async applyRemoteTextBlobOp(
+    op: import('../oplog').Op,
+    retryPending: boolean,
+  ): Promise<boolean> {
+    const blobStore = this.options.blobStore
+    const blobHash = op.blobHash
+    if (!blobStore || !blobHash) {
+      throw new Error(`无法应用大型文字 op：缺少 BlobStore 或 blob hash（${op.filePath}）`)
+    }
+    if (!await blobStore.has(blobHash)) {
+      await this.pendingOps?.add(op)
+      this.broadcast({ type: 'want-blob', hash: blobHash })
+      return false
+    }
+    const content = await blobStore.get(blobHash)
+    if (!content) throw new Error(`大型文字 blob 在存在检查后丢失：${blobHash}`)
+    const text = content.toString('utf8')
+    // Watcher 寫入時由 UTF-8 字串生成 blob；拒絕不可逆的位元組，避免二進位偽裝成文字。
+    if (!Buffer.from(text, 'utf8').equals(content)) {
+      throw new Error(`大型文字 blob 不是有效 UTF-8：${op.filePath}`)
+    }
+    return this.writeAndCompleteRemoteOp(op, text, retryPending)
   }
 
   private async announceBlobs(peerId: string): Promise<void> {
@@ -659,7 +792,22 @@ export class Sync extends EventEmitter {
 
   private async handleWantBlob(peerId: string, hash: string): Promise<void> {
     const blob = await this.options.blobStore?.get(hash)
-    if (blob) this.send(peerId, { type: 'data-blob', hash, data: blob.toString('base64') })
+    if (!blob) return
+    const singleMessage = { type: 'data-blob' as const, hash, data: blob.toString('base64') }
+    if (isSyncMessageWithinLimit(singleMessage)) {
+      this.send(peerId, singleMessage)
+      return
+    }
+
+    if (blob.length > MAX_TRANSFER_BLOB_BYTES) {
+      throw new Error(`blob exceeds ${MAX_TRANSFER_BLOB_BYTES} byte transfer limit: ${hash}`)
+    }
+    const chunkCount = Math.ceil(blob.length / BLOB_CHUNK_SIZE)
+    this.send(peerId, { type: 'blob-meta', hash, size: blob.length, chunkCount })
+    for (let index = 0; index < chunkCount; index += 1) {
+      const start = index * BLOB_CHUNK_SIZE
+      this.send(peerId, { type: 'blob-chunk', hash, index, data: blob.subarray(start, start + BLOB_CHUNK_SIZE).toString('base64') })
+    }
   }
 
   private async handleDataBlob(hash: string, data: string): Promise<void> {
@@ -667,6 +815,19 @@ export class Sync extends EventEmitter {
     if (!blobStore) return
 
     const content = Buffer.from(data, 'base64')
+    await this.persistVerifiedBlob(hash, content)
+  }
+
+  /**
+   * 驗證並保存收到的原始 blob。
+   *
+   * 分塊傳輸已經在記憶體中重組為 Buffer；直接交給這個路徑可避免
+   * 將大型內容重新編碼成 Base64 後又立刻解碼的額外記憶體與 CPU 成本。
+   */
+  private async persistVerifiedBlob(hash: string, content: Buffer): Promise<void> {
+    const blobStore = this.options.blobStore
+    if (!blobStore) return
+
     const actualHash = createHash('sha256').update(content).digest('hex')
     if (actualHash !== hash) {
       this.emitError(new Error(`blob hash mismatch: expected ${hash}, got ${actualHash}`))
@@ -674,6 +835,49 @@ export class Sync extends EventEmitter {
     }
     await blobStore.put(content)
     await this.retryPendingBinaryOps()
+  }
+
+  private handleBlobMeta(hash: string, size: number, chunkCount: number): void {
+    if (size > MAX_TRANSFER_BLOB_BYTES) {
+      throw new Error(`blob metadata exceeds ${MAX_TRANSFER_BLOB_BYTES} byte transfer limit: ${hash}`)
+    }
+    const expectedChunks = Math.ceil(size / BLOB_CHUNK_SIZE)
+    if (chunkCount !== expectedChunks || (size === 0 && chunkCount !== 0)) {
+      throw new Error(`invalid blob chunk metadata: ${hash}`)
+    }
+    this.incomingBlobs.set(hash, { chunks: new Map(), expectedChunks, receivedBytes: 0, size })
+  }
+
+  private async handleBlobChunk(hash: string, index: number, data: string): Promise<void> {
+    const incoming = this.incomingBlobs.get(hash)
+    if (!incoming) throw new Error(`received blob chunk without metadata: ${hash}`)
+    if (index < 0 || index >= incoming.expectedChunks) {
+      this.incomingBlobs.delete(hash)
+      throw new Error(`invalid blob chunk index: ${hash}`)
+    }
+    const chunk = Buffer.from(data, 'base64')
+    const expectedSize = index === incoming.expectedChunks - 1
+      ? incoming.size - index * BLOB_CHUNK_SIZE
+      : BLOB_CHUNK_SIZE
+    if (chunk.length !== expectedSize || chunk.length > BLOB_CHUNK_SIZE || incoming.chunks.has(index)) {
+      if (incoming.chunks.has(index) && incoming.chunks.get(index)!.equals(chunk)) return
+      this.incomingBlobs.delete(hash)
+      throw new Error(`invalid or duplicate blob chunk: ${hash}`)
+    }
+    incoming.chunks.set(index, chunk)
+    incoming.receivedBytes += chunk.length
+    if (incoming.receivedBytes > incoming.size) {
+      this.incomingBlobs.delete(hash)
+      throw new Error(`blob exceeds advertised size: ${hash}`)
+    }
+    if (incoming.chunks.size !== incoming.expectedChunks) return
+
+    this.incomingBlobs.delete(hash)
+    const content = Buffer.concat([...incoming.chunks.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, value]) => value))
+    if (content.length !== incoming.size) throw new Error(`blob size mismatch after chunks: ${hash}`)
+    await this.persistVerifiedBlob(hash, content)
   }
 
   private async retryPendingBinaryOps(): Promise<void> {
@@ -691,13 +895,10 @@ export class Sync extends EventEmitter {
     content: string,
     retryPending: boolean,
   ): Promise<boolean> {
-    if (op.kind === 'deleted') {
-      await this.hooks!.moveRemoteDeletionToTrash?.(op.filePath, op.author, op.hash)
-      await this.hooks!.applyRemoteChange(op.filePath, '', true)
-    } else {
-      await this.hooks!.applyRemoteChange(op.filePath, content)
-      await this.hooks!.writeFile(op.filePath, content)
-    }
+    this.options.oplog.setRemoteOpTargetContentHash(op.hash, contentHash(content))
+    await this.hooks!.writeFile(op.filePath, content)
+    await this.hooks!.applyRemoteChange(op.filePath, content)
+    await this.afterFilesystemApply(op)
     await this.completeRemoteOp(op, retryPending)
     return true
   }
@@ -717,8 +918,7 @@ export class Sync extends EventEmitter {
       ...threeWay,
     }
     if (record.remoteContent !== undefined && this.options.projectRoot) {
-      const remotePath = resolve(this.options.projectRoot, `${op.filePath}.cairn-remote`)
-      await mkdir(dirname(remotePath), { recursive: true })
+      const remotePath = await prepareSafeProjectWritePath(this.options.projectRoot, `${op.filePath}.cairn-remote`)
       await writeFile(remotePath, record.remoteContent, 'utf8')
     }
     await this.conflicts?.save(record)
@@ -728,9 +928,20 @@ export class Sync extends EventEmitter {
   }
 
   private async completeRemoteOp(op: import('../oplog').Op, retryPending: boolean): Promise<void> {
+    this.options.oplog.markRemoteOpApplied(op.hash)
     await this.pendingOps?.remove(op.hash)
     if (retryPending) {
       await this.retryPendingOps()
+    }
+  }
+
+  private async afterFilesystemApply(op: import('../oplog').Op): Promise<void> {
+    await this.afterFilesystemApplyBeforeMarkApplied?.(op)
+  }
+
+  private markTerminalRemoteFailure(op: import('../oplog').Op | undefined, error: unknown): void {
+    if (op && isTerminalRemoteApplyError(error)) {
+      this.options.oplog.markRemoteOpRejected(op.hash)
     }
   }
 
@@ -741,37 +952,33 @@ export class Sync extends EventEmitter {
       return
     }
 
-    const normalized = relativePath.replaceAll('\\', '/')
-    const segments = normalized.split('/')
-    if (
-      normalized.length === 0
-      || isAbsolute(normalized)
-      || win32.isAbsolute(normalized)
-      || segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
-    ) {
-      throw new Error(`远端文件路径非法：${relativePath}`)
+    await assertNoCaseCollisionForWrite(projectRoot, relativePath, {
+      caseInsensitive: this.options.caseInsensitiveFilesystem,
+    })
+    await resolveSafeProjectPath(projectRoot, relativePath)
+  }
+
+  /** 空內容與不存在必須分開處理；沒有 hook 時也只能查詢真實檔案狀態。 */
+  private async fileExists(relativePath: string): Promise<boolean> {
+    if (this.hooks?.fileExists) {
+      return this.hooks.fileExists(relativePath)
+    }
+    if (!this.options.projectRoot) {
+      // 僅供沒有真實專案根目錄的受控呼叫端使用；安全預設是視為存在，
+      // 不能再從空字串推論「缺失」而跳過刪除的 filesystem side effect。
+      return true
     }
 
-    const root = await realpath(projectRoot)
-    const target = resolve(root, ...segments)
-    if (!target.startsWith(`${root}${sep}`)) {
-      throw new Error(`远端文件路径越界：${relativePath}`)
-    }
-
-    let currentPath = root
-    for (const segment of segments) {
-      currentPath = join(currentPath, segment)
-      try {
-        const resolvedPath = await realpath(currentPath)
-        if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${sep}`)) {
-          throw new Error(`远端文件路径通过符号链接越界：${relativePath}`)
-        }
-      } catch (error) {
-        if (isMissingPath(error)) {
-          break
-        }
-        throw error
+    const absolutePath = await resolveSafeProjectPath(this.options.projectRoot, relativePath)
+    try {
+      const metadata = await lstat(absolutePath)
+      if (!metadata.isFile()) {
+        throw new Error(`遠端操作目標不是一般檔案：${relativePath}`)
       }
+      return true
+    } catch (error) {
+      if (isMissingFile(error)) return false
+      throw error
     }
   }
 
@@ -788,14 +995,23 @@ export class Sync extends EventEmitter {
   }
 }
 
-function isMissingPath(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
-}
-
 function contentHash(content: string): string {
   return createHash('sha256').update(content).digest('hex')
 }
 
 function splitLines(content: string): string[] {
   return content.match(/.*(?:\n|$)/g)?.filter((line) => line.length > 0) ?? []
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function isTerminalRemoteApplyError(error: unknown): boolean {
+  return error instanceof UnsafeProjectPathError
+    || (error instanceof Error && error.message.startsWith('拒绝同步敏感文件'))
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { dirname, extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
+import { access, readFile, realpath, writeFile } from 'node:fs/promises'
+import { extname, isAbsolute, relative, resolve, sep, win32 } from 'node:path'
 import { userInfo } from 'node:os'
 
 import chokidar, { type FSWatcher } from 'chokidar'
@@ -9,9 +9,11 @@ import { createTwoFilesPatch } from 'diff'
 
 import { computeHash, type NewOp, type Oplog, type Op } from '../oplog'
 import { BlobStore } from '../blobs'
+import { prepareSafeProjectWritePath } from '../fs/project-path'
 import { DEFAULT_IGNORE_PATTERNS, IgnoreMatcher } from '../ignore'
 import { TrashManager } from '../trash'
 import { writeSnapshot } from './snapshot'
+import { isSyncMessageWithinLimit } from '../sync/protocol'
 
 export interface ProjectWatcherOptions {
   debounceMs?: number
@@ -368,7 +370,7 @@ export class ProjectWatcher extends EventEmitter {
     try {
       // 同时保存旧内容，远端 baseHash 不匹配时可用于三方合并。
       const baseHash = writeSnapshot(this.projectRoot, relativePath, oldContent)
-      const input: NewOp = {
+      let input: NewOp = {
         id: randomUUID(),
         author: this.author,
         parentHashes: [],
@@ -378,6 +380,21 @@ export class ProjectWatcher extends EventEmitter {
         kind: deleted ? 'deleted' : previous ? 'modified' : 'created',
         baseHash,
         source: 'local',
+      }
+      // 大型文字 diff 無法被 TCP frame 接收時，改以已驗證的 blob 傳送完整 UTF-8
+      // 內容。先量測最終 JSON/UTF-8 frame，而非只量測 diff 的字元數。
+      const provisional = { ...input, hash: computeHash(input) }
+      if (!isSyncMessageWithinLimit({ op: provisional, type: 'data' })) {
+        const blob = Buffer.from(content, 'utf8')
+        const blobHash = await this.blobStore.put(blob)
+        input = {
+          ...input,
+          blobHash,
+          contentEncoding: 'full-text-blob',
+          diff: '',
+          size: blob.length,
+        }
+        console.info(`[cairn:watcher] 大型文字改以 blob 同步：${relativePath} (${blob.length} bytes)`)
       }
       if (deleted) {
         await this.trash.moveToTrash(
@@ -535,9 +552,10 @@ export class ProjectWatcher extends EventEmitter {
     }
 
     try {
-      await mkdir(dirname(absolutePath), { recursive: true })
-      await writeFile(absolutePath, content)
-      console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${absolutePath}`)
+      const relativePath = this.toRelativePath(absolutePath)
+      const destination = await prepareSafeProjectWritePath(this.projectRoot, relativePath)
+      await writeFile(destination, content)
+      console.warn(`[cairn:watcher] 删除处理失败，已恢复文件：${relativePath}`)
     } catch (restoreError) {
       console.error(`[cairn:watcher] 删除处理失败且无法恢复文件：${absolutePath}`, restoreError)
     }

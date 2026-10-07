@@ -3,7 +3,7 @@ import { isIP } from 'node:net'
 
 import Bonjour from 'bonjour-service'
 
-import { deriveRoomHash, type PeerInfo } from './protocol'
+import { deriveRoomHash, SYNC_PROTOCOL_VERSION, type PeerInfo } from './protocol'
 
 interface BonjourService {
   addresses?: string[]
@@ -75,7 +75,7 @@ export class Discovery extends EventEmitter {
         txt: {
           peerId: options.peerId,
           roomHash,
-          version: '1',
+          version: String(SYNC_PROTOCOL_VERSION),
         },
       })
       this.publishedService = service
@@ -179,7 +179,12 @@ export class Discovery extends EventEmitter {
     ownPeerId: string,
   ): PeerInfo | undefined {
     const peerId = service.txt?.peerId
-    if (service.txt?.roomHash !== deriveRoomHash(roomCode) || !peerId || peerId === ownPeerId) {
+    if (
+      service.txt?.roomHash !== deriveRoomHash(roomCode)
+      || service.txt?.version !== String(SYNC_PROTOCOL_VERSION)
+      || !peerId
+      || peerId === ownPeerId
+    ) {
       return undefined
     }
 

@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { ensureCairnDataDir } from '../data-dir'
-import { computeHash, createOplog } from './index'
+import { computeHash, createOplog, CURRENT_OP_HASH_VERSION, LEGACY_OP_HASH_VERSION } from './index'
 import type { NewOp, Op, Oplog } from './types'
 
 const roots: string[] = []
@@ -161,10 +161,10 @@ describe('oplog', () => {
     expect(oplog.listAllHashes()).toEqual([earlier.hash, later.hash])
   })
 
-  it('source 不参与 hash 且对象文件不存储 source', async () => {
+  it('regression: source 不参与 hash，但会作为本机 provenance 持久化', async () => {
     const { projectRoot, oplog } = await createFixture()
     const local = oplog.putOp({ ...newOp(), source: 'local' })
-    const remote = oplog.putOp({ ...newOp(), source: 'remote' })
+    const remote = oplog.putReceivedRemoteOp({ ...newOp({ id: 'remote', timestamp: 2 }), source: 'local' })
     const objectPath = join(
       projectRoot,
       '.cairn',
@@ -173,14 +173,35 @@ describe('oplog', () => {
       local.hash,
     )
 
-    expect(local.hash).toBe(remote.hash)
     expect(local.source).toBe('local')
     expect(remote.source).toBe('remote')
     expect(JSON.parse(await readFile(objectPath, 'utf8'))).not.toHaveProperty('source')
-    expect(oplog.getOp(local.hash)?.source).toBeUndefined()
+    expect(oplog.getOp(local.hash)?.source).toBe('local')
+    expect(oplog.getOp(remote.hash)?.source).toBe('remote')
+
+    oplog.close()
+    const reopened = createOplog(projectRoot)
+    expect(reopened.getOp(local.hash)?.source).toBe('local')
+    expect(reopened.getOp(remote.hash)?.source).toBe('remote')
+    reopened.close()
   })
 
-  it('kind 不参与 hash，且读取旧对象时会从 diff 推导类型', async () => {
+  it('regression: legacy objects without provenance remain unknown after reload', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const legacy = oplog.putOp(newOp({ hashVersion: LEGACY_OP_HASH_VERSION, id: 'legacy-source' }))
+    oplog.close()
+
+    const databasePath = join(projectRoot, '.cairn', 'oplog.db')
+    const database = new Database(databasePath)
+    database.prepare('UPDATE ops SET source = NULL WHERE hash = ?').run(legacy.hash)
+    database.close()
+
+    const reopened = createOplog(projectRoot)
+    expect(reopened.getOp(legacy.hash)?.source).toBe('unknown')
+    reopened.close()
+  })
+
+  it('regression: 旧版 v1 对象保持可读，且从 diff 推导类型', async () => {
     const { projectRoot, oplog } = await createFixture()
     const legacyCases = [
       {
@@ -201,36 +222,48 @@ describe('oplog', () => {
       const input = newOp({
         diff: legacyCase.diff,
         filePath: `legacy-${index}.ts`,
+        hashVersion: LEGACY_OP_HASH_VERSION,
         id: `legacy-${index}`,
       })
       const hash = computeHash(input)
 
-      expect(computeHash({ ...input, kind: legacyCase.kind })).toBe(hash)
-      await writeCorruptOp(projectRoot, { ...input, hash })
+      // 歷史物件沒有 hashVersion 與 kind；它們仍依 v1 格式驗證與讀取。
+      const legacyObject = { ...input }
+      delete legacyObject.hashVersion
+      await writeCorruptOp(projectRoot, { ...legacyObject, hash })
       expect(oplog.getOp(hash)?.kind).toBe(legacyCase.kind)
     }
   })
 
-  it('baseHash 会持久化但不改变 op hash', async () => {
-    const { oplog } = await createFixture()
+  it('current hash 对相同语义稳定，且不依赖调用方字段插入顺序', () => {
     const input = newOp()
-    const baseHash = 'f'.repeat(64)
+    const reordered: NewOp = {
+      diff: input.diff,
+      filePath: input.filePath,
+      id: input.id,
+      parentHashes: [...input.parentHashes].reverse(),
+      timestamp: input.timestamp,
+      author: input.author,
+    }
 
-    expect(computeHash({ ...input, baseHash })).toBe(computeHash(input))
-    const stored = oplog.putOp({ ...input, baseHash })
-    expect(stored).toMatchObject({ baseHash })
-    expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash })
+    expect(computeHash(reordered)).toBe(computeHash(input))
   })
 
-  it('blobHash 与 size 会持久化但不改变 op hash', async () => {
+  it('current hash 绑定 kind、baseHash、blobHash、size 与文字 blob 语义', async () => {
     const { oplog } = await createFixture()
-    const input = newOp({ diff: '', filePath: 'assets/logo.png' })
+    const input = newOp({ diff: '', filePath: 'assets/logo.png', kind: 'created' })
+    const baseHash = 'f'.repeat(64)
     const blobHash = 'a'.repeat(64)
 
-    expect(computeHash({ ...input, blobHash, size: 12 })).toBe(computeHash(input))
-    const stored = oplog.putOp({ ...input, blobHash, size: 12 })
+    expect(computeHash({ ...input, kind: 'deleted' })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, baseHash })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, blobHash })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, size: 12 })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, contentEncoding: 'full-text-blob' })).not.toBe(computeHash(input))
 
-    expect(oplog.getOp(stored.hash)).toMatchObject({ blobHash, size: 12 })
+    const stored = oplog.putOp({ ...input, baseHash, blobHash, size: 12 })
+
+    expect(oplog.getOp(stored.hash)).toMatchObject({ baseHash, blobHash, size: 12 })
     expect(oplog.listBlobs()).toMatchObject([{ hash: stored.hash, blobHash }])
   })
 
@@ -245,7 +278,9 @@ describe('oplog', () => {
       stored.hash,
     )
 
-    expect(JSON.parse(await readFile(objectPath, 'utf8'))).toEqual(stored)
+    const distributedOp = { ...stored }
+    delete distributedOp.source
+    expect(JSON.parse(await readFile(objectPath, 'utf8'))).toEqual(distributedOp)
   })
 
   it('重复 putOp 时幂等且不改写对象文件', async () => {
@@ -287,6 +322,142 @@ describe('oplog', () => {
 
     expect(oplog.hasOp(stored.hash)).toBe(true)
     expect(oplog.hasOp('f'.repeat(64))).toBe(false)
+  })
+
+  it('durably tracks a received remote op until it is explicitly marked applied', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const received = oplog.putReceivedRemoteOp(newOp({ id: 'remote-durable' }))
+    const targetHash = 'a'.repeat(64)
+
+    expect(oplog.hasReceivedOp(received.hash)).toBe(true)
+    expect(oplog.getRemoteOpApplyState(received.hash)).toBe('received')
+    expect(oplog.listUnappliedRemoteOps()).toEqual([{ ...received, source: 'remote' }])
+    oplog.setRemoteOpTargetContentHash(received.hash, targetHash)
+    oplog.close()
+
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('received')
+    expect(reopened.getRemoteOpTargetContentHash(received.hash)).toBe(targetHash)
+    reopened.markRemoteOpApplied(received.hash)
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('applied')
+    expect(reopened.listUnappliedRemoteOps()).toEqual([])
+  })
+
+  it('regression: current remote apply state remains attached to its current object after restart', async () => {
+    const { projectRoot, oplog } = await createFixture()
+    const received = oplog.putReceivedRemoteOp(newOp({
+      baseHash: 'a'.repeat(64),
+      kind: 'modified',
+    }))
+
+    expect(received.hashVersion).toBe(CURRENT_OP_HASH_VERSION)
+    expect(oplog.getRemoteOpApplyState(received.hash)).toBe('received')
+    oplog.close()
+
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.getOp(received.hash)).toMatchObject({ hashVersion: CURRENT_OP_HASH_VERSION })
+    expect(reopened.getRemoteOpApplyState(received.hash)).toBe('received')
+  })
+
+  it('migration: treats pre-apply-state historical operations as legacy complete', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-legacy-'))
+    roots.push(projectRoot)
+    const input = newOp({ id: 'legacy-complete', hashVersion: LEGACY_OP_HASH_VERSION })
+    const hash = computeHash(input)
+    const objectPath = join(projectRoot, '.cairn', 'objects', hash.slice(0, 2), hash)
+    await mkdir(dirname(objectPath), { recursive: true })
+    const legacyObject = { ...input }
+    delete legacyObject.hashVersion
+    await writeFile(objectPath, JSON.stringify({ ...legacyObject, hash }), 'utf8')
+    const legacy = new Database(join(projectRoot, '.cairn', 'oplog.db'))
+    try {
+      legacy.exec(`CREATE TABLE ops (
+        hash TEXT PRIMARY KEY, id TEXT NOT NULL, author TEXT NOT NULL,
+        timestamp INTEGER NOT NULL, file_path TEXT NOT NULL
+      )`)
+      legacy.prepare('INSERT INTO ops (hash, id, author, timestamp, file_path) VALUES (?, ?, ?, ?, ?)')
+        .run(hash, input.id, input.author, input.timestamp, input.filePath)
+    } finally {
+      legacy.close()
+    }
+
+    const migrated = createOplog(projectRoot)
+    oplogs.push(migrated)
+    expect(migrated.getOp(hash)).toMatchObject({ id: input.id })
+    expect(migrated.getRemoteOpApplyState(hash)).toBeUndefined()
+    expect(migrated.listUnappliedRemoteOps()).toEqual([])
+  })
+
+  it('regression: corrupt SQLite index is preserved and rebuilt from valid immutable objects', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const first = original.putOp(newOp({ id: 'recover-first' }))
+    const second = original.putReceivedRemoteOp(newOp({ id: 'recover-remote', timestamp: 2 }))
+    original.close()
+
+    const databasePath = join(projectRoot, '.cairn', 'oplog.db')
+    await writeFile(databasePath, 'not a sqlite database', 'utf8')
+    await writeFile(`${databasePath}-wal`, 'stale wal', 'utf8')
+    await writeFile(`${databasePath}-shm`, 'stale shm', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.listAllHashes()).toEqual([second.hash, first.hash])
+    expect(recovered.getOp(first.hash)?.source).toBe('unknown')
+    // 无法可靠重建 SQLite-only apply state；恢复历史绝不自动写回项目文件。
+    expect(recovered.getRemoteOpApplyState(second.hash)).toBeUndefined()
+    expect(recovered.getRecoveryReport()).toMatchObject({
+      recoveredOperations: 2,
+      skippedInvalidObjects: 0,
+      provenanceUnavailable: 2,
+    })
+    expect(fs.readdirSync(join(projectRoot, '.cairn')).some((name) => name.startsWith('oplog.db.corrupt-'))).toBe(true)
+
+    recovered.close()
+    const reopened = createOplog(projectRoot)
+    oplogs.push(reopened)
+    expect(reopened.listAllHashes()).toEqual([second.hash, first.hash])
+    expect(reopened.getRecoveryReport()).toBeUndefined()
+  })
+
+  it('regression: one corrupt immutable object does not poison SQLite recovery', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const valid = original.putOp(newOp({ id: 'valid-recovery-object' }))
+    original.close()
+    const invalidPath = join(projectRoot, '.cairn', 'objects', 'ff', 'f'.repeat(64))
+    await mkdir(dirname(invalidPath), { recursive: true })
+    await writeFile(invalidPath, '{not json', 'utf8')
+    await writeFile(join(projectRoot, '.cairn', 'oplog.db'), 'not a sqlite database', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.getOp(valid.hash)?.id).toBe('valid-recovery-object')
+    expect(recovered.getRecoveryReport()).toMatchObject({
+      recoveredOperations: 1,
+      skippedInvalidObjects: 1,
+    })
+  })
+
+  it('regression: recovery preserves v1, v2, and v3 object identities', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'cairn-oplog-recovery-'))
+    roots.push(projectRoot)
+    const original = createOplog(projectRoot)
+    const v1 = original.putOp(newOp({ id: 'recover-v1', hashVersion: LEGACY_OP_HASH_VERSION, timestamp: 1 }))
+    const v2 = original.putOp(newOp({ id: 'recover-v2', hashVersion: 2, timestamp: 2, kind: 'modified' }))
+    const v3 = original.putOp(newOp({ id: 'recover-v3', hashVersion: CURRENT_OP_HASH_VERSION, timestamp: 3 }))
+    original.close()
+    await writeFile(join(projectRoot, '.cairn', 'oplog.db'), 'not a sqlite database', 'utf8')
+
+    const recovered = createOplog(projectRoot)
+    oplogs.push(recovered)
+    expect(recovered.getOp(v1.hash)?.hashVersion).toBe(LEGACY_OP_HASH_VERSION)
+    expect(recovered.getOp(v2.hash)?.hashVersion).toBe(2)
+    expect(recovered.getOp(v3.hash)?.hashVersion).toBe(CURRENT_OP_HASH_VERSION)
   })
 
   it('按父先子后顺序遍历三节点 DAG', async () => {

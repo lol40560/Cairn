@@ -77,7 +77,8 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   const copySessionSummary = async (session: ActivitySession): Promise<void> => {
     const attribution = session.attribution === 'me'
       ? t('contributorMe')
-      : session.attribution === 'ai' ? t('contributorAi') : t('contributorTeammate')
+      : session.attribution === 'ai' ? t('contributorAi')
+        : session.attribution === 'teammate' ? t('contributorTeammate') : t('contributorUnknown')
     const summary = [
       `${session.author} — ${attribution}`,
       t('sessionChangesFiles').replace('{changes}', String(session.operationCount)).replace('{files}', String(session.fileCount)),

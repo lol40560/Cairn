@@ -6,7 +6,7 @@ import type { Op } from '@/types/cairn'
  */
 export const RECENT_COLLABORATION_WINDOW_MS = 5 * 60_000
 
-export type ContributorKind = 'me' | 'teammate' | 'ai'
+export type ContributorKind = 'me' | 'teammate' | 'ai' | 'unknown'
 
 export interface RecentFileContributor {
   author: string
@@ -22,7 +22,8 @@ export function isAiAuthor(author: string): boolean {
 
 export function contributorKind(op: Op): ContributorKind {
   if (isAiAuthor(op.author)) return 'ai'
-  return op.source === 'remote' ? 'teammate' : 'me'
+  if (op.source === 'remote') return 'teammate'
+  return op.source === 'local' ? 'me' : 'unknown'
 }
 
 export function recentFileContributors(
@@ -57,5 +58,5 @@ export function recentRemoteContributors(ops: Op[], filePath: string, now = Date
 export function hasRecentPotentialOverlap(ops: Op[], filePath: string, now = Date.now()): boolean {
   const contributors = recentFileContributors(ops, filePath, now)
   return contributors.some((contributor) => contributor.source === 'remote')
-    && contributors.some((contributor) => contributor.source !== 'remote')
+    && contributors.some((contributor) => contributor.source === 'local')
 }

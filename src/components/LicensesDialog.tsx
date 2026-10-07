@@ -6,27 +6,26 @@ import { filterLicenses, type LicenseEntry } from '@/lib/licenses'
 import { shouldCloseDialogFromBackdrop, shouldCloseDialogFromKey } from '@/lib/settingsDialog'
 
 interface LicenseInfo {
-  licenses?: string | string[]
+  attribution?: string
+  license: string
   licenseText?: string
-  repository?: string | { url?: string }
+  name: string
+  repository?: string
+  version: string
 }
 
-type LicenseMap = Record<string, LicenseInfo>
-
-function licenseLabel(licenses: LicenseInfo['licenses']): string {
-  return Array.isArray(licenses) ? licenses.join(', ') : (licenses ?? 'Unknown')
+interface LicenseArtifact {
+  packages: LicenseInfo[]
 }
 
-function repositoryLabel(repository: LicenseInfo['repository']): string | undefined {
-  return typeof repository === 'string' ? repository : repository?.url
-}
-
-const allLicenses: LicenseEntry[] = Object.entries(licenseData as LicenseMap)
-  .map(([name, info]) => ({
-    license: licenseLabel(info.licenses),
-    licenseText: info.licenseText,
-    name,
-    repository: repositoryLabel(info.repository),
+const allLicenses: LicenseEntry[] = (licenseData as LicenseArtifact).packages
+  .map((info) => ({
+    attribution: info.attribution,
+    license: info.license,
+    licenseText: info.licenseText ?? '',
+    name: info.name,
+    repository: info.repository,
+    version: info.version,
   }))
   .sort((left, right) => left.name.localeCompare(right.name))
 
@@ -78,16 +77,17 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose(): vo
           ) : (
             <div className="licenses-list">
               {visibleLicenses.map((entry) => {
-                const expanded = expandedName === entry.name
+                const entryKey = `${entry.name}@${entry.version}`
+                const expanded = expandedName === entryKey
                 return (
-                  <div className="license-entry" key={entry.name}>
+                  <div className="license-entry" key={entryKey}>
                     <button
                       aria-expanded={expanded}
                       className="license-row"
                       type="button"
-                      onClick={() => setExpandedName(expanded ? undefined : entry.name)}
+                      onClick={() => setExpandedName(expanded ? undefined : entryKey)}
                     >
-                      <span className="license-name">{entry.name}</span>
+                      <span className="license-name">{entry.name}@{entry.version}</span>
                       <span className="license-type">{entry.license}</span>
                     </button>
                     {expanded && (
@@ -101,7 +101,8 @@ export function LicensesDialog({ open, onClose }: { open: boolean; onClose(): vo
                             {entry.repository}
                           </button>
                         )}
-                        {entry.licenseText && <pre>{entry.licenseText}</pre>}
+                        {entry.attribution && <p className="license-attribution">{entry.attribution}</p>}
+                        <pre>{entry.licenseText}</pre>
                       </div>
                     )}
                   </div>

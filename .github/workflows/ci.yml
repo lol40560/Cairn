@@ -1,0 +1,47 @@
+name: Pull Request CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+      - name: Install dependencies (skip native scripts)
+        run: npm ci --ignore-scripts
+      - name: Verify legal artifacts
+        run: npm run verify:legal
+      - name: Rebuild better-sqlite3 from source
+        working-directory: node_modules/better-sqlite3
+        run: npx node-gyp rebuild --release --force_build=1
+        env:
+          npm_config_build_from_source: "true"
+      - name: Verify better-sqlite3 binary
+        working-directory: node_modules/better-sqlite3
+        run: node -e "require('./build/Release/better_sqlite3.node'); console.log('better-sqlite3 native binary OK')"
+      - run: npm test -- --run
+      - run: npm run lint
+      - run: npx tsc -b --pretty false
+      - run: npm run build
+      - run: npm run verify:sync
