@@ -40,6 +40,8 @@ jobs:
       # 跳過 postinstall 的 electron-rebuild，避免測試載入 Electron ABI 的原生模組。
       - name: Install dependencies (skip native scripts)
         run: npm ci --ignore-scripts
+      - name: Verify legal artifacts
+        run: npm run verify:legal
       # force_build=1 會略過套件偵測到 prebuild 時的空目標，確實產生本機原生 binary。
       - name: Rebuild better-sqlite3 from source
         working-directory: node_modules/better-sqlite3
