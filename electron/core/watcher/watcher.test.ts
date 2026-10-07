@@ -89,6 +89,9 @@ describe('ProjectWatcher', () => {
   it('新建文件产生从空内容到当前内容的一条 op', async () => {
     const { projectRoot, watcher } = await createFixture()
     await watcher.start()
+    // chokidar 的 ready 代表初始扫描完成；macOS FSEvents 仍可能在极短时间内完成底层订阅。
+    // 让测试等待一个极小观察窗口，确保断言的是 add 事件而不是平台订阅时序。
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
     const opPromise = waitForOp(watcher)
     await writeFile(join(projectRoot, 'new.ts'), 'export const value = 1\n', 'utf8')
