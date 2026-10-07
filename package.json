@@ -15,7 +15,10 @@
     "preverify:sync": "npm run native:node",
     "verify:sync": "node scripts/verify-sync.mjs",
     "icons": "node scripts/generate-icons.mjs",
-    "licenses": "license-checker --production --json > build/licenses.json",
+    "generate:legal": "node scripts/generate-legal.mjs",
+    "verify:legal": "node scripts/generate-legal.mjs --check",
+    "generate:licenses": "node scripts/generate-legal.mjs",
+    "licenses": "node scripts/generate-legal.mjs",
     "licenses:md": "node scripts/generate-licenses.mjs",
     "lint": "eslint . --max-warnings=0",
     "electron:install": "install-electron",
@@ -43,6 +46,12 @@
       "package.json",
       "!**/*.map",
       "!**/node_modules/**/{test,**tests**,tests,example,examples}/**"
+    ],
+    "extraResources": [
+      { "from": "LICENSE", "to": "legal/LICENSE" },
+      { "from": "PRIVACY.md", "to": "legal/PRIVACY.md" },
+      { "from": "THIRD_PARTY_NOTICES.md", "to": "legal/THIRD_PARTY_NOTICES.md" },
+      { "from": "build/licenses.json", "to": "legal/licenses.json" }
     ],
     "asar": true,
     "asarUnpack": [
