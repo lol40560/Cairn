@@ -7,6 +7,10 @@ import type { Op } from '../oplog'
 export const SYNC_PROTOCOL_VERSION = 3
 /** 與 Transport 使用同一個 frame hard limit，避免本機產生必定被拒絕的 op。 */
 export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
+/** Blob 分塊遠低於 wire frame 上限，保留 base64 與 JSON framing 餘裕。 */
+export const BLOB_CHUNK_SIZE = 64 * 1024
+/** 文字 fallback 的硬上限；超過此值不會無限制佔用 receiver 記憶體。 */
+export const MAX_TRANSFER_BLOB_BYTES = 50 * 1024 * 1024
 
 export interface PeerInfo {
   peerId: string
@@ -88,6 +92,8 @@ export type SyncMessage =
   | { type: 'have-blob'; hash: string; size: number }
   | { type: 'want-blob'; hash: string }
   | { type: 'data-blob'; hash: string; data: string }
+  | { type: 'blob-meta'; hash: string; size: number; chunkCount: number }
+  | { type: 'blob-chunk'; hash: string; index: number; data: string }
   | { type: 'identity-mismatch'; reason: string; hostIdentity: ProjectIdentity; yourIdentity: ProjectIdentity }
   | { type: 'identity-ok' }
   | { type: 'ping' }
@@ -174,6 +180,10 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
       return typeof candidate.hash === 'string' && isNonNegativeNumber(candidate.size)
     case 'data-blob':
       return typeof candidate.hash === 'string' && typeof candidate.data === 'string'
+    case 'blob-meta':
+      return typeof candidate.hash === 'string' && isNonNegativeNumber(candidate.size) && isNonNegativeInteger(candidate.chunkCount)
+    case 'blob-chunk':
+      return typeof candidate.hash === 'string' && isNonNegativeInteger(candidate.index) && typeof candidate.data === 'string'
     case 'data':
       return typeof candidate.op === 'object' && candidate.op !== null
     case 'seeder-available':

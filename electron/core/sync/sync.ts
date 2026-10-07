@@ -19,7 +19,14 @@ import { readSnapshot } from '../watcher/snapshot'
 import { isSensitiveFile } from '../watcher/watcher'
 import { Discovery } from './discovery'
 import { PendingOps } from './pending-ops'
-import type { PeerInfo, SeederInfo, SyncMessage } from './protocol'
+import {
+  BLOB_CHUNK_SIZE,
+  isSyncMessageWithinLimit,
+  MAX_TRANSFER_BLOB_BYTES,
+  type PeerInfo,
+  type SeederInfo,
+  type SyncMessage,
+} from './protocol'
 import { ReconnectManager, type PeerState } from './reconnect'
 import { Transport, type PeerEndpoint } from './transport'
 
@@ -65,6 +72,13 @@ interface ConnectionAttempt {
   timer: ReturnType<typeof setTimeout>
 }
 
+interface IncomingBlob {
+  chunks: Map<number, Buffer>
+  expectedChunks: number
+  receivedBytes: number
+  size: number
+}
+
 /** 避免 Sync 与快照模块产生循环依赖的最小处理器契约。 */
 export interface SnapshotSeederHandler {
   handleWantSnapshot(peerId: string, snapshotId: string): void
@@ -94,6 +108,7 @@ export class Sync extends EventEmitter {
   private readonly pendingOps: PendingOps | undefined
   private readonly conflicts: ConflictsManager | undefined
   private readonly reconnectManager: ReconnectManager
+  private readonly incomingBlobs = new Map<string, IncomingBlob>()
   private retryingPending = false
   private started = false
 
@@ -456,6 +471,20 @@ export class Sync extends EventEmitter {
       return
     }
 
+    if (message.type === 'blob-meta') {
+      try {
+        this.handleBlobMeta(message.hash, message.size, message.chunkCount)
+      } catch (error) {
+        this.emitError(error)
+      }
+      return
+    }
+
+    if (message.type === 'blob-chunk') {
+      void this.handleBlobChunk(message.hash, message.index, message.data).catch((error: unknown) => this.emitError(error))
+      return
+    }
+
     if (message.type === 'identity-mismatch') {
       const localIdentity = this.options.identity
       this.emit('identityMismatch', {
@@ -763,7 +792,22 @@ export class Sync extends EventEmitter {
 
   private async handleWantBlob(peerId: string, hash: string): Promise<void> {
     const blob = await this.options.blobStore?.get(hash)
-    if (blob) this.send(peerId, { type: 'data-blob', hash, data: blob.toString('base64') })
+    if (!blob) return
+    const singleMessage = { type: 'data-blob' as const, hash, data: blob.toString('base64') }
+    if (isSyncMessageWithinLimit(singleMessage)) {
+      this.send(peerId, singleMessage)
+      return
+    }
+
+    if (blob.length > MAX_TRANSFER_BLOB_BYTES) {
+      throw new Error(`blob exceeds ${MAX_TRANSFER_BLOB_BYTES} byte transfer limit: ${hash}`)
+    }
+    const chunkCount = Math.ceil(blob.length / BLOB_CHUNK_SIZE)
+    this.send(peerId, { type: 'blob-meta', hash, size: blob.length, chunkCount })
+    for (let index = 0; index < chunkCount; index += 1) {
+      const start = index * BLOB_CHUNK_SIZE
+      this.send(peerId, { type: 'blob-chunk', hash, index, data: blob.subarray(start, start + BLOB_CHUNK_SIZE).toString('base64') })
+    }
   }
 
   private async handleDataBlob(hash: string, data: string): Promise<void> {
@@ -778,6 +822,49 @@ export class Sync extends EventEmitter {
     }
     await blobStore.put(content)
     await this.retryPendingBinaryOps()
+  }
+
+  private handleBlobMeta(hash: string, size: number, chunkCount: number): void {
+    if (size > MAX_TRANSFER_BLOB_BYTES) {
+      throw new Error(`blob metadata exceeds ${MAX_TRANSFER_BLOB_BYTES} byte transfer limit: ${hash}`)
+    }
+    const expectedChunks = Math.ceil(size / BLOB_CHUNK_SIZE)
+    if (chunkCount !== expectedChunks || (size === 0 && chunkCount !== 0)) {
+      throw new Error(`invalid blob chunk metadata: ${hash}`)
+    }
+    this.incomingBlobs.set(hash, { chunks: new Map(), expectedChunks, receivedBytes: 0, size })
+  }
+
+  private async handleBlobChunk(hash: string, index: number, data: string): Promise<void> {
+    const incoming = this.incomingBlobs.get(hash)
+    if (!incoming) throw new Error(`received blob chunk without metadata: ${hash}`)
+    if (index < 0 || index >= incoming.expectedChunks) {
+      this.incomingBlobs.delete(hash)
+      throw new Error(`invalid blob chunk index: ${hash}`)
+    }
+    const chunk = Buffer.from(data, 'base64')
+    const expectedSize = index === incoming.expectedChunks - 1
+      ? incoming.size - index * BLOB_CHUNK_SIZE
+      : BLOB_CHUNK_SIZE
+    if (chunk.length !== expectedSize || chunk.length > BLOB_CHUNK_SIZE || incoming.chunks.has(index)) {
+      if (incoming.chunks.has(index) && incoming.chunks.get(index)!.equals(chunk)) return
+      this.incomingBlobs.delete(hash)
+      throw new Error(`invalid or duplicate blob chunk: ${hash}`)
+    }
+    incoming.chunks.set(index, chunk)
+    incoming.receivedBytes += chunk.length
+    if (incoming.receivedBytes > incoming.size) {
+      this.incomingBlobs.delete(hash)
+      throw new Error(`blob exceeds advertised size: ${hash}`)
+    }
+    if (incoming.chunks.size !== incoming.expectedChunks) return
+
+    this.incomingBlobs.delete(hash)
+    const content = Buffer.concat([...incoming.chunks.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, value]) => value))
+    if (content.length !== incoming.size) throw new Error(`blob size mismatch after chunks: ${hash}`)
+    await this.handleDataBlob(hash, content.toString('base64'))
   }
 
   private async retryPendingBinaryOps(): Promise<void> {

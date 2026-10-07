@@ -970,6 +970,37 @@ describe('large text blob fallback', () => {
     expect(target.oplog.getRemoteOpApplyState(remote.hash)).toBe('applied')
     await sync.stop()
   })
+
+  it('chunks a blob whose base64 data frame would exceed the transport limit', async () => {
+    const sourceFixture = await createTestOplog()
+    const targetFixture = await createTestOplog()
+    const sourceStore = new BlobStore(sourceFixture.root)
+    const targetStore = new BlobStore(targetFixture.root)
+    const content = Buffer.alloc(MAX_SYNC_MESSAGE_BYTES + 1_024, 0x61)
+    const hash = await sourceStore.put(content)
+    const sourceTransport = new MockTransport()
+    const targetTransport = new MockTransport()
+    const source = new Sync(
+      { blobStore: sourceStore, oplog: sourceFixture.oplog, projectRoot: sourceFixture.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'source', transport: sourceTransport as never },
+    )
+    const target = new Sync(
+      { blobStore: targetStore, oplog: targetFixture.oplog, projectRoot: targetFixture.root, roomCode: 'ABCDEF' },
+      { discovery: new MockDiscovery() as unknown as never, peerId: 'target', transport: targetTransport as never },
+    )
+    await Promise.all([source.start(), target.start()])
+
+    await (source as unknown as { handleWantBlob(peerId: string, requestedHash: string): Promise<void> }).handleWantBlob('target', hash)
+    const sent = sourceTransport.send.mock.calls.map(([, message]) => message as SyncMessage)
+    expect(sent[0]).toMatchObject({ type: 'blob-meta', hash, size: content.length })
+    expect(sent.filter((message) => message.type === 'blob-chunk')).not.toHaveLength(0)
+    expect(sent.every((message) => isSyncMessageWithinLimit(message))).toBe(true)
+
+    for (const message of sent) targetTransport.emit('message', 'source', message)
+    await vi.waitFor(async () => expect(await targetStore.get(hash)).toEqual(content), { timeout: 20_000 })
+
+    await Promise.all([source.stop(), target.stop()])
+  }, 30_000)
 })
 
 describe('Sync', () => {
