@@ -267,6 +267,8 @@ describe('sync protocol', () => {
     const frame = encryptTransportMessage(keys, 'client-to-server', 0n, { type: 'have', hash: 'TOP_SECRET_TEST_PAYLOAD_123' })
     expect(decryptTransportMessage(keys, 'client-to-server', frame)).toEqual({ type: 'have', hash: 'TOP_SECRET_TEST_PAYLOAD_123' })
     expect(() => decryptTransportMessage(keys, 'server-to-client', frame)).toThrow(/验证失败/)
+    const otherConnection = deriveTransportSessionKeys('AAAAAAAAAAAAAAAAAAAAAAAAAA', 'room-hash', 'c'.repeat(64), 't'.repeat(64))
+    expect(() => decryptTransportMessage(otherConnection, 'client-to-server', frame)).toThrow(/验证失败/)
     expect(() => decryptTransportMessage(keys, 'client-to-server', { ...frame, ciphertext: `${frame.ciphertext[0] === 'A' ? 'B' : 'A'}${frame.ciphertext.slice(1)}` })).toThrow(/验证失败/)
     expect(() => decryptTransportMessage(keys, 'client-to-server', { ...frame, tag: `${frame.tag[0] === 'A' ? 'B' : 'A'}${frame.tag.slice(1)}` })).toThrow(/验证失败/)
   })
@@ -618,7 +620,7 @@ describe('transport', () => {
     })
     await authenticateRawClient(receiver, client)
     const failure = waitForEvent<[Error]>(receiver, 'error')
-    client.write(`{"type":"have","hash":"${'a'.repeat(MAX_SYNC_MESSAGE_BYTES + 1)}"}\n`)
+    client.write(`{"type":"secure","encryptionVersion":1,"sequence":"1","ciphertext":"${'a'.repeat(MAX_SYNC_MESSAGE_BYTES + 1)}","tag":"${'a'.repeat(24)}"}\n`)
 
     await expect(failure).resolves.toEqual([expect.objectContaining({ message: expect.stringContaining('超过') })])
     client.destroy()
