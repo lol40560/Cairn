@@ -102,6 +102,24 @@ describe('ProjectWatcher', () => {
     expect(op.baseHash).toBe(createHash('sha256').update('').digest('hex'))
   })
 
+  it('regression: wire frame 超限的 Unicode 文字改以完整 UTF-8 blob 产生 op', async () => {
+    const { projectRoot, watcher } = await createFixture({ debounceMs: 10 })
+    await watcher.start()
+
+    const opPromise = waitForOp(watcher, 30_000)
+    const text = '🧭'.repeat(2_700_000)
+    await writeFile(join(projectRoot, 'oversized.ts'), text, 'utf8')
+    const op = await opPromise
+
+    expect(op).toMatchObject({
+      contentEncoding: 'full-text-blob',
+      diff: '',
+      filePath: 'oversized.ts',
+      size: Buffer.byteLength(text, 'utf8'),
+    })
+    expect(op.blobHash).toMatch(/^[a-f0-9]{64}$/)
+  }, 45_000)
+
   it('applyRemoteChange 更新基线但不产生 op，后续本地修改仍会产生 op', async () => {
     const { projectRoot, watcher } = await createFixture()
     const path = join(projectRoot, 'remote.ts')

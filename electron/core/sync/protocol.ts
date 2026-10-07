@@ -4,7 +4,9 @@ import type { ProjectIdentity } from '../identity'
 import type { Op } from '../oplog'
 
 /** v2 peer 理解新版操作 identity，避免新舊 hash 格式被靜默混用。 */
-export const SYNC_PROTOCOL_VERSION = 2
+export const SYNC_PROTOCOL_VERSION = 3
+/** 與 Transport 使用同一個 frame hard limit，避免本機產生必定被拒絕的 op。 */
+export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
 
 export interface PeerInfo {
   peerId: string
@@ -93,6 +95,15 @@ export type SyncMessage =
 
 export function encodeMessage(message: SyncMessage): string {
   return `${JSON.stringify(message)}\n`
+}
+
+/** 以實際 JSON UTF-8 frame 位元組計算上限，包含 Unicode escaping 與換行。 */
+export function encodedMessageByteLength(message: SyncMessage): number {
+  return Buffer.byteLength(encodeMessage(message), 'utf8')
+}
+
+export function isSyncMessageWithinLimit(message: SyncMessage): boolean {
+  return encodedMessageByteLength(message) <= MAX_SYNC_MESSAGE_BYTES
 }
 
 export function decodeMessages(

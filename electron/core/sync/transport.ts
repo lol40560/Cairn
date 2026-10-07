@@ -3,10 +3,10 @@ import { EventEmitter } from 'node:events'
 import { createServer, Socket, type Server } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 
-import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveRoomHash, encodeMessage, SYNC_PROTOCOL_VERSION, type SyncMessage } from './protocol'
+import { AUTH_PROTOCOL_VERSION, createClientProof, createServerProof, decodeMessages, deriveRoomHash, encodeMessage, MAX_SYNC_MESSAGE_BYTES, SYNC_PROTOCOL_VERSION, type SyncMessage } from './protocol'
 import type { ProjectIdentity } from '../identity'
 
-export const MAX_SYNC_MESSAGE_BYTES = 10 * 1024 * 1024
+export { MAX_SYNC_MESSAGE_BYTES } from './protocol'
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const HEARTBEAT_TIMEOUT_MS = 60_000
 export const AUTH_TIMEOUT_MS = 10_000

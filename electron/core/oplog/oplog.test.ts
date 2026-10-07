@@ -7,7 +7,7 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { ensureCairnDataDir } from '../data-dir'
-import { computeHash, createOplog, LEGACY_OP_HASH_VERSION } from './index'
+import { computeHash, createOplog, CURRENT_OP_HASH_VERSION, LEGACY_OP_HASH_VERSION } from './index'
 import type { NewOp, Op, Oplog } from './types'
 
 const roots: string[] = []
@@ -235,7 +235,7 @@ describe('oplog', () => {
     }
   })
 
-  it('v2 hash 对相同语义稳定，且不依赖调用方字段插入顺序', () => {
+  it('current hash 对相同语义稳定，且不依赖调用方字段插入顺序', () => {
     const input = newOp()
     const reordered: NewOp = {
       diff: input.diff,
@@ -249,7 +249,7 @@ describe('oplog', () => {
     expect(computeHash(reordered)).toBe(computeHash(input))
   })
 
-  it('v2 hash 绑定 kind、baseHash、blobHash 与 size', async () => {
+  it('current hash 绑定 kind、baseHash、blobHash、size 与文字 blob 语义', async () => {
     const { oplog } = await createFixture()
     const input = newOp({ diff: '', filePath: 'assets/logo.png', kind: 'created' })
     const baseHash = 'f'.repeat(64)
@@ -259,6 +259,7 @@ describe('oplog', () => {
     expect(computeHash({ ...input, baseHash })).not.toBe(computeHash(input))
     expect(computeHash({ ...input, blobHash })).not.toBe(computeHash(input))
     expect(computeHash({ ...input, size: 12 })).not.toBe(computeHash(input))
+    expect(computeHash({ ...input, contentEncoding: 'full-text-blob' })).not.toBe(computeHash(input))
 
     const stored = oplog.putOp({ ...input, baseHash, blobHash, size: 12 })
 
@@ -343,20 +344,20 @@ describe('oplog', () => {
     expect(reopened.listUnappliedRemoteOps()).toEqual([])
   })
 
-  it('regression: v2 remote apply state remains attached to its v2 object after restart', async () => {
+  it('regression: current remote apply state remains attached to its current object after restart', async () => {
     const { projectRoot, oplog } = await createFixture()
     const received = oplog.putReceivedRemoteOp(newOp({
       baseHash: 'a'.repeat(64),
       kind: 'modified',
     }))
 
-    expect(received.hashVersion).toBe(2)
+    expect(received.hashVersion).toBe(CURRENT_OP_HASH_VERSION)
     expect(oplog.getRemoteOpApplyState(received.hash)).toBe('received')
     oplog.close()
 
     const reopened = createOplog(projectRoot)
     oplogs.push(reopened)
-    expect(reopened.getOp(received.hash)).toMatchObject({ hashVersion: 2 })
+    expect(reopened.getOp(received.hash)).toMatchObject({ hashVersion: CURRENT_OP_HASH_VERSION })
     expect(reopened.getRemoteOpApplyState(received.hash)).toBe('received')
   })
 

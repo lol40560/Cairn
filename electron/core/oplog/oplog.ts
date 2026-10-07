@@ -64,6 +64,7 @@ function canonicalize(input: NewOp | Op): NewOp {
     baseHash: input.baseHash,
     blobHash: input.blobHash,
     size: input.size,
+    contentEncoding: input.contentEncoding,
     // 已帶 hash 的未標記物件必然是歷史 v1；新的 NewOp 預設寫入 v2。
     hashVersion: isStoredOp(input)
       ? input.hashVersion ?? LEGACY_OP_HASH_VERSION
@@ -385,6 +386,7 @@ class SqliteOplog implements Oplog {
         author: op.author,
         baseHash: op.baseHash,
         blobHash: op.blobHash,
+        contentEncoding: op.contentEncoding,
         diff: op.diff,
         filePath: op.filePath,
         hash: op.hash,
