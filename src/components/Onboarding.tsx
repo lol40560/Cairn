@@ -7,7 +7,7 @@ import { useAppStore } from '@/store/appStore'
 type OnboardingStep = 'welcome' | 'project' | 'join' | 'done'
 
 function isInviteCode(value: string): boolean {
-  return /^[A-Z0-9]{6}$/i.test(value)
+  return /^[A-Z2-7\s-]{26,32}$/i.test(value) && value.replace(/[\s-]/g, '').length === 26
 }
 
 function parseDirectAddress(value: string): { host: string; port: number } | undefined {
@@ -154,7 +154,7 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
       // Sync 依赖活动项目，因此必须先启动监控再加入团队。
       if (!await startWatchingFolder()) return
 
-      const roomCodeValue = value.toUpperCase()
+      const roomCodeValue = value.replace(/[\s-]/g, '').toUpperCase()
       const result = await window.cairn.joinRoom(roomCodeValue)
       if (!result.ok) {
         setError(normalizeError(result.error, t))

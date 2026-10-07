@@ -1060,8 +1060,9 @@ describe('IPC bridge', () => {
     const firstSync = mocks.syncs[0]
     const secondRoom = await main.createRoom()
 
-    expect(firstRoom).toMatch(/^[2-9A-HJ-NP-Z]{6}$/)
-    expect(secondRoom).toMatch(/^[2-9A-HJ-NP-Z]{6}$/)
+    expect(firstRoom).toMatch(/^[A-Z2-7]{26}$/)
+    expect(secondRoom).toMatch(/^[A-Z2-7]{26}$/)
+    expect(firstRoom).not.toBe(secondRoom)
     expect(firstSync?.stop).toHaveBeenCalledOnce()
     expect(mocks.syncs).toHaveLength(2)
   })
@@ -1071,8 +1072,8 @@ describe('IPC bridge', () => {
     const root = await createDirectory()
     await main.startWatching(root)
 
-    await expect(main.joinRoom('O0I1ZZ')).rejects.toThrow(/房间码/)
-    await main.joinRoom('ABCDEF')
+    await expect(main.joinRoom('O0I1ZZ')).rejects.toThrow(/邀请码/)
+    await main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA')
     const sync = mocks.syncs[0]
     sync?.listPeers.mockReturnValue([
       { host: '127.0.0.1', lastSeen: 1, peerId: 'peer', port: 1234 },

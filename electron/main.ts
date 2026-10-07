@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { randomInt } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
@@ -40,6 +39,7 @@ import {
   type SeederInfo,
   type SeederState,
 } from './core/sync'
+import { generateRoomSecret, normalizeRoomSecret } from './core/sync/protocol'
 
 interface ActiveProject {
   root: string
@@ -631,18 +631,11 @@ export async function openInFileManager(targetPath: string): Promise<void> {
 }
 
 function generateRoomCode(): string {
-  const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-  let roomCode = ''
-  for (let index = 0; index < 6; index += 1) {
-    roomCode += alphabet[randomInt(alphabet.length)]
-  }
-  return roomCode
+  return generateRoomSecret()
 }
 
-function validateRoomCode(roomCode: string): void {
-  if (!/^[2-9A-HJ-NP-Z]{6}$/.test(roomCode)) {
-    throw new Error(`房间码必须是 6 位大写字母或数字：${roomCode}`)
-  }
+function validateRoomCode(roomCode: string): string {
+  return normalizeRoomSecret(roomCode)
 }
 
 function broadcastPeers(): void {
@@ -705,7 +698,7 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
-    console.info(`[cairn:sync] sync.start called with roomCode ${roomCode}`)
+    console.info('[cairn:sync] sync.start called')
     await sync.start({ discovery })
     activeRoom = { roomCode, sync }
     broadcastPeers()
@@ -718,15 +711,15 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
 export async function createRoom(): Promise<string> {
   await leaveRoom()
   const roomCode = generateRoomCode()
-  console.info(`[cairn:sync] createRoom requested roomCode ${roomCode}`)
+  console.info('[cairn:sync] createRoom requested')
   await startRoom(roomCode)
   return roomCode
 }
 
 export async function joinRoom(roomCode: string): Promise<void> {
-  validateRoomCode(roomCode)
+  roomCode = validateRoomCode(roomCode)
   await leaveRoom()
-  console.info(`[cairn:sync] joinRoom requested roomCode ${roomCode}`)
+  console.info('[cairn:sync] joinRoom requested')
   await startRoom(roomCode)
 }
 
@@ -793,7 +786,7 @@ export async function connectToAddress(input: { host: string; port: number; room
   if (!activeProject) {
     throw new Error('请先选择并开始监控一个项目')
   }
-  validateRoomCode(input.roomCode)
+  input.roomCode = validateRoomCode(input.roomCode)
 
   if (!activeRoom) {
     // 直连会话仅启动 TCP 传输，不发布或浏览 mDNS 服务。
