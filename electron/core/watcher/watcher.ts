@@ -38,6 +38,12 @@ export const SYNCABLE_BINARY_EXTENSIONS = new Set([
   '.ttf', '.otf', '.woff', '.woff2', '.eot',
 ])
 export const MAX_SYNCABLE_BINARY_SIZE = 5 * 1024 * 1024
+/**
+ * chokidar 的 add/change 事件可在大型或分段寫入尚未完成時送達。
+ * 100ms 足以合併一般編輯器的分段寫入，同時只為既有 debounce 增加有限延遲。
+ */
+const WRITE_STABILITY_THRESHOLD_MS = 100
+const WRITE_STABILITY_POLL_INTERVAL_MS = 25
 
 export { isSensitiveFile } from '../ignore'
 
@@ -123,6 +129,10 @@ export class ProjectWatcher extends EventEmitter {
     this.ignoreMatcher.reload()
 
     const watcher = chokidar.watch(this.projectRoot, {
+      awaitWriteFinish: {
+        pollInterval: WRITE_STABILITY_POLL_INTERVAL_MS,
+        stabilityThreshold: WRITE_STABILITY_THRESHOLD_MS,
+      },
       ignoreInitial: false,
       ignored: (path) => this.isIgnoredPath(path),
       persistent: true,

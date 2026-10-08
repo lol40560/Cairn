@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createOplog } from '../oplog'
 import type { Oplog, Op } from '../oplog'
+import { BlobStore } from '../blobs'
 import { snapshotExists, writeSnapshot } from './snapshot'
 import { ProjectWatcher } from './watcher'
 import { TrashManager } from '../trash'
@@ -106,12 +107,17 @@ describe('ProjectWatcher', () => {
   })
 
   it('regression: wire frame 超限的 Unicode 文字改以完整 UTF-8 blob 产生 op', async () => {
-    const { projectRoot, watcher } = await createFixture({ debounceMs: 10 })
+    const { projectRoot, oplog, watcher } = await createFixture({ debounceMs: 10 })
     await watcher.start()
 
     const opPromise = waitForOp(watcher, 30_000)
     const text = '🧭'.repeat(2_700_000)
-    await writeFile(join(projectRoot, 'oversized.ts'), text, 'utf8')
+    const filePath = join(projectRoot, 'oversized.ts')
+    const middle = text.length / 2
+    await writeFile(filePath, text.slice(0, middle), 'utf8')
+    // 模擬慢速非原子寫入：第一段已觸發 add/change，但完整內容仍在寫入。
+    await new Promise<void>((resolve) => setTimeout(resolve, 40))
+    await writeFile(filePath, text.slice(middle), { encoding: 'utf8', flag: 'a' })
     const op = await opPromise
 
     expect(op).toMatchObject({
@@ -121,6 +127,9 @@ describe('ProjectWatcher', () => {
       size: Buffer.byteLength(text, 'utf8'),
     })
     expect(op.blobHash).toMatch(/^[a-f0-9]{64}$/)
+    expect(await new BlobStore(projectRoot).get(op.blobHash!)).toEqual(Buffer.from(text, 'utf8'))
+    await new Promise<void>((resolve) => setTimeout(resolve, 150))
+    expect(oplog.listRecent(200)).toHaveLength(1)
   }, 45_000)
 
   it('applyRemoteChange 更新基线但不产生 op，后续本地修改仍会产生 op', async () => {
