@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import appPackage from '../../package.json'
 import { SettingsView } from './SettingsDialog'
 
 import {
@@ -18,7 +19,7 @@ describe('SettingsView', () => {
     }))
 
     expect(html).toContain('About')
-    expect(html).toContain('1.8.0')
+    expect(html).toContain(appPackage.version)
   })
 
   it('Esc 按下后会触发关闭条件', () => {

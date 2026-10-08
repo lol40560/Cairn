@@ -2,6 +2,16 @@
 
 All notable changes to Cairn.
 
+## [2.0.0-rc.1] - 2026-10-08
+
+### Release candidate
+
+- P2P collaboration uses protocol v4 with encrypted peer transport and mutual room authentication.
+- Older peers are incompatible. Legacy six-character room invites are rejected; generate and share new invitations.
+- Existing v1, v2, and v3 operation history remains readable.
+- Adds filesystem-boundary, snapshot, recovery, and release hardening completed since v1.8.0.
+- macOS and Windows RC artifacts are unsigned and may show platform trust warnings.
+
 ## [1.8.0] - 2026-10-05
 
 ### Added

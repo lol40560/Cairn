@@ -12,6 +12,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      release_draft: ${{ steps.release_channel.outputs.draft }}
+      release_prerelease: ${{ steps.release_channel.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,19 +22,13 @@ jobs:
           # better-sqlite3 13.x 明確要求 Node 22+；本機驗證使用 Node 24。
           node-version: '24'
           cache: npm
-      # Tag 與 package.json 不一致時中止，避免發布檔名與產品版本漂移。
-      - name: Verify release version matches tag
+      # Tag 與 package.json 不一致時中止，並由 SemVer prerelease metadata 決定發布可見性。
+      - name: Verify release version and channel
+        id: release_channel
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          echo "Tag: $TAG_VERSION"
-          echo "package.json: $PKG_VERSION"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Tag version does not match package.json"
-            exit 1
-          fi
-          echo "Version matches"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          node scripts/release-channel.mjs "$GITHUB_REF_NAME" "$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
       # better-sqlite3 的安裝與驗證都需要本機編譯工具。
       - name: Install build tools
         run: |
@@ -117,7 +114,7 @@ jobs:
             release/*.zip
 
   release:
-    needs: [build-mac, build-win]
+    needs: [verify, build-mac, build-win]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -135,5 +132,5 @@ jobs:
           files: |
             artifacts/mac/*
             artifacts/win/*
-          draft: false
-          prerelease: false
+          draft: ${{ needs.verify.outputs.release_draft == 'true' }}
+          prerelease: ${{ needs.verify.outputs.release_prerelease == 'true' }}
