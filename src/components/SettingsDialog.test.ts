@@ -20,6 +20,8 @@ describe('SettingsView', () => {
 
     expect(html).toContain('About')
     expect(html).toContain(appPackage.version)
+    expect(html).toContain('checkbox checked')
+    expect(html).toContain('settings-sticky-actions')
   })
 
   it('Esc 按下后会触发关闭条件', () => {

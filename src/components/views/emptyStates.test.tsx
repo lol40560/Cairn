@@ -81,11 +81,13 @@ describe('引导式空状态', () => {
     ]
     const html = renderToStaticMarkup(<ActivityView folder="/tmp/project" ops={ops} onChangeFolder={async () => undefined} />)
 
+    expect(html).toContain('activity-toolbar')
     expect(html).toContain('src/auth.ts')
     expect(html).toContain('2 changes')
     expect(html).toContain('Grouped')
     expect(html).toContain('alice')
     expect(html).toContain('bob')
+    expect(html).not.toContain('activity-session-toggle')
   })
 
   it('Same-file edits 空状态显示同步说明', () => {
@@ -134,12 +136,17 @@ describe('引导式空状态', () => {
     expect(html).toContain('+new')
   })
 
-  it('Sidebar 显示项目、协作和复原分组', () => {
+  it('Sidebar 直接显示导航项目，不重复显示分类标题', () => {
     const html = renderToStaticMarkup(<Sidebar />)
 
-    expect(html).toContain('Project')
-    expect(html).toContain('Collaboration')
-    expect(html).toContain('Recovery')
+    expect(html).toContain('Cairn')
+    expect(html).not.toContain('sidebar-logo')
+    expect(html).not.toContain('>Project<')
+    expect(html).not.toContain('>Collaboration<')
+    expect(html).not.toContain('>Recovery<')
+    expect(html).toContain('Home')
+    expect(html).toContain('Changes')
+    expect(html).toContain('Checkpoints')
     expect(html).toContain('Settings')
   })
 
@@ -156,6 +163,15 @@ describe('引导式空状态', () => {
 
     expect(html).toContain('Just you so far')
     expect(html).toContain('Share your invite code to add teammates.')
+  })
+
+  it('Team 未连接时显示紧凑的开始与加入入口', () => {
+    const html = renderToStaticMarkup(<RoomView hasOps={false} peers={[]} roomCode="" {...roomHandlers} />)
+
+    expect(html).toContain('team-page-content')
+    expect(html).toContain('team-action-card-primary')
+    expect(html).toContain('Create a secure local workspace')
+    expect(html).toContain('Enter an invite from a teammate')
   })
 
   it('加入团队发现分享者后显示下载确认内容', () => {

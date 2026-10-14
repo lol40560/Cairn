@@ -121,7 +121,7 @@ export function CheckpointsView({ checkpoints: checkpointsOverride }: Checkpoint
         <h1 className="view-title">{t('checkpoints')}</h1>
         <span className="view-count">{checkpoints.length} {t('items')}</span>
         <span className="view-spacer" />
-        <button className="btn btn-primary" type="button" onClick={() => setShowCreate(true)}><Plus aria-hidden="true" size={14} />{t('createCheckpoint')}</button>
+        <button className="btn checkpoint-create-btn" type="button" onClick={() => setShowCreate(true)}><Plus aria-hidden="true" size={14} />{t('createCheckpoint')}</button>
       </div>
       {loading ? <div className="checkpoints-loading">{t('loading')}</div> : comparison ? (
         <CheckpointComparisonPanel
@@ -132,7 +132,7 @@ export function CheckpointsView({ checkpoints: checkpointsOverride }: Checkpoint
           onRestore={() => setPendingRestore(comparison.checkpoint)}
         />
       ) : checkpoints.length === 0 ? (
-        <EmptyState actions={[{ label: t('createCheckpoint'), onClick: () => setShowCreate(true), variant: 'primary' }]} description={t('noCheckpointsDesc')} icon={Bookmark} title={t('noCheckpoints')} />
+        <EmptyState actions={[{ label: t('createCheckpoint'), onClick: () => setShowCreate(true) }]} description={t('noCheckpointsDesc')} icon={Bookmark} title={t('noCheckpoints')} />
       ) : (
         <div className="checkpoints-list">
           {checkpoints.map((checkpoint) => <CheckpointRow checkpoint={checkpoint} key={checkpoint.id} onCompare={() => void openComparison(checkpoint)} onDelete={() => setPendingDelete(checkpoint)} onRestore={() => void openComparison(checkpoint, true)} />)}
@@ -169,7 +169,7 @@ function CheckpointComparisonPanel({ comparison, loading, onBack, onFileClick, o
   const { t } = useTranslation()
   const changed = comparison.files.filter((file) => file.status !== 'unchanged')
   return <div className="checkpoint-comparison">
-    <div className="checkpoint-comparison-header"><button className="btn btn-ghost btn-sm" type="button" onClick={onBack}><ChevronLeft aria-hidden="true" size={14} />{t('back')}</button><div><h2>{t('checkpointVsCurrent')}</h2><p>{comparison.checkpoint.name}</p></div><span className="view-spacer" /><button className="btn btn-danger btn-sm" disabled={loading} type="button" onClick={onRestore}>{t('restoreCheckpoint')}</button></div>
+    <div className="checkpoint-comparison-header"><button className="btn btn-ghost btn-sm" type="button" onClick={onBack}><ChevronLeft aria-hidden="true" size={14} />{t('back')}</button><div><h2>{t('checkpointVsCurrent')}</h2><p>{comparison.checkpoint.name}</p></div><span className="view-spacer" /><button className="btn checkpoint-restore-btn btn-sm" disabled={loading} type="button" onClick={onRestore}>{t('restoreCheckpoint')}</button></div>
     <div className="checkpoint-comparison-summary"><span>{changed.length} {t('filesChanged')}</span><span>{comparison.summary.modified} {t('filesModified')}</span><span>{comparison.summary.added} {t('filesAdded')}</span><span>{comparison.summary.deleted} {t('filesDeleted')}</span></div>
     <div className="checkpoint-comparison-files">{changed.length === 0 ? <p className="checkpoints-loading">{t('noCheckpointChanges')}</p> : changed.map((file) => <button className="checkpoint-comparison-file" key={file.path} type="button" onClick={() => onFileClick(file)}><span className={`checkpoint-file-status ${file.status}`}>{statusLetter(file.status)}</span><code>{file.path}</code>{file.binary ? <span>{t('binaryFileChanged')}</span> : null}</button>)}</div>
   </div>

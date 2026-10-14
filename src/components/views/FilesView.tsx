@@ -265,29 +265,20 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
   return (
     <section className="view active files-view">
       <header className="files-header">
-        <h1 className="files-header-title">{t('files')}</h1>
-        {selectedFilePath ? (
-          <nav aria-label={selectedFilePath} className="files-breadcrumb">
-            {selectedFilePath.split('/').map((part, index, parts) => (
-              <span key={`${part}-${index}`}>
-                {part}
-                {index < parts.length - 1 ? <span aria-hidden="true" className="files-breadcrumb-sep">/</span> : null}
-              </span>
-            ))}
-          </nav>
-        ) : null}
+        <div className="files-header-main">
+          <h1 className="files-header-title">{t('files')}</h1>
+          {selectedFilePath ? (
+            <nav aria-label={selectedFilePath} className="files-breadcrumb">
+              {selectedFilePath.split('/').map((part, index, parts) => (
+                <span key={`${part}-${index}`}>
+                  {part}
+                  {index < parts.length - 1 ? <span aria-hidden="true" className="files-breadcrumb-sep">/</span> : null}
+                </span>
+              ))}
+            </nav>
+          ) : null}
+        </div>
         <div className="files-header-actions">
-          <label className="files-search">
-            <Search aria-hidden="true" size={13} />
-            <span className="sr-only">{t('filesSearchPlaceholder')}</span>
-            <input
-              ref={searchInputRef}
-              placeholder={t('filesSearchPlaceholder')}
-              type="search"
-              value={fileFilter}
-              onChange={(event) => setFileFilter(event.target.value)}
-            />
-          </label>
           <div className="files-status" aria-live="polite">
             {saving ? <span className="files-status-saving"><Spinner size={12} />{t('filesSaving')}</span> : null}
             {!saving && isDirty ? <span className="files-status-dirty">{t('filesEditing')}</span> : null}
@@ -310,6 +301,17 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
       </header>
       <div className="files-layout">
         <aside className="files-sidebar" style={{ width: fileTreeWidth }}>
+          <label className="files-search files-sidebar-search">
+            <Search aria-hidden="true" size={13} />
+            <span className="sr-only">{t('filesSearchPlaceholder')}</span>
+            <input
+              ref={searchInputRef}
+              placeholder={t('filesSearchPlaceholder')}
+              type="search"
+              value={fileFilter}
+              onChange={(event) => setFileFilter(event.target.value)}
+            />
+          </label>
           <FileTree
             files={projectFiles}
             filter={fileFilter}

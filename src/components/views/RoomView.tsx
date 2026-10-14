@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { Users } from 'lucide-react'
+import { Link2, Plus, Users } from 'lucide-react'
 
 import { Toast, type ToastMessage } from '@/components/Toast'
 import { DownloadPromptDialog } from '@/components/DownloadPromptDialog'
@@ -543,6 +543,7 @@ export function RoomView({
         )}
       </div>
 
+      <div className="team-page-content">
       <section className={`team-health-summary state-${primaryHealth}`} aria-label={t('projectStatus')}>
         <div className="team-health-heading">
           <span aria-hidden="true" className="team-health-dot" />
@@ -572,16 +573,27 @@ export function RoomView({
 
       {!joined ? (
         <div className="room-setup">
-          <div className="room-setup-primary">
-            <p className="room-label">{t('createRoom')}</p>
+          <section className="team-action-card team-action-card-primary">
+            <div className="team-action-heading">
+              <span className="team-action-icon"><Plus aria-hidden="true" size={18} /></span>
+              <div>
+                <h2>{t('createRoom')}</h2>
+                <p>{t('startTeamDesc')}</p>
+              </div>
+            </div>
             <button aria-busy={startingRoom} className="btn btn-primary" disabled={startingRoom} type="button" onClick={() => void handleStartRoom()}>
               {startingRoom ? <Spinner size={12} /> : null}
               {startingRoom ? t('creating') : t('createRoom')}
             </button>
-          </div>
-          <div className="room-join-panel">
-            <p className="room-label">{t('joinTeam')}</p>
-            <p className="room-hint">{t('shareRoomHint')}</p>
+          </section>
+          <section className="team-action-card room-join-panel">
+            <div className="team-action-heading">
+              <span className="team-action-icon"><Link2 aria-hidden="true" size={18} /></span>
+              <div>
+                <h2>{t('joinTeam')}</h2>
+                <p>{t('joinTeamDesc')}</p>
+              </div>
+            </div>
             <div className="room-actions">
             <input
               aria-label={t('inviteCodeLabel')}
@@ -615,7 +627,7 @@ export function RoomView({
                 />
               </label>
             ) : null}
-          </div>
+          </section>
         </div>
       ) : (
         <>
@@ -804,6 +816,7 @@ export function RoomView({
           </div>
         </>
       )}
+      </div>
       <Toast message={toast} onDismiss={dismissToast} />
     </section>
   )

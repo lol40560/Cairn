@@ -8,7 +8,6 @@ import { Onboarding } from '@/components/Onboarding'
 import { SettingsView } from '@/components/SettingsDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Toast, type ToastMessage } from '@/components/Toast'
-import { TopBar } from '@/components/TopBar'
 import { ActivityView } from '@/components/views/ActivityView'
 import { CheckpointsView } from '@/components/views/CheckpointsView'
 import { ConflictsView } from '@/components/views/ConflictsView'
@@ -70,7 +69,6 @@ export function App() {
   const ops = useAppStore((state) => state.ops)
   const peers = useAppStore((state) => state.peers)
   const roomCode = useAppStore((state) => state.roomCode)
-  const status = useAppStore((state) => state.status)
   const addConflict = useAppStore((state) => state.addConflict)
   const addIdentityMismatch = useAppStore((state) => state.addIdentityMismatch)
   const clearIdentityMismatches = useAppStore((state) => state.clearIdentityMismatches)
@@ -549,7 +547,6 @@ export function App() {
       <div aria-label="Cairn" className={`app-shell${presentationMode ? ' presentation-mode' : ''}`}>
         <Sidebar />
         <main className="app-main">
-        <TopBar folder={simulationActive ? 'demo-app' : folder} opCount={displayedOps.length} peerCount={simulationActive ? 0 : peers.length} roomCode={simulationActive ? '' : roomCode} status={status} onSwitchProject={() => void openProjectSwitcher()} />
         <div className="app-content">
           {simulationLocksCurrentView ? <section className="view active demo-isolation-view"><h1 className="view-title">{t('simulation')}</h1><p>{t('demoSimulationNotice')}</p></section> : <>
           {activeView === 'home' && <HomeView />}

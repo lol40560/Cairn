@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { Check } from 'lucide-react'
+
 import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
@@ -132,10 +134,13 @@ export function SettingsView({
             <label className="checkbox-row">
               <input
                 checked={rememberLastFolder}
-                className="checkbox"
+                className="checkbox-input sr-only"
                 type="checkbox"
                 onChange={(event) => changeRememberLastFolder(event.target.checked)}
               />
+              <span aria-hidden="true" className={`checkbox ${rememberLastFolder ? 'checked' : ''}`}>
+                {rememberLastFolder ? <Check size={12} strokeWidth={2.5} /> : null}
+              </span>
               <span>
                 <span className="checkbox-label">{t('rememberLastFolder')}</span>
                 <span className="checkbox-hint">{t('rememberLastFolderHint')}</span>
@@ -144,10 +149,13 @@ export function SettingsView({
             <label className="checkbox-row">
               <input
                 checked={autoStartWatching}
-                className="checkbox"
+                className="checkbox-input sr-only"
                 type="checkbox"
                 onChange={(event) => changeAutoStartWatching(event.target.checked)}
               />
+              <span aria-hidden="true" className={`checkbox ${autoStartWatching ? 'checked' : ''}`}>
+                {autoStartWatching ? <Check size={12} strokeWidth={2.5} /> : null}
+              </span>
               <span>
                 <span className="checkbox-label">{t('autoStartWatching')}</span>
                 <span className="checkbox-hint">{t('autoStartWatchingHint')}</span>
@@ -251,7 +259,7 @@ export function SettingsView({
           )}
           {hasToken && <p className="modal-configured">{t('configured')}</p>}
 
-          <footer className="modal-actions">
+          <footer className="modal-actions settings-sticky-actions">
             <button className="btn btn-primary" disabled={saving} type="button" onClick={() => void save()}>
               {saving ? t('saving') : t('save')}
             </button>

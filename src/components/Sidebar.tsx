@@ -1,6 +1,5 @@
 import { Activity, AlertTriangle, Bookmark, ChevronLeft, ChevronRight, FileText, Home, Settings, Trash2, Users } from 'lucide-react'
 
-import cairnLogo from '@/assets/cairn-logo.png'
 import { useTranslation } from '@/i18n'
 import type { TranslationKey } from '@/i18n/locales'
 import { useAppStore, type ViewType } from '@/store/appStore'
@@ -66,7 +65,6 @@ export function Sidebar() {
   return (
     <aside className={`app-sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-brand">
-        <img alt="" className="sidebar-logo" src={cairnLogo} />
         {!collapsed ? <span className="sidebar-brand-text">Cairn</span> : null}
         <button
           aria-label={collapsed ? t('expandSidebar') : t('collapseSidebar')}
@@ -80,15 +78,12 @@ export function Sidebar() {
       </div>
       <nav aria-label={t('workspaceNavigation')} className="sidebar-nav">
         <div className="sidebar-group">
-          {!collapsed ? <p className="sidebar-group-title">{t('groupProject')}</p> : null}
           {projectItems.map(renderNavItem)}
         </div>
         <div className="sidebar-group">
-          {!collapsed ? <p className="sidebar-group-title">{t('groupCollaboration')}</p> : null}
           {collaborationItems.map(renderNavItem)}
         </div>
         <div className="sidebar-group">
-          {!collapsed ? <p className="sidebar-group-title">{t('groupRecovery')}</p> : null}
           {recoveryItems.map(renderNavItem)}
         </div>
       </nav>

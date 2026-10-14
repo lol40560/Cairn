@@ -38,7 +38,6 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   const [selectedOp, setSelectedOp] = useState<Op | undefined>()
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set())
   const [newChanges, setNewChanges] = useState(0)
-  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set())
   const [copiedSessionId, setCopiedSessionId] = useState<string | undefined>()
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | undefined>()
   const viewRef = useRef<HTMLElement>(null)
@@ -53,6 +52,7 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   }), [filter, ops, query])
   const groups = useMemo(() => groupOpsByFile(visibleOps), [visibleOps])
   const sessions = useMemo(() => groupActivitySessions(visibleOps), [visibleOps])
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set(sessions.slice(0, 1).map((session) => session.id)))
   const fileCount = new Set(ops.map((op) => op.filePath)).size
   const hasAiActivity = ops.some((op) => contributorKind(op) === 'ai')
 
@@ -114,53 +114,58 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
         if ((viewRef.current?.scrollTop ?? 0) < 12) setNewChanges(0)
       }}
     >
-      <div className="view-header">
-        <h1 className="view-title">{t('activityTitle')}</h1>
-        <span className="view-count">{t('activitySummary').replace('{changes}', String(ops.length)).replace('{files}', String(fileCount))}</span>
-        <span className="view-spacer" />
-        <div aria-label={t('activityMode')} className="activity-modes" role="group">
-          {([
-            ['grouped', 'activityGrouped'],
-            ['raw', 'activityRaw'],
-          ] as const).map(([mode, label]) => (
-            <button
-              aria-pressed={activityViewMode === mode}
-              className={`filter-chip ${activityViewMode === mode ? 'active' : ''}`}
-              key={mode}
-              type="button"
-              onClick={() => setActivityViewMode(mode)}
-            >
-              {t(label)}
-            </button>
-          ))}
+      <div className="view-header activity-view-header">
+        <div className="activity-title-row">
+          <div className="activity-heading">
+            <h1 className="view-title">{t('activityTitle')}</h1>
+            <span className="view-count">{t('activitySummary').replace('{changes}', String(ops.length)).replace('{files}', String(fileCount))}</span>
+          </div>
+          <button className="view-action activity-open-project" type="button" onClick={() => void onChangeFolder()}>
+            <FolderOpen size={14} strokeWidth={1.8} />
+            {t('changeFolder')}
+          </button>
         </div>
-        <div aria-label={t('filter')} className="activity-filters" role="group">
-          {([
-            ['all', 'allChanges'],
-            ['mine', 'myChanges'],
-            ['team', 'teamChanges'],
-            ...(hasAiActivity ? [['ai', 'aiChanges']] : []),
-          ] as Array<['all' | 'mine' | 'team' | 'ai', 'allChanges' | 'myChanges' | 'teamChanges' | 'aiChanges']>).map(([mode, label]) => (
-            <button
-              aria-pressed={filter === mode}
-              className={`filter-chip ${filter === mode ? 'active' : ''}`}
-              key={mode}
-              type="button"
-              onClick={() => setFilter(mode)}
-            >
-              {t(label)}
-            </button>
-          ))}
+        <div className="activity-toolbar">
+          <div aria-label={t('activityMode')} className="activity-modes" role="group">
+            {([
+              ['grouped', 'activityGrouped'],
+              ['raw', 'activityRaw'],
+            ] as const).map(([mode, label]) => (
+              <button
+                aria-pressed={activityViewMode === mode}
+                className={`filter-chip ${activityViewMode === mode ? 'active' : ''}`}
+                key={mode}
+                type="button"
+                onClick={() => setActivityViewMode(mode)}
+              >
+                {t(label)}
+              </button>
+            ))}
+          </div>
+          <div aria-label={t('filter')} className="activity-filters" role="group">
+            {([
+              ['all', 'allChanges'],
+              ['mine', 'myChanges'],
+              ['team', 'teamChanges'],
+              ...(hasAiActivity ? [['ai', 'aiChanges']] : []),
+            ] as Array<['all' | 'mine' | 'team' | 'ai', 'allChanges' | 'myChanges' | 'teamChanges' | 'aiChanges']>).map(([mode, label]) => (
+              <button
+                aria-pressed={filter === mode}
+                className={`filter-chip ${filter === mode ? 'active' : ''}`}
+                key={mode}
+                type="button"
+                onClick={() => setFilter(mode)}
+              >
+                {t(label)}
+              </button>
+            ))}
+          </div>
+          <label className="activity-search">
+            <Search aria-hidden="true" size={14} />
+            <span className="sr-only">{t('searchChanges')}</span>
+            <input data-activity-search placeholder={t('searchChanges')} type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </label>
         </div>
-        <label className="activity-search">
-          <Search aria-hidden="true" size={14} />
-          <span className="sr-only">{t('searchChanges')}</span>
-          <input data-activity-search placeholder={t('searchChanges')} type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
-        </label>
-        <button className="view-action" type="button" onClick={() => void onChangeFolder()}>
-          <FolderOpen size={14} strokeWidth={1.8} />
-          {t('changeFolder')}
-        </button>
       </div>
 
       {conflicts.length > 0 && (
@@ -216,7 +221,6 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
                 key={session.id}
                 session={session}
                 onCopySummary={(value) => void copySessionSummary(value)}
-                onOpClick={setSelectedOp}
                 onToggle={() => toggleSession(session.id)}
               />
             ))}

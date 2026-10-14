@@ -37,6 +37,7 @@ describe('FilesView', () => {
     expect(html).toContain('README.md')
     expect(html).toContain('Select a file to view')
     expect(html).toContain('Choose a file from the sidebar to preview its contents.')
+    expect(html).toContain('files-sidebar-search')
   })
 
   it('选中文件时显示顶部面包屑', () => {

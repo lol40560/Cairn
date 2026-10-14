@@ -1,20 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { ChevronRight, Copy } from 'lucide-react'
+import { ChevronRight, Copy, X } from 'lucide-react'
 
-import { FileGroupRow } from '@/components/FileGroupRow'
 import { useTranslation } from '@/i18n'
-import { groupOpsByFile } from '@/lib/groupOpsByFile'
+import { countDiff } from '@/lib/diffStats'
+import { groupOpsByFile, type FileGroup } from '@/lib/groupOpsByFile'
 import { formatLineCount } from '@/lib/lineCount'
 import type { ActivitySession } from '@/lib/activitySessions'
-import type { Op } from '@/types/cairn'
 
 interface ActivitySessionRowProps {
   copied: boolean
   expanded: boolean
   session: ActivitySession
   onCopySummary(session: ActivitySession): void
-  onOpClick(op: Op): void
   onToggle(): void
 }
 
@@ -32,10 +30,85 @@ function durationLabel(durationMs: number, t: ReturnType<typeof useTranslation>[
   return t('sessionDuration').replace('{n}', String(minutes))
 }
 
-/** 一段可展开的确定性工作流；文件与 op 仍保持原有可检查层级。 */
-export function ActivitySessionRow({ copied, expanded, session, onCopySummary, onOpClick, onToggle }: ActivitySessionRowProps) {
+function ActivityFilePreview({ group, onClose }: {
+  group: FileGroup
+  onClose(): void
+}) {
   const { t } = useTranslation()
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(() => new Set())
+  const [selectedOp, setSelectedOp] = useState(group.ops[0])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
+  if (!selectedOp) return null
+
+  return (
+    <div className="activity-file-preview-backdrop" role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target) onClose()
+    }}>
+      <section aria-label={group.filePath} aria-modal="true" className="activity-file-preview" role="dialog">
+        <header className="activity-file-preview-header">
+          <div className="activity-file-preview-heading">
+            <h3>{group.filePath}</h3>
+            <div className="activity-file-preview-meta">
+              <span>{t('editedBy').replace('{authors}', group.authors.join(', '))}</span>
+              <span>·</span>
+              <span>{t('changesCount').replace('{n}', String(group.totalOps))}</span>
+              <span>·</span>
+              <span className="file-group-added">+{formatLineCount(group.totalAdded)}</span>
+              <span className="file-group-removed">−{formatLineCount(group.totalRemoved)}</span>
+            </div>
+          </div>
+          <button aria-label={t('close')} className="activity-file-preview-close" type="button" onClick={onClose}>
+            <X aria-hidden="true" size={16} />
+          </button>
+        </header>
+
+        {group.ops.length > 1 ? (
+          <div aria-label={t('changesCount').replace('{n}', String(group.totalOps))} className="activity-file-preview-ops" role="tablist">
+            {group.ops.map((op) => {
+              const stats = countDiff(op.diff)
+              return (
+                <button
+                  aria-selected={selectedOp.hash === op.hash}
+                  className={selectedOp.hash === op.hash ? 'active' : ''}
+                  key={op.hash}
+                  role="tab"
+                  type="button"
+                  onClick={() => setSelectedOp(op)}
+                >
+                  <span>{op.author}</span>
+                  <time>{new Date(op.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+                  <span className="file-group-added">+{formatLineCount(stats.added)}</span>
+                  <span className="file-group-removed">−{formatLineCount(stats.removed)}</span>
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
+
+        <div className="activity-file-preview-selected-meta">
+          <span>{selectedOp.author}</span>
+          <span>·</span>
+          <time>{relativeTime(selectedOp.timestamp, t)}</time>
+          <span>·</span>
+          <code>{selectedOp.hash.slice(0, 8)}</code>
+        </div>
+        <pre className="activity-file-preview-diff" tabIndex={0}>{selectedOp.diff}</pre>
+      </section>
+    </div>
+  )
+}
+
+/** 工作階段只保留一層檔案列表；詳細 op 以輕量預覽呈現。 */
+export function ActivitySessionRow({ copied, expanded, session, onCopySummary, onToggle }: ActivitySessionRowProps) {
+  const { t } = useTranslation()
+  const [selectedFile, setSelectedFile] = useState<FileGroup>()
   const [wasUpdated, setWasUpdated] = useState(false)
   const latestOperationHash = session.operations.at(-1)?.hash
   const previousLatestOperationHash = useRef(latestOperationHash)
@@ -45,6 +118,8 @@ export function ActivitySessionRow({ copied, expanded, session, onCopySummary, o
     : session.attribution === 'ai' ? t('contributorAi')
       : session.attribution === 'teammate' ? t('contributorTeammate') : t('contributorUnknown')
   const duration = durationLabel(session.durationMs, t)
+  const primaryFile = session.filePaths[0] ?? ''
+  const remainingFiles = Math.max(0, session.fileCount - 1)
 
   useEffect(() => {
     if (previousLatestOperationHash.current === latestOperationHash) return
@@ -54,35 +129,36 @@ export function ActivitySessionRow({ copied, expanded, session, onCopySummary, o
     return () => window.clearTimeout(timeout)
   }, [latestOperationHash])
 
-  const toggleFile = (path: string): void => {
-    setExpandedFiles((current) => {
-      const next = new Set(current)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
-
   return (
     <article className={`activity-session ${expanded ? 'expanded' : ''} ${wasUpdated ? 'was-updated' : ''}`}>
       <div className="activity-session-header">
-        <button aria-expanded={expanded} className="activity-session-main" type="button" onClick={onToggle}>
-          <ChevronRight aria-hidden="true" className={`file-group-chevron ${expanded ? 'open' : ''}`} size={14} />
+        <button
+          aria-expanded={expanded}
+          aria-label={expanded ? t('collapseFiles') : t('showFiles')}
+          className="activity-session-main"
+          type="button"
+          onClick={onToggle}
+        >
+          <ChevronRight aria-hidden="true" className="activity-session-chevron" size={15} />
           <div className="activity-session-info">
-            <div className="activity-session-author">{session.author} <span className={`contributor-${session.attribution}`}>· {attribution}</span></div>
-            <div className="activity-session-meta">
-              <span>{t('sessionChangesFiles').replace('{changes}', String(session.operationCount)).replace('{files}', String(session.fileCount))}</span>
-              {duration ? <><span>·</span><span>{duration}</span></> : null}
-              <span>·</span>
-              <span className="file-group-added">+{formatLineCount(session.totalAdded)}</span>
-              <span className="file-group-removed">−{formatLineCount(session.totalRemoved)}</span>
+            <div className="activity-session-file-title">
+              <code>{primaryFile}</code>
+              {remainingFiles > 0 ? <span>{t('sessionMoreFiles').replace('{n}', String(remainingFiles))}</span> : null}
             </div>
-            <div className="activity-session-files">
-              {session.filePaths.slice(0, 3).map((path) => <code key={path}>{path}</code>)}
-              {session.filePaths.length > 3 ? <span>{t('sessionMoreFiles').replace('{n}', String(session.filePaths.length - 3))}</span> : null}
+            <div className="activity-session-meta">
+              <span>{session.author}</span>
+              <span className={`contributor-${session.attribution}`}>· {attribution}</span>
+              <span>·</span>
+              <span>{t('changesCount').replace('{n}', String(session.operationCount))}</span>
+              <span>·</span>
+              <time>{relativeTime(session.endedAt, t)}</time>
+              {duration ? <><span>·</span><span>{duration}</span></> : null}
             </div>
           </div>
-          <time className="file-group-time">{relativeTime(session.endedAt, t)}</time>
+          <div className="activity-session-totals">
+            <span className="file-group-added">+{formatLineCount(session.totalAdded)}</span>
+            <span className="file-group-removed">−{formatLineCount(session.totalRemoved)}</span>
+          </div>
         </button>
         <button
           aria-label={t('copySessionSummary')}
@@ -100,15 +176,29 @@ export function ActivitySessionRow({ copied, expanded, session, onCopySummary, o
       {expanded ? (
         <div className="activity-session-files-expanded">
           {fileGroups.map((group) => (
-            <FileGroupRow
+            <button
+              className="activity-session-file-row"
               key={group.filePath}
-              expanded={expandedFiles.has(group.filePath)}
-              group={group}
-              onOpClick={onOpClick}
-              onToggle={() => toggleFile(group.filePath)}
-            />
+              type="button"
+              onClick={() => setSelectedFile(group)}
+            >
+              <span className="activity-session-file-info">
+                <code>{group.filePath}</code>
+                <span>{t('editedBy').replace('{authors}', group.authors.join(', '))} · {t('changesCount').replace('{n}', String(group.totalOps))}</span>
+              </span>
+              <span className="activity-session-file-stats">
+                <span className="file-group-added">+{formatLineCount(group.totalAdded)}</span>
+                <span className="file-group-removed">−{formatLineCount(group.totalRemoved)}</span>
+              </span>
+            </button>
           ))}
         </div>
+      ) : null}
+      {selectedFile ? (
+        <ActivityFilePreview
+          group={selectedFile}
+          onClose={() => setSelectedFile(undefined)}
+        />
       ) : null}
     </article>
   )

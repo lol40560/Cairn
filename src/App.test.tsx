@@ -10,5 +10,6 @@ describe('App startup state', () => {
 
     expect(html).toContain('Loading your project...')
     expect(html).toContain('startup-overlay')
+    expect(html).not.toContain('class="topbar"')
   })
 })
