@@ -39,6 +39,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify legal artifacts
         run: npm run verify:legal
+      - name: Verify release documentation
+        run: npm run verify:release-docs
       # force_build=1 會略過套件偵測到 prebuild 時的空目標，確實產生本機原生 binary。
       - name: Rebuild better-sqlite3 from source
         working-directory: node_modules/better-sqlite3
@@ -77,7 +79,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm run build
@@ -100,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: npm run dist:win
@@ -118,6 +120,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: mac-*-artifacts
@@ -127,9 +130,15 @@ jobs:
         with:
           name: win-artifacts
           path: artifacts/win
+      - name: Generate SHA-256 manifest
+        run: |
+          (cd artifacts && find mac win -type f -print0 | sort -z | xargs -0 sha256sum) > artifacts/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
+          name: Cairn ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: |
+            artifacts/SHA256SUMS.txt
             artifacts/mac/*
             artifacts/win/*
           draft: ${{ needs.verify.outputs.release_draft == 'true' }}

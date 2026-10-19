@@ -52,7 +52,7 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
   }), [filter, ops, query])
   const groups = useMemo(() => groupOpsByFile(visibleOps), [visibleOps])
   const sessions = useMemo(() => groupActivitySessions(visibleOps), [visibleOps])
-  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set(sessions.slice(0, 1).map((session) => session.id)))
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set())
   const fileCount = new Set(ops.map((op) => op.filePath)).size
   const hasAiActivity = ops.some((op) => contributorKind(op) === 'ai')
 
@@ -114,7 +114,7 @@ export function ActivityView({ emptyMessage, folder: folderOverride, ops, onChan
         if ((viewRef.current?.scrollTop ?? 0) < 12) setNewChanges(0)
       }}
     >
-      <div className="view-header activity-view-header">
+      <div className="view-header activity-view-header" data-tour="activity">
         <div className="activity-title-row">
           <div className="activity-heading">
             <h1 className="view-title">{t('activityTitle')}</h1>

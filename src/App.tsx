@@ -1,25 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { ConflictDialog } from '@/components/ConflictDialog'
 import { HackathonController } from '@/components/HackathonController'
 import { SearchPalette, type SearchPaletteItem } from '@/components/SearchPalette'
 import { ExportPRDialog } from '@/components/ExportPRDialog'
 import { Onboarding } from '@/components/Onboarding'
+import { ProductTour } from '@/components/ProductTour'
 import { SettingsView } from '@/components/SettingsDialog'
 import { Sidebar } from '@/components/Sidebar'
 import { Toast, type ToastMessage } from '@/components/Toast'
-import { ActivityView } from '@/components/views/ActivityView'
-import { CheckpointsView } from '@/components/views/CheckpointsView'
-import { ConflictsView } from '@/components/views/ConflictsView'
-import { FilesView } from '@/components/views/FilesView'
-import { DemoFilesView } from '@/components/views/DemoFilesView'
-import { DemoCheckpointsView } from '@/components/views/DemoCheckpointsView'
+import { WorkspaceHeader } from '@/components/WorkspaceHeader'
 import { HomeView } from '@/components/views/HomeView'
+import { ProjectsView } from '@/components/views/ProjectsView'
 import { RoomView } from '@/components/views/RoomView'
 import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { createPRBranchName } from '@/lib/prBranch'
-import { restoreLastSession } from '@/lib/sessionRestore'
+import { hasCompletedProductTour } from '@/lib/productTour'
 import { isEditableTarget, shortcutLabel } from '@/lib/shortcuts'
 import { getDemoScenario, type HackathonExecutionMode, type HackathonSceneId } from '@/lib/hackathonMode'
 import { createDemoWorkspace } from '@/lib/demoWorkspace'
@@ -27,6 +23,18 @@ import { createSimulationCapabilityController, type RealWorkspaceAction } from '
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
 import type { AvailableProjectEntry, IpcResult } from '@/types/cairn'
+
+const ActivityView = lazy(() => import('@/components/views/ActivityView').then((module) => ({ default: module.ActivityView })))
+const CheckpointsView = lazy(() => import('@/components/views/CheckpointsView').then((module) => ({ default: module.CheckpointsView })))
+const ConflictDialog = lazy(() => import('@/components/ConflictDialog').then((module) => ({ default: module.ConflictDialog })))
+const ConflictsView = lazy(() => import('@/components/views/ConflictsView').then((module) => ({ default: module.ConflictsView })))
+const DemoCheckpointsView = lazy(() => import('@/components/views/DemoCheckpointsView').then((module) => ({ default: module.DemoCheckpointsView })))
+const DemoFilesView = lazy(() => import('@/components/views/DemoFilesView').then((module) => ({ default: module.DemoFilesView })))
+const FilesView = lazy(() => import('@/components/views/FilesView').then((module) => ({ default: module.FilesView })))
+
+function ViewLoading() {
+  return <section aria-busy="true" className="view active" role="status" />
+}
 
 function getIpcData<T>(result: IpcResult<T>): T {
   if (!result.ok) {
@@ -69,6 +77,7 @@ export function App() {
   const ops = useAppStore((state) => state.ops)
   const peers = useAppStore((state) => state.peers)
   const roomCode = useAppStore((state) => state.roomCode)
+  const status = useAppStore((state) => state.status)
   const addConflict = useAppStore((state) => state.addConflict)
   const addIdentityMismatch = useAppStore((state) => state.addIdentityMismatch)
   const clearIdentityMismatches = useAppStore((state) => state.clearIdentityMismatches)
@@ -95,8 +104,8 @@ export function App() {
   const removeConflict = useAppStore((state) => state.removeConflict)
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false)
-  const [lastFolderUnavailable, setLastFolderUnavailable] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showProductTour, setShowProductTour] = useState(() => !hasCompletedProductTour())
   const [restoring, setRestoring] = useState(true)
   const [restoreError, setRestoreError] = useState<string | undefined>()
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
@@ -138,14 +147,21 @@ export function App() {
     if (!permitRealWorkspaceAction('switch-project')) return
     try {
       getIpcData(await window.cairn.startWatching(project.path))
+      setPeers([])
+      setIsHost(false)
+      setRoomCode('')
+      clearIdentityMismatches()
+      clearPeerStatuses()
+      setProjectFiles([])
+      setSelectedFilePath(undefined)
       setFolder(project.path)
       setStatus('watching')
       replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
-      setActiveView('activity')
+      setActiveView('home')
     } catch (error) {
       setToast(normalizeError(error, t))
     }
-  }, [permitRealWorkspaceAction, replaceOps, setActiveView, setFolder, setStatus, t])
+  }, [clearIdentityMismatches, clearPeerStatuses, permitRealWorkspaceAction, replaceOps, setActiveView, setFolder, setIsHost, setPeers, setProjectFiles, setRoomCode, setSelectedFilePath, setStatus, t])
 
   const openQuickOpen = useCallback(async (): Promise<void> => {
     if (!permitRealWorkspaceAction('quick-open')) return
@@ -176,63 +192,29 @@ export function App() {
   useEffect(() => {
     let disposed = false
 
-    const restoreSession = async (): Promise<void> => {
+    const loadProjectLibrary = async (): Promise<void> => {
       try {
-        const sessionResult = await window.cairn.getLastSession()
-        if (!sessionResult.ok) throw sessionResult.error
+        const projectsResult = await window.cairn.listProjects()
+        if (!projectsResult.ok) throw projectsResult.error
 
-        const session = sessionResult.data
-        const settingsResult = await window.cairn.getSettings()
-        if (!settingsResult.ok) throw settingsResult.error
+        if (!disposed) {
+          setProjects(projectsResult.data)
+          setFolder('')
+          setStatus('idle')
+          replaceOps([])
+          setActiveView('projects')
+        }
 
-        if (settingsResult.data.rememberLastFolder && session.folder) {
-          const folderResult = await window.cairn.checkFolder(session.folder)
-          if (!folderResult.ok) throw folderResult.error
-
-          if (folderResult.data) {
-            await restoreLastSession(window.cairn, {
-              replaceOps: (recentOps) => {
-                if (!disposed) replaceOps(recentOps)
-              },
-              setFolder: (savedFolder) => {
-                if (!disposed) setFolder(savedFolder)
-              },
-              setStatus: (savedStatus) => {
-                if (!disposed) setStatus(savedStatus)
-              },
-              setUnavailable: (value) => {
-                if (!disposed) setLastFolderUnavailable(value)
-              },
-            })
-            if (!disposed) setActiveView('activity')
-          } else if (!disposed) {
-            // 保留历史记录以便 Home 视图展示缺失项目，而非清空用户选择。
-            setLastFolderUnavailable(true)
-            setActiveView('home')
-          }
-        } else {
-          const projectsResult = await window.cairn.listProjects()
-          if (!projectsResult.ok) throw projectsResult.error
-
-          if (projectsResult.data.length > 0) {
-            if (!disposed) setActiveView('home')
-          } else {
-            const onboardingResult = await window.cairn.getOnboardingState()
-            if (!onboardingResult.ok) throw onboardingResult.error
-            if (!disposed) {
-              if (!onboardingResult.data.completed) {
-                setShowOnboarding(true)
-              } else {
-                setActiveView('home')
-              }
-            }
-          }
+        if (projectsResult.data.length === 0) {
+          const onboardingResult = await window.cairn.getOnboardingState()
+          if (!onboardingResult.ok) throw onboardingResult.error
+          if (!disposed && !onboardingResult.data.completed) setShowOnboarding(true)
         }
         if (!disposed) {
           setRestoreError(undefined)
         }
       } catch (error) {
-        console.error('[cairn] 无法恢复上次会话', error)
+        console.error('[cairn] 无法加载项目列表', error)
         if (!disposed) {
           setRestoreError(startupRestoreError(error, t))
         }
@@ -243,7 +225,7 @@ export function App() {
       }
     }
 
-    void restoreSession()
+    void loadProjectLibrary()
     void window.cairn
       .getGithubConfig()
       .then((result) => setGithubConfigured(getIpcData(result).hasToken))
@@ -293,7 +275,7 @@ export function App() {
       unsubscribeIdentityMismatch()
       unsubscribePeerStatus()
     }
-  }, [addConflict, addIdentityMismatch, incrementUnseenActivity, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeerStatus, setPeers, setStatus, t])
+  }, [addConflict, addIdentityMismatch, incrementUnseenActivity, prependOp, replaceOps, setActiveView, setFolder, setGithubConfigured, setPeerStatus, setPeers, setProjects, setStatus, t])
 
   useEffect(() => {
     if (activeView === 'activity') clearUnseenActivity()
@@ -323,8 +305,8 @@ export function App() {
       setRoomCode('')
       setFolder(selectedFolder)
       setStatus('watching')
-      setLastFolderUnavailable(false)
       replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
+      setActiveView('home')
     } catch (error) {
       console.error('[cairn] 无法打开其他项目', error)
       setRestoreError(startupRestoreError(error, t))
@@ -429,7 +411,8 @@ export function App() {
 
   const commands = useMemo(() => {
     const list: Array<SearchPaletteItem & { action(): void }> = [
-      { id: 'nav-home', label: t('home'), group: t('groupProject'), shortcut: shortcutLabel('1'), action: () => setActiveView('home') },
+      { id: 'nav-projects', label: t('projectsTitle'), group: t('groupProject'), action: () => setActiveView('projects') },
+      { id: 'nav-home', label: t('home'), group: t('groupProject'), shortcut: shortcutLabel('1'), action: () => setActiveView(folder ? 'home' : 'projects') },
       { id: 'nav-activity', label: t('activityTitle'), group: t('groupProject'), shortcut: shortcutLabel('2'), action: () => setActiveView('activity') },
       { id: 'nav-files', label: t('files'), group: t('groupProject'), shortcut: shortcutLabel('3'), action: () => setActiveView('files') },
       { id: 'nav-team', label: t('room'), group: t('groupCollaboration'), shortcut: shortcutLabel('4'), action: () => setActiveView('room') },
@@ -437,11 +420,12 @@ export function App() {
       { id: 'nav-checkpoints', label: t('checkpoints'), group: t('groupRecovery'), action: () => setActiveView('checkpoints') },
       { id: 'nav-trash', label: t('trash'), group: t('groupRecovery'), action: () => setActiveView('trash') },
       { id: 'settings', label: t('settings'), group: t('settings'), shortcut: shortcutLabel(','), action: () => setActiveView('settings') },
+      { id: 'product-tour', label: t('settingsShowProductTour'), group: t('settings'), action: () => setShowProductTour(true) },
     ]
     if (!simulationActive) {
       list.push(
         { id: 'switch-project', label: t('switchProject'), group: t('groupProject'), action: () => void openProjectSwitcher() },
-        { id: 'add-project', label: t('addProject'), group: t('groupProject'), action: () => setActiveView('home') },
+        { id: 'add-project', label: t('addProject'), group: t('groupProject'), action: () => setActiveView('projects') },
         { id: 'quick-open', label: t('quickOpen'), group: t('files'), shortcut: shortcutLabel('P'), action: () => void openQuickOpen() },
       )
     }
@@ -485,8 +469,8 @@ export function App() {
         return
       }
       if (!editable && /^[1-5]$/.test(key)) {
-        const viewByKey: Record<string, 'home' | 'activity' | 'files' | 'room' | 'conflicts'> = {
-          1: 'home', 2: 'activity', 3: 'files', 4: 'room', 5: 'conflicts',
+        const viewByKey: Record<string, 'projects' | 'home' | 'activity' | 'files' | 'room' | 'conflicts'> = {
+          1: folder ? 'home' : 'projects', 2: 'activity', 3: 'files', 4: 'room', 5: 'conflicts',
         }
         event.preventDefault()
         setActiveView(viewByKey[key]!)
@@ -494,7 +478,7 @@ export function App() {
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [activeView, openQuickOpen, setActiveView])
+  }, [activeView, folder, openQuickOpen, setActiveView])
 
   const handleResolveConflict = async (
     opHash: string,
@@ -544,19 +528,30 @@ export function App() {
 
   return (
     <>
-      <div aria-label="Cairn" className={`app-shell${presentationMode ? ' presentation-mode' : ''}`}>
-        <Sidebar />
+      <div aria-label="Cairn" className={`app-shell${presentationMode ? ' presentation-mode' : ''}${activeView === 'projects' ? ' project-library-shell' : ''}`}>
+        {activeView !== 'projects' ? <Sidebar /> : null}
         <main className="app-main">
+        {!restoring ? (
+          <WorkspaceHeader
+            folder={folder}
+            roomCode={roomCode}
+            status={status}
+            onOpenCommands={() => setCommandPaletteOpen(true)}
+            onOpenProject={(project) => void activateProject(project)}
+            onSwitchProject={() => setActiveView('projects')}
+          />
+        ) : null}
         <div className="app-content">
+          <Suspense fallback={<ViewLoading />}>
           {simulationLocksCurrentView ? <section className="view active demo-isolation-view"><h1 className="view-title">{t('simulation')}</h1><p>{t('demoSimulationNotice')}</p></section> : <>
+          {activeView === 'projects' && <ProjectsView activeProjectPath={folder} projects={projects} onOpenProject={activateProject} />}
           {activeView === 'home' && <HomeView />}
           {activeView === 'activity' && (
             <ActivityView
-              emptyMessage={lastFolderUnavailable ? t('lastFolderUnavailable') : undefined}
               onReviewConflicts={() => setConflictDialogOpen(true)}
               ops={displayedOps}
               conflicts={displayedConflicts}
-              onChangeFolder={async () => setActiveView('home')}
+              onChangeFolder={async () => setActiveView('projects')}
             />
           )}
           {activeView === 'files' && (demoData ? <DemoFilesView key={demoWorkspaceVersion} workspace={demoWorkspace} ops={displayedOps} conflicts={displayedConflicts} onDirtyChange={setDemoDirty} /> : <FilesView />)}
@@ -579,10 +574,12 @@ export function App() {
             <SettingsView
               onConfigured={setGithubConfigured}
               onShowOnboarding={() => setShowOnboarding(true)}
+              onShowProductTour={() => setShowProductTour(true)}
               onStartHackathonMode={enterHackathonMode}
             />
           )}
           </>}
+          </Suspense>
         </div>
         </main>
       <ExportPRDialog
@@ -595,13 +592,13 @@ export function App() {
         }}
         onSubmit={exportPRSubmit}
       />
-      <ConflictDialog
+      {conflictDialogOpen ? <Suspense fallback={null}><ConflictDialog
         conflicts={displayedConflicts}
         dirtyFilePaths={demoData && demoDirty ? ['src/auth.ts'] : undefined}
         open={conflictDialogOpen}
         onClose={() => setConflictDialogOpen(false)}
         onResolve={handleResolveConflict}
-      />
+      /></Suspense> : null}
       <Toast message={toast} onDismiss={dismissToast} />
       {hackathonEnabled ? <HackathonController
         mode={hackathonMode}
@@ -667,7 +664,7 @@ export function App() {
         onClose={() => setProjectSwitcherOpen(false)}
         onSelect={(item) => {
           if (item.id === '__add_project__') {
-            setActiveView('home')
+            setActiveView('projects')
             return
           }
           const project = projects.find((entry) => entry.id === item.id)
@@ -689,7 +686,8 @@ export function App() {
           </button>
         </div>
       )}
-      {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+      {showOnboarding && <Onboarding onComplete={() => { setShowOnboarding(false); setShowProductTour(true) }} />}
+      {showProductTour && !showOnboarding && !restoring ? <ProductTour onClose={() => setShowProductTour(false)} onViewChange={setActiveView} /> : null}
     </>
   )
 }

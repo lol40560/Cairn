@@ -394,6 +394,8 @@ describe('ProjectWatcher', () => {
     // 目录创建与文件创建会被底层 watcher 合并；预建目录让本测试只断言 PNG 文件事件。
     await mkdir(join(projectRoot, 'assets'), { recursive: true })
     await watcher.start()
+    // macOS FSEvents may report ready just before its native subscription is fully observable.
+    await new Promise<void>((resolve) => setTimeout(resolve, 100))
 
     const opPromise = waitForOp(watcher)
     await writeFile(join(projectRoot, 'assets', 'logo.png'), Buffer.from([137, 80, 78, 71]))

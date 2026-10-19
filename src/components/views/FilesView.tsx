@@ -14,6 +14,8 @@ import { useTranslation } from '@/i18n'
 import { detectLanguage } from '@/lib/detect-language'
 import { getConflictRisk, remoteAuthorForRisk } from '@/lib/conflictIntelligence'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { CAIRN_MONACO_THEME } from '@/lib/monaco-theme'
+import { useMonacoReady } from '@/lib/useMonacoReady'
 import { useAppStore } from '@/store/appStore'
 import type { IpcResult, Op, ProjectFileContent, ProjectFileEntry } from '@/types/cairn'
 
@@ -77,6 +79,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | undefined>()
   const [presenceClock, setPresenceClock] = useState(() => Date.now())
   const [reviewOp, setReviewOp] = useState<Op | undefined>()
+  const monacoReady = useMonacoReady(Boolean(selectedFile))
   const loadRequestId = useRef(0)
   const initialFolder = useRef(folder)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -276,7 +279,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
                 </span>
               ))}
             </nav>
-          ) : null}
+          ) : <p className="files-header-description">Browse and edit files in the workspace.</p>}
         </div>
         <div className="files-header-actions">
           <div className="files-status" aria-live="polite">
@@ -299,7 +302,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
           ) : null}
         </div>
       </header>
-      <div className="files-layout">
+      <div className="files-layout" data-tour="files">
         <aside className="files-sidebar" style={{ width: fileTreeWidth }}>
           <label className="files-search files-sidebar-search">
             <Search aria-hidden="true" size={13} />
@@ -364,7 +367,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
                 </div>
               ) : null}
               <div className="files-editor-monaco">
-                <Editor
+                {monacoReady ? <Editor
                   height="100%"
                   language={detectLanguage(selectedFile.path)}
                   options={{
@@ -384,9 +387,9 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
                   }}
                   onMount={handleEditorMount}
                   path={`inmemory://cairn/files/${encodeURIComponent(selectedFile.path)}`}
-                  theme="vs-dark"
+                  theme={CAIRN_MONACO_THEME}
                   value={editorContent}
-                />
+                /> : <div aria-busy="true" className="monaco-loading" role="status" />}
               </div>
             </div>
           ) : (

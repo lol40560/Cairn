@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+
+import { useDialogFocus } from '@/lib/dialogFocus'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -23,24 +25,7 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
-  const returnFocusRef = useRef<HTMLElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return undefined
-
-    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const focusTimer = window.setTimeout(() => confirmButtonRef.current?.focus(), 0)
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onCancel()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      window.clearTimeout(focusTimer)
-      window.removeEventListener('keydown', handleKeyDown)
-      returnFocusRef.current?.focus()
-    }
-  }, [onCancel, open])
+  const dialogRef = useDialogFocus<HTMLElement>(open, onCancel, confirmButtonRef)
 
   if (!open) return null
 
@@ -52,7 +37,7 @@ export function ConfirmDialog({
         if (event.target === event.currentTarget) onCancel()
       }}
     >
-      <section aria-modal="true" aria-labelledby="confirm-dialog-title" className="modal modal-compact confirm-dialog" role="dialog">
+      <section ref={dialogRef} aria-modal="true" aria-labelledby="confirm-dialog-title" className="modal modal-compact confirm-dialog" role="dialog" tabIndex={-1}>
         <header className="modal-header">
           <h2 id="confirm-dialog-title" className="modal-title">{title}</h2>
         </header>

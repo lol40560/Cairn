@@ -116,10 +116,12 @@ export function CheckpointsView({ checkpoints: checkpointsOverride }: Checkpoint
   }
 
   return (
-    <section className="view active checkpoints-view">
+    <section className="view active checkpoints-view" data-tour="checkpoints">
       <div className="view-header">
-        <h1 className="view-title">{t('checkpoints')}</h1>
-        <span className="view-count">{checkpoints.length} {t('items')}</span>
+        <div className="view-heading">
+          <h1 className="view-title">{t('checkpoints')}</h1>
+          {!loading && checkpoints.length > 0 ? <span className="view-count">{checkpoints.length} {t('items')}</span> : null}
+        </div>
         <span className="view-spacer" />
         <button className="btn checkpoint-create-btn" type="button" onClick={() => setShowCreate(true)}><Plus aria-hidden="true" size={14} />{t('createCheckpoint')}</button>
       </div>

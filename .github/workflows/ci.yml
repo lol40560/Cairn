@@ -32,6 +32,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify legal artifacts
         run: npm run verify:legal
+      - name: Verify release documentation
+        run: npm run verify:release-docs
       - name: Rebuild better-sqlite3 from source
         working-directory: node_modules/better-sqlite3
         run: npx node-gyp rebuild --release --force_build=1

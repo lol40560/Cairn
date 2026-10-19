@@ -84,8 +84,10 @@ export function TrashView() {
   return (
     <section className="view active">
       <div className="view-header">
-        <h1 className="view-title">{t('trash')}</h1>
-        <span className="view-count">{t('trashItems').replace('{n}', String(trash.length))}</span>
+        <div className="view-heading">
+          <h1 className="view-title">{t('trash')}</h1>
+          {trash.length > 0 ? <span className="view-count">{t('trashItems').replace('{n}', String(trash.length))}</span> : null}
+        </div>
         <span className="view-spacer" />
         {trash.length > 0 && !confirmingEmpty && (
           <button className="btn btn-ghost" type="button" onClick={() => setConfirmingEmpty(true)}>

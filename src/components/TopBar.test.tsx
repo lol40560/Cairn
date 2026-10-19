@@ -20,5 +20,7 @@ describe('TopBar', () => {
     expect(html).toContain('Switch project')
     expect(html).toContain('Project')
     expect(html).toContain('brand-chevron')
+    expect(html).toContain('aria-haspopup="menu"')
+    expect(html).toContain('aria-expanded="false"')
   })
 })

@@ -20,7 +20,6 @@ describe('SettingsView', () => {
 
     expect(html).toContain('About')
     expect(html).toContain(appPackage.version)
-    expect(html).toContain('checkbox checked')
     expect(html).toContain('settings-sticky-actions')
   })
 

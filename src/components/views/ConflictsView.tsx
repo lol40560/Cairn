@@ -23,8 +23,10 @@ export function ConflictsView({ conflicts: conflictsOverride, onResolve, dirtyFi
   return (
     <section className="view active">
       <div className="view-header">
-        <h1 className="view-title">{t('conflictsTitle')}</h1>
-        <span className="view-count">{t('conflictsUnresolved').replace('{n}', String(conflicts.length))}</span>
+        <div className="view-heading">
+          <h1 className="view-title">{t('conflictsTitle')}</h1>
+          {hasConflicts ? <span className="view-count">{t('conflictsUnresolved').replace('{n}', String(conflicts.length))}</span> : null}
+        </div>
       </div>
 
       {!hasConflicts ? (

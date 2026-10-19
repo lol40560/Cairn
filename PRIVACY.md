@@ -12,7 +12,7 @@ Cairn does not send your project files, operation history, account information, 
 
 ## Data Stored Locally
 
-Cairn stores project synchronization metadata, operation history, object and blob data, session and activity history, project configuration, and recovery data on your device. If you configure GitHub integration, Cairn stores repository configuration locally and protects the GitHub token with Electron safeStorage, using the operating-system-backed protection available on your device.
+Cairn stores recent-project entries, application preferences, project synchronization metadata, operation history, object and blob data, session and activity history, project configuration, and recovery data on your device. If you configure GitHub integration, Cairn stores repository configuration locally and protects the GitHub token with Electron safeStorage, using the operating-system-backed protection available on your device.
 
 ## Peer-to-Peer Collaboration
 
@@ -32,7 +32,7 @@ Diagnostics remain local unless you manually copy and share them. Cairn does not
 
 ## Data Retention and Deletion
 
-Locally stored Cairn data remains on your device until it is removed through Cairn, by deleting the relevant project or application data, or by uninstalling the application and removing its local data. Data sent to GitHub is retained under GitHub's policies.
+Locally stored Cairn data remains on your device until it is removed through Cairn, by deleting the relevant project or application data, or by uninstalling the application and removing its local data. Removing a project from Cairn's recent-project list does not delete the project folder itself. Copies already sent to peers are controlled by those peers, and data sent to GitHub is retained under GitHub's policies.
 
 ## Third-Party Services
 
@@ -44,7 +44,7 @@ Cairn uses local operating-system-backed credential protection when available an
 
 ## Changes to This Policy
 
-Updates are published in this repository and included in released application materials.
+This policy is effective October 19, 2026. Material updates are published in this repository and included in released application materials.
 
 ## Contact
 

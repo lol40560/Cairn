@@ -533,9 +533,22 @@ export function RoomView({
         onConfirm={() => void handleDownloadConfirm()}
         onSkip={handleDownloadSkip}
       />
-      <div className="view-header">
-        <h1 className="view-title">{t('roomTitle')}</h1>
+      <div className="view-header team-view-header">
+        <div>
+          <h1 className="view-title">{t('roomTitle')}</h1>
+          <p className="view-description">Collaborate on this folder over your network.</p>
+        </div>
         <span className="view-spacer" />
+        <section className={`team-health-summary state-${primaryHealth}`} aria-label={t('projectStatus')}>
+          <div className="team-health-heading">
+            <span aria-hidden="true" className="team-health-dot" />
+            <div>
+              <strong>{primaryHealth === 'identity-mismatch' ? t('projectMismatch') : primaryHealth === 'offline' ? t('teamOffline') : primaryHealth === 'reconnecting' ? t('reconnecting') : primaryHealth === 'conflict' ? t('attentionRequired') : primaryHealth === 'room-ready' ? t('roomReady') : health.localWatch === 'watching' ? t('statusWatching') : t('watcherStopped')}</strong>
+              <p>{health.connection === 'offline' ? t('localChangesTracked') : health.connection === 'reconnecting' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'connected' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'room-ready' ? t('waitingForTeammates') : health.connection === 'not-in-room' ? t('localOnly') : ''}</p>
+            </div>
+          </div>
+          <button className="team-diagnostics-button" type="button" onClick={() => void handleCopyDiagnostics()}>{t('copyDiagnostics')}</button>
+        </section>
         {joined && (
           <button className="btn btn-ghost" type="button" onClick={() => void handleLeave()}>
             {t('leaveRoom')}
@@ -543,18 +556,7 @@ export function RoomView({
         )}
       </div>
 
-      <div className="team-page-content">
-      <section className={`team-health-summary state-${primaryHealth}`} aria-label={t('projectStatus')}>
-        <div className="team-health-heading">
-          <span aria-hidden="true" className="team-health-dot" />
-          <div>
-            <strong>{primaryHealth === 'identity-mismatch' ? t('projectMismatch') : primaryHealth === 'offline' ? t('teamOffline') : primaryHealth === 'reconnecting' ? t('reconnecting') : primaryHealth === 'conflict' ? t('attentionRequired') : primaryHealth === 'room-ready' ? t('roomReady') : health.localWatch === 'watching' ? t('statusWatching') : t('watcherStopped')}</strong>
-            <p>{health.connection === 'offline' ? t('localChangesTracked') : health.connection === 'reconnecting' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'connected' ? t('connectedPeers').replace('{n}', String(health.connectedPeerCount)) : health.connection === 'room-ready' ? t('waitingForTeammates') : health.connection === 'not-in-room' ? t('localOnly') : ''}</p>
-          </div>
-        </div>
-        <button className="btn btn-ghost btn-sm" type="button" onClick={() => void handleCopyDiagnostics()}>{t('copyDiagnostics')}</button>
-      </section>
-
+      <div className="team-page-content" data-tour="team">
       {identityMismatches.length > 0 && (
         <div className="identity-warning" role="alert">
           <div className="identity-warning-title">{t('identityMismatchTitle')}</div>
@@ -583,7 +585,7 @@ export function RoomView({
             </div>
             <button aria-busy={startingRoom} className="btn btn-primary" disabled={startingRoom} type="button" onClick={() => void handleStartRoom()}>
               {startingRoom ? <Spinner size={12} /> : null}
-              {startingRoom ? t('creating') : t('createRoom')}
+              {startingRoom ? t('creating') : t('create')}
             </button>
           </section>
           <section className="team-action-card room-join-panel">

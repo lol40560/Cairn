@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react'
 
-import { Check } from 'lucide-react'
-
 import appPackage from '../../package.json'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { PRIVACY_SUMMARY_EN, PRIVACY_SUMMARY_ZH } from '@/lib/legal-content'
 import { LicensesDialog } from './LicensesDialog'
 import { PrivacyDialog } from './PrivacyDialog'
-import {
-  updateGeneralSettings,
-} from '@/lib/settingsDialog'
 import type { IpcResult } from '@/types/cairn'
 
 function getIpcData<T>(result: IpcResult<T>): T {
@@ -24,10 +19,12 @@ function getIpcData<T>(result: IpcResult<T>): T {
 export function SettingsView({
   onConfigured,
   onShowOnboarding,
+  onShowProductTour,
   onStartHackathonMode,
 }: {
   onConfigured(value: boolean): void
   onShowOnboarding(): void
+  onShowProductTour?(): void
   onStartHackathonMode?(): void
 }) {
   const { locale, t } = useTranslation()
@@ -35,8 +32,6 @@ export function SettingsView({
   const [owner, setOwner] = useState('')
   const [repo, setRepo] = useState('')
   const [hasToken, setHasToken] = useState(false)
-  const [rememberLastFolder, setRememberLastFolder] = useState(true)
-  const [autoStartWatching, setAutoStartWatching] = useState(true)
   const [trashRetentionDays, setTrashRetentionDays] = useState(30)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
@@ -53,8 +48,6 @@ export function SettingsView({
         setOwner(config.owner)
         setRepo(config.repo)
         setHasToken(config.hasToken)
-        setRememberLastFolder(settings.rememberLastFolder)
-        setAutoStartWatching(settings.autoStartWatching)
         setTrashRetentionDays(settings.trashRetentionDays)
       })
       .catch((cause) => {
@@ -76,26 +69,6 @@ export function SettingsView({
     } finally {
       setSaving(false)
     }
-  }
-
-  const changeRememberLastFolder = (value: boolean): void => {
-    setRememberLastFolder(value)
-    void updateGeneralSettings({ rememberLastFolder: value }).then((result) => {
-      if (!result.ok) {
-        console.error('[cairn] 无法更新通用设置', result.error)
-        setError(normalizeError(result.error, t))
-      }
-    })
-  }
-
-  const changeAutoStartWatching = (value: boolean): void => {
-    setAutoStartWatching(value)
-    void updateGeneralSettings({ autoStartWatching: value }).then((result) => {
-      if (!result.ok) {
-        console.error('[cairn] 无法更新通用设置', result.error)
-        setError(normalizeError(result.error, t))
-      }
-    })
   }
 
   const changeTrashRetentionDays = (value: number): void => {
@@ -129,38 +102,8 @@ export function SettingsView({
       </header>
       <div className="settings-view-content">
         <div className="settings-view-body">
-          <fieldset className="modal-section">
-            <legend className="modal-section-title">{t('settingsGeneral')}</legend>
-            <label className="checkbox-row">
-              <input
-                checked={rememberLastFolder}
-                className="checkbox-input sr-only"
-                type="checkbox"
-                onChange={(event) => changeRememberLastFolder(event.target.checked)}
-              />
-              <span aria-hidden="true" className={`checkbox ${rememberLastFolder ? 'checked' : ''}`}>
-                {rememberLastFolder ? <Check size={12} strokeWidth={2.5} /> : null}
-              </span>
-              <span>
-                <span className="checkbox-label">{t('rememberLastFolder')}</span>
-                <span className="checkbox-hint">{t('rememberLastFolderHint')}</span>
-              </span>
-            </label>
-            <label className="checkbox-row">
-              <input
-                checked={autoStartWatching}
-                className="checkbox-input sr-only"
-                type="checkbox"
-                onChange={(event) => changeAutoStartWatching(event.target.checked)}
-              />
-              <span aria-hidden="true" className={`checkbox ${autoStartWatching ? 'checked' : ''}`}>
-                {autoStartWatching ? <Check size={12} strokeWidth={2.5} /> : null}
-              </span>
-              <span>
-                <span className="checkbox-label">{t('autoStartWatching')}</span>
-                <span className="checkbox-hint">{t('autoStartWatchingHint')}</span>
-              </span>
-            </label>
+          <section className="modal-section settings-general-section">
+            <h3 className="modal-section-title">{t('settingsGeneral')}</h3>
             <button
               className="btn btn-ghost"
               type="button"
@@ -178,15 +121,16 @@ export function SettingsView({
             >
               {t('settingsShowOnboarding')}
             </button>
-          </fieldset>
+            {onShowProductTour ? <button className="btn btn-ghost" type="button" onClick={onShowProductTour}>{t('settingsShowProductTour')}</button> : null}
+          </section>
 
-          {onStartHackathonMode ? <section className="modal-section">
+          {onStartHackathonMode ? <section className="modal-section settings-hackathon-section">
             <h3 className="modal-section-title">{t('hackathonMode')}</h3>
             <p className="checkbox-hint">{t('demoSimulationNotice')}</p>
             <button className="btn btn-ghost" type="button" onClick={onStartHackathonMode}>{t('startHackathonMode')}</button>
           </section> : null}
 
-          <section className="modal-section">
+          <section className="modal-section settings-trash-section">
             <h3 className="modal-section-title">{t('trash')}</h3>
             <label className="field">
               <span className="field-label">{t('trashRetention')}</span>
@@ -204,7 +148,7 @@ export function SettingsView({
             </label>
           </section>
 
-          <section className="modal-section">
+          <section className="modal-section settings-github-section">
             <h3 className="modal-section-title">{t('settingsGithub')}</h3>
             <label className="field">
               <span className="field-label">{t('githubToken')}</span>

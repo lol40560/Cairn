@@ -10,6 +10,7 @@ import { detectLanguage } from '@/lib/detect-language'
 import { getConflictRisk, remoteAuthorForRisk } from '@/lib/conflictIntelligence'
 import { getDemoNow } from '@/lib/hackathonMode'
 import type { DemoWorkspace } from '@/lib/demoWorkspace'
+import { useMonacoReady } from '@/lib/useMonacoReady'
 import { useTranslation } from '@/i18n'
 import type { ConflictRecord, Op, ProjectFileEntry } from '@/types/cairn'
 
@@ -31,6 +32,7 @@ export function DemoFilesView({ workspace, ops, conflicts, onDirtyChange }: Demo
   const [pendingPath, setPendingPath] = useState<string | undefined>()
   const [reviewOp, setReviewOp] = useState<Op | undefined>()
   const [justSaved, setJustSaved] = useState(false)
+  const monacoReady = useMonacoReady()
   const files = useMemo<ProjectFileEntry[]>(() => workspace.listFiles().map((file) => ({ path: file.path, name: file.path.split('/').at(-1) ?? file.path, size: new TextEncoder().encode(file.content).length, mtime: 1_700_000_000_000 })), [workspace])
 
   const load = (path: string): void => {
@@ -85,7 +87,7 @@ export function DemoFilesView({ workspace, ops, conflicts, onDirtyChange }: Demo
       <aside className="files-sidebar"><FileTree conflictRisks={treeRisks} files={files} filter={filter} selectedPath={selectedPath} onSelect={select} /></aside>
       <div className="files-main">
         {riskLabel ? <div className="files-content-warning"><strong>{riskLabel}</strong>{selectedRemoteOp ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setReviewOp(selectedRemoteOp)}>{t('reviewChanges')}</button> : null}</div> : null}
-        <Editor height="100%" language={detectLanguage(selectedPath)} options={{ automaticLayout: true, fontSize: 13, minimap: { enabled: false }, scrollBeyondLastLine: false }} theme="vs-dark" value={draft} onChange={(value) => { const next = value ?? ''; setDraft(next); const nextDirty = next !== saved; setDirty(nextDirty); onDirtyChange(nextDirty) }} />
+        {monacoReady ? <Editor height="100%" language={detectLanguage(selectedPath)} options={{ automaticLayout: true, fontSize: 13, minimap: { enabled: false }, scrollBeyondLastLine: false }} theme="vs-dark" value={draft} onChange={(value) => { const next = value ?? ''; setDraft(next); const nextDirty = next !== saved; setDirty(nextDirty); onDirtyChange(nextDirty) }} /> : <div aria-busy="true" className="monaco-loading" role="status" />}
       </div>
     </div>
     <ConfirmDialog cancelLabel={t('cancel')} confirmLabel={t('filesDiscard')} danger message={t('filesDiscardConfirmMessage')} open={pendingPath !== undefined} title={t('filesDiscardConfirmTitle')} onCancel={() => setPendingPath(undefined)} onConfirm={() => { const target = pendingPath; setPendingPath(undefined); if (target) load(target) }} />
