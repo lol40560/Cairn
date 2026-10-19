@@ -20,6 +20,7 @@ When people and AI coding agents edit the same codebase, it is easy to lose cont
 - Binary asset sync for supported images and fonts
 - GitHub PR export, deleted-file recovery, Quick Open, and keyboard navigation
 - A fully isolated Hackathon Mode for presenting the collaboration and recovery story without touching a real project
+- A persistent workspace header, grouped keyboard-friendly navigation, responsive activity controls, and a Cairn-themed editor
 
 ## Screenshots
 
@@ -42,6 +43,8 @@ Every file change appears here in real time. Click any row to see the full diff.
 Browse your project, preview files with syntax highlighting, and edit directly in Cairn.
 
 The current UI also includes grouped Activity sessions, Team Health, Conflict Center, Checkpoints, and Hackathon Mode.
+
+The v3 design specification and complete visual/manual regression checklist are documented in [docs/ui-redesign-v3.md](./docs/ui-redesign-v3.md).
 
 ## Download
 
@@ -129,7 +132,7 @@ Cairn watches your project folder for changes. When a file changes, it generates
 
 ### Requirements
 
-- Node.js 20+
+- Node.js 22+
 - npm
 
 ### Commands
@@ -155,8 +158,8 @@ npm run dist:win    # build Windows app (on Windows)
 
 Cairn is local-first and has no developer-operated telemetry or backend collection. Collaboration and GitHub export transmit data only when you choose to use those features. See [PRIVACY.md](./PRIVACY.md).
 
-## License
+## Legal and license
 
 MIT — see [LICENSE](./LICENSE).
 
-Third-party attributions are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+The [Terms of Use](./TERMS.md) explain the application’s local-first operation without reducing the rights granted by the MIT License. Third-party attributions are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

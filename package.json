@@ -1,10 +1,13 @@
 {
   "name": "cairn",
-  "version": "2.0.0-rc.2",
+  "version": "2.0.0-rc.3",
   "private": true,
   "author": "Quentin Chih",
   "description": "Local-first collaboration for vibecoding teams",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "out/main/main.js",
   "type": "module",
   "scripts": {
@@ -18,6 +21,7 @@
     "icons": "node scripts/generate-icons.mjs",
     "generate:legal": "node scripts/generate-legal.mjs",
     "verify:legal": "node scripts/generate-legal.mjs --check",
+    "verify:release-docs": "node scripts/verify-release-docs.mjs",
     "generate:licenses": "node scripts/generate-legal.mjs",
     "licenses": "node scripts/generate-legal.mjs",
     "licenses:md": "node scripts/generate-licenses.mjs",
@@ -26,11 +30,11 @@
     "native:electron": "electron-rebuild -f -w better-sqlite3",
     "native:node": "npm rebuild better-sqlite3",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "pack": "npm run build && electron-builder --dir",
+    "pack": "npm run native:electron && npm run build && electron-builder --dir",
     "predist:mac": "npm run native:electron && npm run build",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:all": "npm run build && electron-builder --mac --win"
+    "dist:win": "npm run native:electron && npm run build && electron-builder --win",
+    "dist:all": "npm run native:electron && npm run build && electron-builder --mac --win"
   },
   "allowScripts": [
     "better-sqlite3"
@@ -56,6 +60,10 @@
       {
         "from": "PRIVACY.md",
         "to": "legal/PRIVACY.md"
+      },
+      {
+        "from": "TERMS.md",
+        "to": "legal/TERMS.md"
       },
       {
         "from": "THIRD_PARTY_NOTICES.md",
@@ -142,8 +150,10 @@
     }
   },
   "dependencies": {
+    "@fontsource/anton": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/outfit": "^5.3.0",
     "@monaco-editor/react": "^4.7.0",
     "@octokit/rest": "^22.0.1",
     "archiver": "^8.0.0",

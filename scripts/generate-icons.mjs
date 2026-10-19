@@ -8,7 +8,8 @@ import sharp from 'sharp'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDir, '..')
 const buildDir = path.join(projectRoot, 'build')
-const iconSourcePath = path.join(projectRoot, 'src', 'assets', 'cairn-logo.png')
+const iconSourcePath = path.join(projectRoot, 'src', 'assets', 'cairn-app-icon.png')
+const traySourcePath = path.join(projectRoot, 'src', 'assets', 'cairn-logo.png')
 const iconPath = path.join(buildDir, 'icon.png')
 const iconsetDir = path.join(buildDir, 'icon.iconset')
 
@@ -62,15 +63,8 @@ async function main() {
   const icoInputs = await Promise.all(iconSizes.map((size) => sharp(iconPath).resize(size, size).png().toBuffer()))
   await writeFile(path.join(buildDir, 'icon.ico'), await pngToIco(icoInputs))
 
-  // 托盘图标只保留原始透明度，将图形统一为系统可着色的黑色。
-  const { data, info } = await sharp(iconSourcePath).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-  const alpha = Buffer.alloc(info.width * info.height)
-  for (let index = 0; index < alpha.length; index += 1) {
-    alpha[index] = data[index * info.channels + 3]
-  }
-  const traySource = sharp({
-    create: { background: '#000000', channels: 3, height: info.height, width: info.width },
-  }).joinChannel(alpha, { raw: { channels: 1, height: info.height, width: info.width } })
+  // 托盘图标保留透明度，并将原始标志统一为系统可着色的黑色。
+  const traySource = sharp(traySourcePath).ensureAlpha().tint('#000000')
   await traySource.clone().resize(16, 16).png().toFile(path.join(buildDir, 'trayTemplate.png'))
   await traySource.resize(32, 32).png().toFile(path.join(buildDir, 'trayTemplate@2x.png'))
   await createIcns()

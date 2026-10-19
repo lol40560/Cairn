@@ -66,6 +66,6 @@ describe('legal artifact generation', () => {
 
     expect(privacyMarkdown).toBe(renderPrivacyMarkdown(policy.en))
     expect(generatedModule).toBe(renderLegalContentModule(policy))
-    expect(resources).toEqual(expect.arrayContaining(['LICENSE', 'PRIVACY.md', 'THIRD_PARTY_NOTICES.md', 'build/licenses.json']))
+    expect(resources).toEqual(expect.arrayContaining(['LICENSE', 'PRIVACY.md', 'TERMS.md', 'THIRD_PARTY_NOTICES.md', 'build/licenses.json']))
   })
 })

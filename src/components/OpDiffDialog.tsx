@@ -1,9 +1,12 @@
-import { useEffect } from 'react'
+import { useRef } from 'react'
 
 import { Editor } from '@monaco-editor/react'
 import { X } from 'lucide-react'
 
 import { useTranslation, type TranslateFn } from '@/i18n'
+import { CAIRN_MONACO_THEME } from '@/lib/monaco-theme'
+import { useDialogFocus } from '@/lib/dialogFocus'
+import { useMonacoReady } from '@/lib/useMonacoReady'
 import type { Op } from '@/types/cairn'
 
 interface OpDiffDialogProps {
@@ -24,14 +27,9 @@ function formatRelativeTime(timestamp: number, t: TranslateFn): string {
 
 export function OpDiffDialog({ open, op, onClose }: OpDiffDialogProps) {
   const { t } = useTranslation()
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    if (open) window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose, open])
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useDialogFocus<HTMLElement>(open, onClose, closeButtonRef)
+  const monacoReady = useMonacoReady(open)
 
   if (!open || !op) return null
 
@@ -40,18 +38,18 @@ export function OpDiffDialog({ open, op, onClose }: OpDiffDialogProps) {
     <div className="modal-backdrop op-diff-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section aria-modal="true" aria-label={op.filePath} className="op-diff-dialog" role="dialog">
+      <section ref={dialogRef} aria-modal="true" aria-label={op.filePath} className="op-diff-dialog" role="dialog" tabIndex={-1}>
         <header className="op-diff-header">
           <div>
             <h2 className="op-diff-title">{op.filePath}</h2>
             <p className="op-diff-meta">{op.author} · {formatRelativeTime(op.timestamp, t)} · {op.hash.slice(0, 8)} · {kind}</p>
           </div>
-          <button aria-label={t('close')} className="btn btn-ghost modal-close" type="button" onClick={onClose}>
+          <button ref={closeButtonRef} aria-label={t('close')} className="btn btn-ghost modal-close" type="button" onClick={onClose}>
             <X size={16} />
           </button>
         </header>
         <div className="op-diff-body">
-          <Editor
+          {monacoReady ? <Editor
             height="100%"
             language="diff"
             options={{
@@ -63,9 +61,9 @@ export function OpDiffDialog({ open, op, onClose }: OpDiffDialogProps) {
               scrollBeyondLastLine: false,
               scrollbar: { horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
             }}
-            theme="vs-dark"
+            theme={CAIRN_MONACO_THEME}
             value={op.diff}
-          />
+          /> : <div aria-busy="true" className="monaco-loading" role="status" />}
         </div>
         <footer className="op-diff-footer">
           <button className="btn btn-ghost" type="button" onClick={onClose}>{t('close')}</button>

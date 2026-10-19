@@ -19,7 +19,7 @@ if (process.env.CAIRN_VERIFY_COMPILED !== 'true') {
       outfile: bundlePath,
       packages: 'external',
       platform: 'node',
-      target: 'node24',
+      target: 'node22',
     })
     await import(pathToFileURL(bundlePath).href)
   } finally {
@@ -158,18 +158,9 @@ if (process.env.CAIRN_VERIFY_COMPILED !== 'true') {
       createParticipant(directoryA, 'a'),
       createParticipant(directoryB, 'b'),
     ])
-    const peerJoined = { a: false, b: false }
     const connected = { a: false, b: false }
     const remoteOpsA = []
     const remoteOpsB = []
-    participantA.sync.on('peerJoined', (peer) => {
-      peerJoined.a = true
-      console.log(`  A 发现 ${peer.peerId} @ ${peer.host}:${peer.port}`)
-    })
-    participantB.sync.on('peerJoined', (peer) => {
-      peerJoined.b = true
-      console.log(`  B 发现 ${peer.peerId} @ ${peer.host}:${peer.port}`)
-    })
     participantA.sync.on('connected', () => { connected.a = true })
     participantB.sync.on('connected', () => { connected.b = true })
     participantA.sync.on('remoteOp', (op) => remoteOpsA.push(op))
@@ -177,11 +168,14 @@ if (process.env.CAIRN_VERIFY_COMPILED !== 'true') {
 
     await Promise.all([participantA.watcher.start(), participantB.watcher.start()])
     logPass('两个真实 watcher 已完成初始扫描')
-    await participantA.sync.start()
-    await participantB.sync.start()
-    logPass('两个真实 Sync 已通过 mDNS 发布并开始 TCP 监听')
+    await participantA.sync.start({ discovery: false })
+    await participantB.sync.start({ discovery: false })
+    logPass('两个真实 Sync 已开始 TCP 监听（不依赖 mDNS）')
 
-    await waitFor('A 与 B 都收到 peerJoined', () => peerJoined.a && peerJoined.b)
+    const participantBPort = participantB.sync.getLocalPort()
+    if (!participantBPort) throw new Error('B 未提供本机 TCP 监听端口')
+    await participantA.sync.connectToAddress('127.0.0.1', participantBPort)
+    logPass('A 已通过邀请码认证与加密传输直接连接 B')
     await waitFor('A 与 B 的真实 TCP 连接均已建立', () => connected.a && connected.b)
 
     await writeProjectFile(directoryA, 'sample.ts', 'export const value = 2\n')
@@ -225,21 +219,14 @@ if (process.env.CAIRN_VERIFY_COMPILED !== 'true') {
     console.log('PASS')
   } catch (error) {
     const message = error instanceof Error ? error.stack ?? error.message : String(error)
-    const isCiWithoutMdns = Boolean(process.env.CI) && /peerJoined.*超时/.test(message)
-    if (isCiWithoutMdns) {
-      console.log('SKIP: CI 环境未能通过 mDNS 发现本机 peer。')
-      await cleanup()
-      process.exitCode = 0
-    } else {
-      logFail(message)
-      if (errors.length > 0) {
-        console.error(`相关事件错误：\n${errors.join('\n')}`)
-      }
-      console.error(`目录 A 内容：\n${await listDirectory(directoryA)}`)
-      console.error(`目录 B 内容：\n${await listDirectory(directoryB)}`)
-      await cleanup()
-      console.log('FAIL')
-      process.exitCode = 1
+    logFail(message)
+    if (errors.length > 0) {
+      console.error(`相关事件错误：\n${errors.join('\n')}`)
     }
+    console.error(`目录 A 内容：\n${await listDirectory(directoryA)}`)
+    console.error(`目录 B 内容：\n${await listDirectory(directoryB)}`)
+    await cleanup()
+    console.log('FAIL')
+    process.exitCode = 1
   }
 }

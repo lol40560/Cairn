@@ -8,7 +8,7 @@ describe('App startup state', () => {
   it('在会话恢复完成前立即渲染加载遮罩', () => {
     const html = renderToStaticMarkup(<App />)
 
-    expect(html).toContain('Loading your project...')
+    expect(html).toContain('Loading projects...')
     expect(html).toContain('startup-overlay')
     expect(html).not.toContain('class="topbar"')
   })

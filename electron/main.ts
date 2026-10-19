@@ -1314,6 +1314,10 @@ export function createWindow(): BrowserWindow {
     width: 1000,
     height: 700,
     show: false,
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset' as const,
+      trafficLightPosition: { x: 18, y: 22 },
+    } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.cjs'),
       contextIsolation: true,

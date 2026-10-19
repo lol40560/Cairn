@@ -4,7 +4,7 @@ import { detectLocale, persistLocale, type Locale } from '../i18n/locales'
 import type { AvailableProjectEntry, ConflictRecord, IdentityMismatch, LocalEndpoint, Op, PeerInfo, PeerState, ProjectFileEntry, SeederInfo, TrashEntry } from '../types/cairn'
 
 export type WatchStatus = 'idle' | 'watching' | 'stopped'
-export type ViewType = 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'checkpoints' | 'trash' | 'settings'
+export type ViewType = 'projects' | 'home' | 'activity' | 'files' | 'room' | 'conflicts' | 'checkpoints' | 'trash' | 'settings'
 export type ActiveView = ViewType
 export type DownloadStatus = 'idle' | 'waiting-meta' | 'downloading' | 'verifying' | 'extracting' | 'done' | 'failed'
 export type ActivityViewMode = 'grouped' | 'raw'
@@ -122,7 +122,7 @@ function readActivityViewMode(): ActivityViewMode {
 
 export const useAppStore = create<AppState>((set) => ({
   folder: '',
-  activeView: 'activity',
+  activeView: 'projects',
   projects: [],
   projectFiles: [],
   selectedFilePath: undefined,

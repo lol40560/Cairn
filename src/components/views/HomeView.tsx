@@ -1,238 +1,134 @@
-import { useCallback, useEffect, useState, type MouseEvent } from 'react'
+import { useMemo, useState } from 'react'
 
-import { FolderOpen, MoreHorizontal, Plus } from 'lucide-react'
+import { ArrowRight, Plus } from 'lucide-react'
 
-import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu'
-import { EmptyState } from '@/components/EmptyState'
 import { Toast, type ToastMessage } from '@/components/Toast'
-import { useTranslation, type TranslateFn } from '@/i18n'
+import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { useProfile } from '@/lib/profile'
 import { useAppStore } from '@/store/appStore'
-import type { AvailableProjectEntry, IpcResult } from '@/types/cairn'
+import type { IpcResult, Op } from '@/types/cairn'
+
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
 function getIpcData<T>(result: IpcResult<T>): T {
   if (!result.ok) throw result.error
   return result.data
 }
 
-function formatProjectRelativeTime(timestamp: number, t: TranslateFn): string {
-  const elapsed = Math.max(0, Date.now() - timestamp)
-  const minutes = Math.floor(elapsed / 60_000)
-  if (minutes < 1) return t('justNow')
-  if (minutes < 60) return minutes === 1 ? t('minuteAgo') : t('minutesAgo').replace('{n}', String(minutes))
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return hours === 1 ? t('hourAgo') : t('hoursAgo').replace('{n}', String(hours))
-
-  const days = Math.floor(hours / 24)
-  if (days < 30) return days === 1 ? t('dayAgo') : t('daysAgo').replace('{n}', String(days))
-
-  const months = Math.floor(days / 30)
-  return months === 1 ? t('monthAgo') : t('monthsAgo').replace('{n}', String(months))
-}
-
-/** 本机项目索引的入口视图；文件内容始终经由主进程 IPC 访问。 */
 interface HomeViewProps {
-  /** 静态渲染测试可提供项目快照；运行时始终读取 store。 */
-  projects?: AvailableProjectEntry[]
+  ops?: Op[]
 }
 
-export function HomeView({ projects: projectsOverride }: HomeViewProps) {
+/** Dashboard for the currently open project. Project selection lives in ProjectsView. */
+export function HomeView({ ops: opsOverride }: HomeViewProps) {
   const { t } = useTranslation()
   const folder = useAppStore((state) => state.folder)
-  const storedProjects = useAppStore((state) => state.projects)
-  const projects = projectsOverride ?? storedProjects
-  const replaceOps = useAppStore((state) => state.replaceOps)
-  const setActiveView = useAppStore((state) => state.setActiveView)
-  const setFolder = useAppStore((state) => state.setFolder)
-  const setProjects = useAppStore((state) => state.setProjects)
-  const setStatus = useAppStore((state) => state.setStatus)
+  const storedOps = useAppStore((state) => state.ops)
+  const ops = opsOverride ?? storedOps
   const peers = useAppStore((state) => state.peers)
-  const ops = useAppStore((state) => state.ops)
-  const [pendingRemove, setPendingRemove] = useState<AvailableProjectEntry | undefined>()
-  const [projectMenu, setProjectMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | undefined>()
+  const conflicts = useAppStore((state) => state.conflicts)
+  const setActiveView = useAppStore((state) => state.setActiveView)
+  const { profile } = useProfile()
+  const [creatingCheckpoint, setCreatingCheckpoint] = useState(false)
   const [toast, setToast] = useState<ToastMessage | NormalizedError | null>(null)
+  const firstName = profile.displayName.trim().split(/\s+/)[0] || 'there'
 
-  const refreshProjects = useCallback(async (): Promise<void> => {
-    try {
-      setProjects(getIpcData(await window.cairn.listProjects()))
-    } catch (error) {
-      console.error('[cairn:home] 无法读取项目列表', error)
-      setToast(normalizeError(error, t))
+  const weeklyBars = useMemo(() => {
+    const now = new Date()
+    const monday = new Date(now)
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7))
+    const counts = WEEKDAY_LABELS.map(() => 0)
+    for (const op of ops) {
+      const dayIndex = Math.floor((op.timestamp - monday.getTime()) / 86_400_000)
+      if (dayIndex >= 0 && dayIndex < counts.length) counts[dayIndex] += 1
     }
-  }, [setProjects, t])
+    const peak = Math.max(1, ...counts)
+    const activeIndex = (now.getDay() + 6) % 7
+    return WEEKDAY_LABELS.map((day, index) => ({
+      active: index === activeIndex,
+      count: counts[index],
+      day,
+      height: counts[index] === 0 ? 8 : Math.max(18, Math.round((counts[index] / peak) * 92)),
+    }))
+  }, [ops])
+  const weeklyChangeCount = weeklyBars.reduce((total, bar) => total + bar.count, 0)
 
-  useEffect(() => {
-    // 延后一帧读取，避免首次渲染期间同步更新外部 store。
-    const timer = window.setTimeout(() => void refreshProjects(), 0)
-    return () => window.clearTimeout(timer)
-  }, [refreshProjects])
-
-  const activateProject = async (projectPath: string): Promise<void> => {
-    getIpcData(await window.cairn.startWatching(projectPath))
-    setFolder(projectPath)
-    setStatus('watching')
-    replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
-    setActiveView('activity')
-    await refreshProjects()
-  }
-
-  const openProject = async (project: AvailableProjectEntry): Promise<void> => {
-    try {
-      await activateProject(project.path)
-    } catch (error) {
-      console.error('[cairn:home] 无法打开项目', error)
-      setToast(normalizeError(error, t))
+  const syncedSeries = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const start = new Date(today)
+    start.setDate(today.getDate() - 6)
+    const dailyCounts = [0, 0, 0, 0, 0, 0, 0]
+    for (const op of ops) {
+      if (op.source !== 'remote') continue
+      const dayIndex = Math.floor((op.timestamp - start.getTime()) / 86_400_000)
+      if (dayIndex >= 0 && dayIndex < dailyCounts.length) dailyCounts[dayIndex] += 1
     }
-  }
+    let runningTotal = 0
+    const cumulative = dailyCounts.map((count) => (runningTotal += count))
+    const total = cumulative.at(-1) ?? 0
+    const peak = Math.max(1, total)
+    const points = cumulative.map((count, index) => ({ x: (index / 6) * 400, y: 165 - (count / peak) * 125 }))
+    const linePath = points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
+    return { areaPath: `${linePath} L400 180 L0 180Z`, last: points.at(-1)!, linePath, total }
+  }, [ops])
 
-  const addProject = async (): Promise<void> => {
-    try {
-      const selectedFolder = getIpcData(await window.cairn.selectFolder())
-      if (!selectedFolder) return
-      getIpcData(await window.cairn.addProject(selectedFolder))
-      await refreshProjects()
-      await activateProject(selectedFolder)
-    } catch (error) {
-      console.error('[cairn:home] 无法添加项目', error)
-      setToast(normalizeError(error, t))
+  const createCheckpoint = async (): Promise<void> => {
+    if (!folder) {
+      setToast({ message: t('chooseProjectHint'), tone: 'error' })
+      return
     }
-  }
-
-  const removeProject = async (id: string): Promise<void> => {
+    setCreatingCheckpoint(true)
     try {
-      getIpcData(await window.cairn.removeProject(id))
-      await refreshProjects()
+      getIpcData(await window.cairn.createCheckpoint())
+      setToast({ message: t('checkpointCreated'), tone: 'success' })
     } catch (error) {
-      console.error('[cairn:home] 无法移除项目', error)
       setToast(normalizeError(error, t))
+    } finally {
+      setCreatingCheckpoint(false)
     }
-  }
-
-  const relocateProject = async (project: AvailableProjectEntry): Promise<void> => {
-    try {
-      const selectedFolder = getIpcData(await window.cairn.selectFolder())
-      if (!selectedFolder) return
-      // 先写入新位置，再移除失效记录，避免选择后出现空项目列表。
-      getIpcData(await window.cairn.addProject(selectedFolder))
-      getIpcData(await window.cairn.removeProject(project.id))
-      await refreshProjects()
-      await activateProject(selectedFolder)
-    } catch (error) {
-      console.error('[cairn:home] 无法重新定位项目', error)
-      setToast(normalizeError(error, t))
-    }
-  }
-
-  const showProjectMenu = (event: MouseEvent<HTMLElement>, project: AvailableProjectEntry): void => {
-    event.preventDefault()
-    event.stopPropagation()
-    setProjectMenu({
-      x: event.clientX,
-      y: event.clientY,
-      items: [
-        { label: t('openProject'), onSelect: () => void openProject(project) },
-        { label: t('copyPath'), onSelect: () => void window.cairn.copyToClipboard(project.path) },
-        { label: t('revealInFinder'), onSelect: () => void window.cairn.openInFileManager(project.path) },
-        { danger: true, label: t('remove'), onSelect: () => setPendingRemove(project), separatorBefore: true },
-      ],
-    })
   }
 
   return (
     <section className="view active">
-      <div className="view-header">
-        <h1 className="view-title">{t('home')}</h1>
+      <div className="view-header home-view-header cairn-hero" data-tour="home-overview">
+        <div>
+          <h1 className="view-title">Welcome, {firstName}!</h1>
+          <p className="view-description">Every change saved, every file recoverable.</p>
+          <div className="hero-actions">
+            <button aria-busy={creatingCheckpoint} className="btn btn-primary" disabled={creatingCheckpoint} type="button" onClick={() => void createCheckpoint()}><Plus aria-hidden="true" size={18} />{creatingCheckpoint ? t('creating') : t('createCheckpoint')}</button>
+            <button className="btn btn-black" type="button" onClick={() => setActiveView('activity')}>View Activity</button>
+          </div>
+        </div>
       </div>
 
-      {projects.length === 0 ? (
-        <EmptyState
-          actions={[{ label: t('addProject'), onClick: () => void addProject(), variant: 'primary' }]}
-          description={t('noProjectsDesc')}
-          icon={FolderOpen}
-          title={t('noProjects')}
-        />
-      ) : (
-        <>
-          <p className="home-section-label">{t('recentProjects')}</p>
-          <div className="home-grid">
-            {projects.map((project) => project.available ? (
-              <article
-                key={project.id}
-                aria-label={project.name}
-                className={`project-card ${folder === project.path ? 'active' : ''}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => void openProject(project)}
-                onContextMenu={(event) => showProjectMenu(event, project)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    void openProject(project)
-                  }
-                }}
-              >
-                <button
-                  aria-label={t('remove')}
-                  className="project-card-remove"
-                  title={t('remove')}
-                  type="button"
-                  onClick={(event) => showProjectMenu(event, project)}
-                >
-                  <MoreHorizontal aria-hidden="true" size={16} />
-                </button>
-                {project.isFavorite && <span aria-label="Favorite" className="project-card-favorite">★</span>}
-                <div>
-                  <p className="project-card-name">{project.name}</p>
-                  <p className="project-card-path" title={project.path}>{project.path}</p>
-                </div>
-                <div className="project-card-meta">
-                  {folder === project.path ? (
-                    <><span className="project-card-state">● {t('statusWatching')}</span><span>{t('connectedPeers').replace('{n}', String(peers.length))}</span></>
-                  ) : null}
-                  <span>{folder === project.path ? `${ops.length} ${t('changesCount').replace('{n} ', '')} · ` : ''}{formatProjectRelativeTime(project.lastOpenedAt, t)}</span>
-                </div>
-              </article>
-            ) : (
-              <article key={project.id} className="project-card missing">
-                <div>
-                  <p className="project-card-name">{project.name}</p>
-                  <p className="project-card-path" title={project.path}>{project.path}</p>
-                </div>
-                <p className="project-card-meta">{t('folderNotFound')}</p>
-                <div className="project-card-actions">
-                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => void removeProject(project.id)}>
-                    {t('remove')}
-                  </button>
-                  <button className="btn btn-ghost btn-sm" type="button" onClick={() => void relocateProject(project)}>
-                    {t('relocate')}
-                  </button>
-                </div>
-              </article>
-            ))}
-            <button aria-label={t('addProject')} className="project-card add" type="button" onClick={() => void addProject()}>
-              <Plus size={20} strokeWidth={1.8} />
-              <span>{t('addProject')}</span>
-            </button>
+      <div className="overview-grid">
+        <article className="overview-card overview-card-white">
+          <div className="overview-card-header"><h2>Changes this week</h2></div>
+          <div className="overview-bars" aria-label={`${weeklyChangeCount} saved changes this week`}>
+            {weeklyBars.map(({ active, count, day, height }) => <div aria-label={`${day}: ${count} changes`} className="overview-bar-column" key={day}><span className={`overview-bar ${active ? 'active' : ''}`} style={{ height: `${height}%` }} /><span className={active ? 'active' : ''}>{day}</span></div>)}
           </div>
-        </>
-      )}
-      <ConfirmDialog
-        cancelLabel={t('cancel')}
-        confirmLabel={t('remove')}
-        danger
-        message={t('removeProjectMessage').replace('{name}', pendingRemove?.name ?? '')}
-        open={pendingRemove !== undefined}
-        title={t('removeProjectTitle')}
-        onCancel={() => setPendingRemove(undefined)}
-        onConfirm={() => {
-          const project = pendingRemove
-          setPendingRemove(undefined)
-          if (project) void removeProject(project.id)
-        }}
-      />
-      {projectMenu ? <ContextMenu items={projectMenu.items} position={projectMenu} onClose={() => setProjectMenu(undefined)} /> : null}
+        </article>
+        <article className="overview-card overview-synced-card">
+          <div className="overview-card-header"><div><h2>Synced changes</h2><p>{syncedSeries.total} received in the last 7 days</p></div><span className="overview-positive">{peers.length ? `${peers.length} connected` : 'Local first'}</span></div>
+          {syncedSeries.total > 0 ? (
+            <svg aria-label={`${syncedSeries.total} synced changes in the last 7 days`} className="overview-line-chart" preserveAspectRatio="none" role="img" viewBox="0 0 400 200">
+              <defs><linearGradient id="cairn-line-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="var(--accent)" stopOpacity=".3"/><stop offset="1" stopColor="var(--accent)" stopOpacity="0"/></linearGradient></defs>
+              <path className="overview-grid-line" d="M0 40H400M0 82H400M0 124H400M0 166H400" />
+              <path className="overview-line-area" d={syncedSeries.areaPath} />
+              <path className="overview-line" d={syncedSeries.linePath} pathLength="1" />
+              <circle cx={syncedSeries.last.x} cy={syncedSeries.last.y} r="5" />
+            </svg>
+          ) : (
+            <div className="overview-chart-empty"><strong>0</strong><p>No team changes have synced yet.</p></div>
+          )}
+          <button className="overview-card-link" type="button" onClick={() => setActiveView('activity')}>View activity <ArrowRight aria-hidden="true" size={15} /></button>
+        </article>
+      </div>
+
+      {conflicts.length > 0 ? <article className="overview-alert-card"><div><h2>Review {conflicts.length === 1 ? 'one overlap' : `${conflicts.length} overlaps`}</h2><p>Your team edited some of the same lines. Review the changes before continuing.</p></div><button className="btn btn-black" type="button" onClick={() => setActiveView('conflicts')}>Review Conflict <ArrowRight aria-hidden="true" size={16}/></button></article> : null}
       <Toast message={toast} onDismiss={() => setToast(null)} />
     </section>
   )

@@ -11,6 +11,7 @@ describe('CheckpointsView', () => {
     expect(html).toContain('No checkpoints yet')
     expect(html).toContain('Create checkpoint')
     expect(html).toContain('checkpoint-create-btn')
+    expect(html).not.toContain('0 items')
   })
 
   it('显示检查点列表及恢复和删除操作', () => {

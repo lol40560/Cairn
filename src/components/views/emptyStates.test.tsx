@@ -95,6 +95,7 @@ describe('引导式空状态', () => {
 
     expect(html).toContain("Everything&#x27;s in sync")
     expect(html).toContain("Nothing gets lost.")
+    expect(html).not.toContain('0 unresolved')
   })
 
   it('Same-file edits 有冲突时显示双方内容和解决操作', () => {
@@ -136,14 +137,14 @@ describe('引导式空状态', () => {
     expect(html).toContain('+new')
   })
 
-  it('Sidebar 直接显示导航项目，不重复显示分类标题', () => {
+  it('Sidebar 显示可扫读的导航分组', () => {
     const html = renderToStaticMarkup(<Sidebar />)
 
     expect(html).toContain('Cairn')
     expect(html).not.toContain('sidebar-logo')
-    expect(html).not.toContain('>Project<')
-    expect(html).not.toContain('>Collaboration<')
-    expect(html).not.toContain('>Recovery<')
+    expect(html).toContain('>Project<')
+    expect(html).toContain('>Collaboration<')
+    expect(html).toContain('>Recovery<')
     expect(html).toContain('Home')
     expect(html).toContain('Changes')
     expect(html).toContain('Checkpoints')
@@ -155,6 +156,7 @@ describe('引导式空状态', () => {
 
     expect(html).toContain('No deleted files')
     expect(html).toContain('Anything you delete stays here for 30 days')
+    expect(html).not.toContain('0 items')
   })
 
   it('Team 没有队友时显示邀请提示', () => {

@@ -1,4 +1,4 @@
-# Cairn Design System v2
+# Cairn Design System v3
 
 Cairn is a calm, local-first desktop workspace for developers and their AI tools. The interface should make project state, collaboration, and recovery actions easy to understand without competing with the code.
 
@@ -24,6 +24,7 @@ Cairn is a calm, local-first desktop workspace for developers and their AI tools
 
 - The sidebar owns navigation: Project, Collaboration, Recovery, then Settings.
 - The top bar owns the active project and compact live sync state.
+- At narrow desktop widths, Activity search wraps instead of disappearing and the sidebar collapses without removing accessible labels.
 - Views own their content hierarchy. Do not place every section inside a card; use spacing, section labels, and subtle separators first.
 - The Files view keeps Monaco and provides a user-resizable tree/editor split.
 
@@ -32,6 +33,7 @@ Cairn is a calm, local-first desktop workspace for developers and their AI tools
 - Every interactive control has a visible keyboard focus state and an accessible name.
 - Color never carries state alone; use text, icons, or labels with semantic color.
 - Keep disabled controls readable and avoid hover-only access to important status.
+- Modal surfaces trap focus, close with Escape, and restore focus to their opener.
 
 ## Implementation guardrails
 

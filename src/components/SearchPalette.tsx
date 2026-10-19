@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 
+import { useDialogFocus } from '@/lib/dialogFocus'
+
 export interface SearchPaletteItem {
   id: string
   label: string
@@ -42,7 +44,7 @@ export function SearchPalette({ emptyLabel, items, onClose, onSelect, open, plac
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
-  const triggerRef = useRef<HTMLElement | null>(null)
+  const dialogRef = useDialogFocus<HTMLElement>(open, onClose, inputRef)
   const listId = useId()
   const visibleItems = useMemo(() => {
     const matched = items.filter((item) => matches(item, query))
@@ -54,25 +56,22 @@ export function SearchPalette({ emptyLabel, items, onClose, onSelect, open, plac
 
   useEffect(() => {
     if (!open) return
-    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const timer = window.setTimeout(() => {
       setQuery('')
       setSelectedIndex(0)
-      inputRef.current?.focus()
     }, 0)
     return () => window.clearTimeout(timer)
   }, [open])
 
   const close = (): void => {
     onClose()
-    window.setTimeout(() => triggerRef.current?.focus(), 0)
   }
 
   if (!open) return null
 
   return (
     <div className="palette-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && close()}>
-      <section aria-label={title} aria-modal="true" className="search-palette" role="dialog">
+      <section ref={dialogRef} aria-label={title} aria-modal="true" className="search-palette" role="dialog" tabIndex={-1}>
         <div className="search-palette-heading">
           <span>{title}</span>
           <kbd>Esc</kbd>
@@ -81,6 +80,7 @@ export function SearchPalette({ emptyLabel, items, onClose, onSelect, open, plac
           ref={inputRef}
           aria-activedescendant={visibleItems[selectedIndex] ? `${listId}-${visibleItems[selectedIndex].id}` : undefined}
           aria-controls={listId}
+          aria-expanded="true"
           aria-label={title}
           className="search-palette-input"
           placeholder={placeholder}

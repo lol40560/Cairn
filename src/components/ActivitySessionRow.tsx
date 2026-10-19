@@ -6,6 +6,7 @@ import { useTranslation } from '@/i18n'
 import { countDiff } from '@/lib/diffStats'
 import { groupOpsByFile, type FileGroup } from '@/lib/groupOpsByFile'
 import { formatLineCount } from '@/lib/lineCount'
+import { useDialogFocus } from '@/lib/dialogFocus'
 import type { ActivitySession } from '@/lib/activitySessions'
 
 interface ActivitySessionRowProps {
@@ -36,14 +37,8 @@ function ActivityFilePreview({ group, onClose }: {
 }) {
   const { t } = useTranslation()
   const [selectedOp, setSelectedOp] = useState(group.ops[0])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useDialogFocus<HTMLElement>(true, onClose, closeButtonRef)
 
   if (!selectedOp) return null
 
@@ -51,7 +46,7 @@ function ActivityFilePreview({ group, onClose }: {
     <div className="activity-file-preview-backdrop" role="presentation" onMouseDown={(event) => {
       if (event.currentTarget === event.target) onClose()
     }}>
-      <section aria-label={group.filePath} aria-modal="true" className="activity-file-preview" role="dialog">
+      <section ref={dialogRef} aria-label={group.filePath} aria-modal="true" className="activity-file-preview" role="dialog" tabIndex={-1}>
         <header className="activity-file-preview-header">
           <div className="activity-file-preview-heading">
             <h3>{group.filePath}</h3>
@@ -64,7 +59,7 @@ function ActivityFilePreview({ group, onClose }: {
               <span className="file-group-removed">−{formatLineCount(group.totalRemoved)}</span>
             </div>
           </div>
-          <button aria-label={t('close')} className="activity-file-preview-close" type="button" onClick={onClose}>
+          <button ref={closeButtonRef} aria-label={t('close')} className="activity-file-preview-close" type="button" onClick={onClose}>
             <X aria-hidden="true" size={16} />
           </button>
         </header>

@@ -1,5 +1,8 @@
 import { DiffEditor } from '@monaco-editor/react'
 
+import { CAIRN_MONACO_THEME } from '@/lib/monaco-theme'
+import { useMonacoReady } from '@/lib/useMonacoReady'
+
 interface MonacoDiffProps {
   original: string
   modified: string
@@ -22,10 +25,11 @@ export function MonacoDiff({
   modelId,
   readOnly = true,
 }: MonacoDiffProps) {
+  const monacoReady = useMonacoReady()
   const modelPrefix = encodeURIComponent(modelId ?? `${originalLabel}:${modifiedLabel}`)
   return (
     <div className="monaco-diff-wrapper">
-      <DiffEditor
+      {monacoReady ? <DiffEditor
         height={height}
         modified={modified}
         modifiedLanguage={language}
@@ -46,8 +50,8 @@ export function MonacoDiff({
         original={original}
         originalLanguage={language}
         originalModelPath={`inmemory://cairn/${modelPrefix}-original`}
-        theme="vs-dark"
-      />
+        theme={CAIRN_MONACO_THEME}
+      /> : <div aria-busy="true" className="monaco-loading" role="status" />}
     </div>
   )
 }
