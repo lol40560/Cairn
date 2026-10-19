@@ -1,165 +1,185 @@
-# Cairn
+<p align="center">
+  <img src="./build/icon.png" width="108" alt="Cairn app icon" />
+</p>
 
-Local-first collaboration for developers and AI coding agents. Cairn watches a shared project on your local network, makes changes understandable, and keeps recovery close at hand.
+<h1 align="center">Cairn</h1>
 
-## Why
+<p align="center"><strong>Know what changed. Catch overlap early. Recover with confidence.</strong></p>
 
-When people and AI coding agents edit the same codebase, it is easy to lose context before a conflict happens. Cairn keeps a local activity trail, surfaces overlap risk early, and provides safe recovery tools when a change needs attention.
+<p align="center">
+  A local-first desktop workspace for developers and AI coding agents.<br>
+  Follow project activity, collaborate peer-to-peer, and restore the work that matters.
+</p>
 
-- **Local-first** — your code never leaves your computer unless you share it
-- **P2P** — no server, no accounts, no cloud
-- **AI-friendly** — works with any editor and any AI coding tool
+<p align="center">
+  <a href="https://github.com/lol40560/Cairn/releases">Download for macOS or Windows</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#quick-start">Get started</a>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  <a href="#how-cairn-works">How it works</a>
+</p>
 
-## Features
+<p align="center">
+  <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.0-rc.3"><img alt="Release v2.0.0-rc.3" src="https://img.shields.io/badge/release-v2.0.0--rc.3-222222?style=flat-square" /></a>
+  <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-222222?style=flat-square" /></a>
+  <img alt="macOS and Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-222222?style=flat-square" />
+</p>
 
-- Real-time local-network collaboration with human and AI change attribution
-- File-grouped activity sessions, filters, search, and full Monaco diffs
-- Early overlap awareness plus confirmed-conflict review and resolution
-- Safe checkpoints, per-file comparison, stale-restore protection, and recovery snapshots
-- Invite-code project sharing, download, direct-connection fallback, and peer health diagnostics
-- Binary asset sync for supported images and fonts
-- GitHub PR export, deleted-file recovery, Quick Open, and keyboard navigation
-- A fully isolated Hackathon Mode for presenting the collaboration and recovery story without touching a real project
-- A persistent workspace header, grouped keyboard-friendly navigation, responsive activity controls, and a Cairn-themed editor
+<p align="center">
+  <img src="./docs/screenshots/overview.png" width="100%" alt="Cairn's dark desktop dashboard with project activity and recent changes" />
+</p>
 
-## Screenshots
+> **Release status:** Cairn v2.0.0-rc.3 is a release candidate. The macOS and Windows installers are not code-signed. See [known limitations](#known-limitations) before relying on it for critical work.
 
-### Home
+## Why Cairn?
 
-![Home](./docs/screenshots/home.png)
+Modern development happens across people, editors, and AI coding tools. Several tools may change the same project in minutes, but understanding *what happened*, *where work overlaps*, and *how to recover* still takes effort.
 
-Manage multiple projects. Click a card to start syncing it with your team.
+**Cairn keeps those answers close to your files.** It observes local project changes, organizes a readable activity trail, flags possible overlapping edits, and provides file-level recovery tools. When you choose to collaborate, it shares project updates directly with teammates rather than through a Cairn-hosted cloud service.
 
-### Changes
+| See the work | Work together | Keep a way back |
+| :--- | :--- | :--- |
+| File-grouped activity, search, contributor context, and readable diffs. | Peer-to-peer project sharing and awareness of possible concurrent edits. | Checkpoints, protected restores, conflict review, and deleted-file recovery. |
 
-![Changes](./docs/screenshots/changes.png)
+## Inside Cairn
 
-Every file change appears here in real time. Click any row to see the full diff.
+### A home for every project
 
-### Files with built-in editor
+See recent activity and project context without jumping between a terminal, a file explorer, and a version-control interface. Cairn's workspace surfaces recent changes while keeping your files central.
 
-![Files](./docs/screenshots/files.png)
+### Your files, with the context attached
 
-Browse your project, preview files with syntax highlighting, and edit directly in Cairn.
+Browse a project tree, inspect code in the integrated Monaco editor, and save edits from within Cairn. Quick Open, a command palette, keyboard navigation, and change diffs make it easier to move from an activity event to the actual file.
 
-The current UI also includes grouped Activity sessions, Team Health, Conflict Center, Checkpoints, and Hackathon Mode.
+<p align="center">
+  <img src="./docs/screenshots/files.png" width="100%" alt="Cairn files workspace with a project tree and syntax-highlighted code editor" />
+</p>
 
-The v3 design specification and complete visual/manual regression checklist are documented in [docs/ui-redesign-v3.md](./docs/ui-redesign-v3.md).
+### Collaboration without a Cairn account
 
-## Download
+Create a team for a project, share an invitation, and connect with peers over a reachable network. Cairn uses protocol-v4 authenticated, encrypted peer transport and provides direct-connection troubleshooting when automatic discovery is unavailable.
 
-### macOS
+<p align="center">
+  <img src="./docs/screenshots/team.png" width="100%" alt="Cairn Team screen with create-team and join-team options" />
+</p>
 
-1. Download the latest `.dmg` from [Releases](https://github.com/lol40560/Cairn/releases)
-2. Open the `.dmg` and drag Cairn to Applications
-3. First launch: right-click → Open → Confirm (app is not code-signed yet)
+### Built for the messy moments
 
-### Windows
+Potential overlap is different from a confirmed conflict. Cairn helps distinguish the two, gives you a place to review same-file edits, and retains recovery options when you need to inspect or restore an earlier state.
 
-1. Download the latest `Cairn-Setup-*.exe` from [Releases](https://github.com/lol40560/Cairn/releases)
-2. Double-click to install
-3. If SmartScreen warns: More info → Run anyway (app is not code-signed yet)
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="./docs/screenshots/conflicts.png" width="100%" alt="Cairn's same-file edit and conflict review screen" /></td>
+    <td width="50%" align="center"><img src="./docs/screenshots/checkpoints.png" width="100%" alt="Cairn checkpoints and restore screen" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Conflict review</strong><br>Inspect same-file edits and resolve confirmed conflicts.</td>
+    <td align="center"><strong>Checkpoints</strong><br>Save recoverable snapshots before you need them.</td>
+  </tr>
+</table>
 
-## Requirements
+<details>
+  <summary><strong>More screens: deleted files and settings</strong></summary>
+  <p>Recover recently deleted files from local trash, configure retention, and access application and GitHub integration settings.</p>
+  <p><img src="./docs/screenshots/deleted-files.png" width="100%" alt="Cairn deleted files recovery screen" /></p>
+  <p><img src="./docs/screenshots/settings.png" width="100%" alt="Cairn settings screen" /></p>
+</details>
 
-Cairn works over your **local network**. All teammates must be on the same WiFi or the same hotspot.
+## What Cairn can do
 
-If automatic discovery doesn't work, use the **Direct connection** feature:
+- **Readable change history.** Group operations into activity sessions, filter by contributor, search activity, and inspect file diffs.
+- **Human + AI context.** Attribute known edits to contributors and AI tools so activity is easier to follow.
+- **Overlap and conflict awareness.** Surface potential same-file interference separately from confirmed conflicts and provide review and resolution tools.
+- **Recovery by design.** Create checkpoints, compare revisions, safeguard destructive restores, and retrieve deleted files during the configured retention period.
+- **Local peer collaboration.** Share a project using invitations, with peer health and direct-connection diagnostics.
+- **Developer-focused extras.** Edit files in Monaco, export changes to a GitHub pull request on request, and explore features safely in an isolated Hackathon Simulation.
 
-1. The host opens Team view
-2. Scroll down to find "Direct connection" showing something like `192.168.1.5:49500`
-3. Copy that address
-4. Teammates enter it in the "Join a team" input box
+## Quick start
 
-## Common issues
+**1. Download the app.** Get the latest available installer from [GitHub Releases](https://github.com/lol40560/Cairn/releases). Choose the macOS `.dmg` for your architecture or the Windows `Cairn-Setup-*.exe`. Current release-candidate builds are unsigned.
 
-**"Cairn.app is damaged and can't be opened" (macOS)**
+**2. Open a project.** Launch Cairn and choose a project folder. Its dashboard gives you a place to inspect activity and files.
 
-The app is not code-signed yet. After downloading, run:
+**3. Share it when needed.** Open **Team**, choose **Start a team**, and give a teammate the invitation. Teammates can choose **Join a team** and retrieve the project into their selected folder.
 
-```bash
-xattr -cr /Applications/Cairn.app
+**4. Use the recovery tools.** Create a checkpoint before a risky change; inspect **Same-file edits** if collaboration produces overlapping work; recover eligible deleted files from **Deleted files**.
+
+> **Network note:** For automatic discovery, collaborators should be on the same reachable Wi-Fi network or hotspot. If discovery is blocked, open the Team screen's advanced direct-connection option and use the host's `IP:port` address. Some campus and corporate networks block device-to-device traffic.
+
+## How Cairn works
+
+```text
+Your project folder
+       │
+       ▼
+Local file watcher ──► Local operation history ──► Activity & diffs
+       │                        │
+       │                        └──► Checkpoints & recovery
+       │
+       └──► Authenticated, encrypted P2P connection
+                              │
+                              ▼
+                      Invited teammates
 ```
 
-Then open the app normally.
+Cairn watches the selected folder and stores local project history in `.cairn/`. When you start or join a team, it exchanges project changes with participating peers. Deleted files are retained in `.cairn/trash/` for the configured period (30 days by default). GitHub export happens only when you request it.
 
-**Windows: SmartScreen blocks the app**
+**Local-first does not mean a guarantee of full synchronization.** Cairn reports observed watcher and peer-connection states, but its protocol does not yet prove full-project convergence through acknowledgements. Checkpoints and deleted-file recovery are additional safeguards, not substitutes for external backups.
 
-Click "More info" → "Run anyway".
+For implementation details, see [Architecture](./ARCHITECTURE.md) and [UI design principles](./UI.md).
 
-**Teammates can't find each other**
+## Keyboard shortcuts
 
-- Make sure you're on the same WiFi or hotspot
-- Try the Direct connection feature (see above)
-- If on a corporate or campus WiFi, AP isolation may block device-to-device traffic — use a phone hotspot instead
-
-## Quick Start
-
-### Start a new team
-
-1. Open Cairn
-2. Choose a project folder
-3. Click "Start a team"
-4. Share the invite code with teammates
-
-### Join a team
-
-1. Open Cairn
-2. Click "Join a team"
-3. Enter the invite code (or IP:port if discovery fails)
-4. Choose where to save the project
-5. Click "Get files"
-
-## How it works
-
-Cairn watches your project folder for changes. When a file changes, it generates a local change event, stores it locally, and broadcasts it to teammates over the local network. It does not claim convergence acknowledgement: “Watching”, “Connected”, “Reconnecting”, and “Offline” describe what Cairn can actually observe.
-
-- Changes are tracked in `.cairn/` inside your project
-- Deleted files go to `.cairn/trash/` for 30 days
-- A shadow git repo runs in the background — export to GitHub PR anytime
-- Checkpoints create recoverable snapshots before destructive restore and conflict-resolution actions
-
-## Shortcuts
-
-- `Cmd/Ctrl + P` — Quick Open
-- `Cmd/Ctrl + K` — Command Palette
-- `Cmd/Ctrl + S` — Save the open file
-- `Cmd/Ctrl + 1–5` — Home, Activity, Files, Team, Conflicts
-- `Cmd/Ctrl + ,` — Settings
-- In Hackathon Mode, `←` / `→` changes the scene when focus is not in an editor
+| Action | Shortcut |
+| :--- | :--- |
+| Quick Open | `Cmd/Ctrl + P` |
+| Command Palette | `Cmd/Ctrl + K` |
+| Save current file | `Cmd/Ctrl + S` |
+| Home, Activity, Files, Team, Conflicts | `Cmd/Ctrl + 1–5` |
+| Settings | `Cmd/Ctrl + ,` |
 
 ## Development
 
-### Requirements
+Cairn is built with Electron, React, TypeScript, Tailwind CSS, Monaco, SQLite, and local peer-to-peer networking. The UI reaches file and networking services through Electron's preload IPC boundary.
 
-- Node.js 22+
-- npm
-
-### Commands
+Requires **Node.js 22+** and **npm**.
 
 ```bash
-npm install         # install dependencies
-npm run dev         # run in development
-npm test            # run tests
-npm run lint        # lint
-npm run build       # build for production
-npm run dist:mac    # build macOS app
-npm run dist:win    # build Windows app (on Windows)
+git clone https://github.com/lol40560/Cairn.git
+cd Cairn
+npm install
+npm run dev
 ```
+
+Useful development commands:
+
+```bash
+npm test          # run tests
+npm run lint      # run ESLint
+npm run build     # compile the app
+npm run dist:mac  # package for macOS
+npm run dist:win  # package for Windows (on Windows)
+```
+
+See the [architecture overview](./ARCHITECTURE.md), [design system](./UI.md), and [release notes](./RELEASE_NOTES.md) for deeper information.
 
 ## Known limitations
 
-- Cairn does not claim confirmed full-project convergence because the protocol has no acknowledgement model.
-- Session rollback remains analysis-only; a safe three-way revert is not implemented.
-- Binary conflict comparison is limited to metadata rather than a visual binary diff.
-- macOS and Windows artifacts are not code-signed yet.
+- **Release candidate:** Current installers are unsigned; macOS Gatekeeper and Windows SmartScreen may display warnings. Review the release before installing.
+- **No convergence proof:** The protocol does not yet acknowledge full-project convergence.
+- **Session rollback:** Session-level rollback is analysis-only; a safe automatic three-way revert has not been implemented.
+- **Binary conflicts:** Binary comparison shows metadata, not a visual content diff.
+- **Recovery scope:** Checkpoints protect against some accidental or conflicting changes but are not a replacement for an external backup.
 
-## Privacy
+For support and known issues, visit [GitHub Issues](https://github.com/lol40560/Cairn/issues).
 
-Cairn is local-first and has no developer-operated telemetry or backend collection. Collaboration and GitHub export transmit data only when you choose to use those features. See [PRIVACY.md](./PRIVACY.md).
+## Privacy, license & acknowledgments
 
-## Legal and license
+No Cairn-operated account service, telemetry pipeline, or cloud backend is required. When you explicitly collaborate or export to GitHub, selected project data is transmitted to peers or GitHub as needed. Read the [Privacy Policy](./PRIVACY.md) for details.
 
-MIT — see [LICENSE](./LICENSE).
+Cairn is open source under the [MIT License](./LICENSE). See the [Terms of Use](./TERMS.md) and [Third-party Notices](./THIRD_PARTY_NOTICES.md).
 
-The [Terms of Use](./TERMS.md) explain the application’s local-first operation without reducing the rights granted by the MIT License. Third-party attributions are in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
+<p align="center">
+  <strong>Built for the way code changes now.</strong><br>
+  <sub>Local-first collaboration · Change awareness · Recovery</sub>
+</p>
