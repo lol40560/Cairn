@@ -2,6 +2,21 @@
 
 All notable changes to Cairn.
 
+## [2.0.1] - 2026-10-19
+
+### Security
+
+- Restrict development renderer URLs to unpackaged development builds and keep production IPC bound to the bundled renderer.
+- Exclude common environment, certificate, and credential files from Git and synchronization; add PKCS#12, PFX, JKS, and keystore coverage.
+- Limit unauthenticated inbound peer connections globally and per remote address.
+- Scan reachable Git history for secrets and audit production dependencies in CI.
+- Restrict release workflow write permissions to the final release job.
+
+### Distribution
+
+- Add optional macOS notarization and Windows code-signing integration for repositories that configure the required credentials.
+- Publish v2.0.1 as an unsigned build; Gatekeeper and SmartScreen warnings remain expected.
+
 ## [2.0.0-rc.3] - 2026-10-19
 
 ### Added

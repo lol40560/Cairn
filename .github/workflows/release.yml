@@ -83,20 +83,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Require Apple signing and notarization credentials for stable releases
-        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
       - run: npm ci
       - run: npm run build
       - run: npx electron-builder --mac --${{ matrix.arch }}
@@ -125,15 +111,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Require Windows code-signing credentials for stable releases
-        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
-        shell: bash
-        env:
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
       - run: npm ci
       - run: npm run dist:win
         env:

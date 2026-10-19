@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.0-rc.3"><img alt="Release v2.0.0-rc.3" src="https://img.shields.io/badge/release-v2.0.0--rc.3-222222?style=flat-square" /></a>
+  <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.1"><img alt="Release v2.0.1" src="https://img.shields.io/badge/release-v2.0.1-222222?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-222222?style=flat-square" /></a>
   <img alt="macOS and Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-222222?style=flat-square" />
 </p>
@@ -29,7 +29,7 @@
   <img src="./docs/screenshots/overview.png" width="100%" alt="Cairn's dark desktop dashboard with project activity and recent changes" />
 </p>
 
-> **Release status:** Cairn v2.0.0-rc.3 is a release candidate. The macOS and Windows installers are not code-signed. See [known limitations](#known-limitations) before relying on it for critical work.
+> **Release status:** Cairn v2.0.1 installers are not code-signed. See [known limitations](#known-limitations) before relying on it for critical work.
 
 ## Why Cairn?
 
@@ -96,7 +96,7 @@ Potential overlap is different from a confirmed conflict. Cairn helps distinguis
 
 ## Quick start
 
-**1. Download the app.** Get the latest available installer from [GitHub Releases](https://github.com/lol40560/Cairn/releases). Choose the macOS `.dmg` for your architecture or the Windows `Cairn-Setup-*.exe`. Current release-candidate builds are unsigned.
+**1. Download the app.** Get the latest available installer from [GitHub Releases](https://github.com/lol40560/Cairn/releases). Choose the macOS `.dmg` for your architecture or the Windows `Cairn-Setup-*.exe`. Current builds are unsigned.
 
 **2. Open a project.** Launch Cairn and choose a project folder. Its dashboard gives you a place to inspect activity and files.
 
@@ -165,7 +165,7 @@ See the [architecture overview](./ARCHITECTURE.md), [design system](./UI.md), an
 
 ## Known limitations
 
-- **Release candidate:** Current installers are unsigned; macOS Gatekeeper and Windows SmartScreen may display warnings. Review the release before installing.
+- **Unsigned installers:** Current installers are unsigned; macOS Gatekeeper and Windows SmartScreen may display warnings. Review the release before installing.
 - **No convergence proof:** The protocol does not yet acknowledge full-project convergence.
 - **Session rollback:** Session-level rollback is analysis-only; a safe automatic three-way revert has not been implemented.
 - **Binary conflicts:** Binary comparison shows metadata, not a visual content diff.
