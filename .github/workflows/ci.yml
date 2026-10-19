@@ -20,6 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan current code and reachable Git history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -30,6 +36,8 @@ jobs:
           sudo apt-get install -y build-essential python3
       - name: Install dependencies (skip native scripts)
         run: npm ci --ignore-scripts
+      - name: Check production dependency advisories
+        run: npm audit --omit=dev --audit-level=high
       - name: Verify legal artifacts
         run: npm run verify:legal
       - name: Verify release documentation

@@ -97,9 +97,8 @@
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.icns",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": true,
       "extendInfo": {
         "NSLocalNetworkUsageDescription": "Cairn 需要访问局域网以发现同一房间的队友。",
         "NSBonjourServices": [
@@ -107,6 +106,7 @@
         ]
       }
     },
+    "afterSign": "scripts/notarize.mjs",
     "win": {
       "target": [
         {
@@ -176,6 +176,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.2",
     "@electron/rebuild": "^4.2.0",
     "@eslint/js": "^10.0.0",
     "@tailwindcss/vite": "^4.3.3",

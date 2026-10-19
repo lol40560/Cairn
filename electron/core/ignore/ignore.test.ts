@@ -52,6 +52,9 @@ describe('IgnoreMatcher', () => {
 
     expect(matcher.isIgnored('.env')).toBe(true)
     expect(matcher.isIgnored('config/.env.production')).toBe(true)
+    expect(matcher.isIgnored('certs/distribution.p12')).toBe(true)
+    expect(matcher.isIgnored('certs/distribution.pfx')).toBe(true)
+    expect(matcher.isIgnored('android/release.keystore')).toBe(true)
     expect(matcher.isIgnored('.env.example')).toBe(false)
   })
 

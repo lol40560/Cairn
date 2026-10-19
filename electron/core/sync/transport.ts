@@ -27,6 +27,8 @@ export { MAX_SYNC_MESSAGE_BYTES } from './protocol'
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const HEARTBEAT_TIMEOUT_MS = 60_000
 export const AUTH_TIMEOUT_MS = 10_000
+export const MAX_INBOUND_CONNECTIONS = 32
+export const MAX_INBOUND_CONNECTIONS_PER_ADDRESS = 4
 
 export interface TransportOptions {
   /** 仅用于受控环境下的测试。 */
@@ -35,6 +37,10 @@ export interface TransportOptions {
   heartbeatTimeoutMs?: number
   /** 认证等待时长；仅用于受控环境下的测试。 */
   authTimeoutMs?: number
+  /** 入站 TCP 连接上限，防止认证前连接耗尽本机资源。 */
+  maxInboundConnections?: number
+  /** 单一远端地址的入站 TCP 连接上限。 */
+  maxInboundConnectionsPerAddress?: number
 }
 
 export interface PeerEndpoint {
@@ -75,6 +81,9 @@ export class Transport extends EventEmitter {
   private readonly secureSessions = new Map<Socket, SecureSession>()
   private readonly usedNonces = new Set<string>()
   private readonly sockets = new Set<Socket>()
+  private readonly inboundSockets = new Set<Socket>()
+  private readonly inboundSocketAddresses = new Map<Socket, string>()
+  private readonly inboundAddressCounts = new Map<string, number>()
   private identity: ProjectIdentity | undefined
   private roomCode = ''
   private server: Server | undefined
@@ -102,7 +111,7 @@ export class Transport extends EventEmitter {
       }
     }
 
-    const server = createServer((socket) => this.attachSocket(socket))
+    const server = createServer((socket) => this.acceptInboundSocket(socket))
     this.server = server
     server.on('error', (error) => this.emit('error', error))
 
@@ -138,6 +147,9 @@ export class Transport extends EventEmitter {
     this.socketEndpoints.clear()
     this.socketAttemptIds.clear()
     this.sockets.clear()
+    this.inboundSockets.clear()
+    this.inboundSocketAddresses.clear()
+    this.inboundAddressCounts.clear()
     this.usedNonces.clear()
     this.secureSessions.clear()
 
@@ -211,6 +223,22 @@ export class Transport extends EventEmitter {
       this.removeSocket(socket)
     })
     // 入站连接必须先由对端发起认证；出站连接会在 TCP connect 后发起认证。
+  }
+
+  private acceptInboundSocket(socket: Socket): void {
+    const address = socket.remoteAddress ?? 'unknown'
+    const totalLimit = this.options.maxInboundConnections ?? MAX_INBOUND_CONNECTIONS
+    const perAddressLimit = this.options.maxInboundConnectionsPerAddress ?? MAX_INBOUND_CONNECTIONS_PER_ADDRESS
+    const addressCount = this.inboundAddressCounts.get(address) ?? 0
+    if (this.inboundSockets.size >= totalLimit || addressCount >= perAddressLimit) {
+      socket.destroy()
+      return
+    }
+
+    this.inboundSockets.add(socket)
+    this.inboundSocketAddresses.set(socket, address)
+    this.inboundAddressCounts.set(address, addressCount + 1)
+    this.attachSocket(socket)
   }
 
   private processBuffer(
@@ -577,6 +605,15 @@ export class Transport extends EventEmitter {
     this.secureSessions.delete(socket)
     this.sockets.delete(socket)
     this.socketLastSeen.delete(socket)
+    if (this.inboundSockets.delete(socket)) {
+      const address = this.inboundSocketAddresses.get(socket)
+      this.inboundSocketAddresses.delete(socket)
+      if (address) {
+        const nextCount = (this.inboundAddressCounts.get(address) ?? 1) - 1
+        if (nextCount <= 0) this.inboundAddressCounts.delete(address)
+        else this.inboundAddressCounts.set(address, nextCount)
+      }
+    }
     const remotePeerId = this.socketPeerIds.get(socket)
     const endpoint = this.socketEndpoints.get(socket)
     const attemptId = this.socketAttemptIds.get(socket)

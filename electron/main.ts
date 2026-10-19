@@ -134,7 +134,9 @@ export function isTrustedIpcSender(event: Pick<IpcMainInvokeEvent, 'sender' | 's
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false
 
   const url = event.senderFrame.url
-  const developmentUrl = process.env.ELECTRON_RENDERER_URL
+  // A packaged app must only trust its bundled file renderer. Environment
+  // variables are attacker-controlled input in a local desktop threat model.
+  const developmentUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
   if (developmentUrl) {
     try {
       return new URL(url).origin === new URL(developmentUrl).origin
@@ -1346,8 +1348,9 @@ export function createWindow(): BrowserWindow {
     }
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void window.loadURL(process.env.ELECTRON_RENDERER_URL)
+  const developmentUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
+  if (developmentUrl) {
+    void window.loadURL(developmentUrl)
   } else {
     void window.loadFile(join(__dirname, '../renderer/index.html'))
   }

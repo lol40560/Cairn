@@ -626,6 +626,26 @@ describe('transport', () => {
     client.destroy()
   })
 
+  it('limits unauthenticated inbound connections per remote address', async () => {
+    const receiver = new Transport('receiver', {
+      maxInboundConnections: 1,
+      maxInboundConnectionsPerAddress: 1,
+    })
+    transports.push(receiver)
+    const port = await receiver.listen()
+    const first = await connectRawSocket(port)
+    const second = new Socket()
+    rawSockets.push(second)
+    const closed = new Promise<void>((resolve) => {
+      second.once('error', () => undefined)
+      second.once('close', () => resolve())
+    })
+    second.connect(port, '127.0.0.1')
+    await closed
+    expect(first.destroyed).toBe(false)
+    first.destroy()
+  })
+
   it('收到 ping 时回复 pong', async () => {
     const receiver = new Transport('receiver')
     transports.push(receiver)

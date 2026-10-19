@@ -7,3 +7,19 @@ coverage/
 .vibeswarm/
 release/
 build/icon.iconset/
+
+# Environment variables and credentials. Keep example templates trackable.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+.npmrc
+.netrc
+credentials.json
+id_rsa
+id_ed25519

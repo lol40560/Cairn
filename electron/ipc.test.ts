@@ -93,6 +93,7 @@ const mocks = vi.hoisted(() => {
     BrowserWindow,
     app: {
       getPath: vi.fn(() => '/tmp'),
+      isPackaged: false,
       on: vi.fn(),
       quit: vi.fn(),
       setName: vi.fn(),
@@ -257,6 +258,7 @@ beforeEach(() => {
   mocks.window.once.mockClear()
   mocks.window.show.mockClear()
   mocks.window.webContents.send.mockClear()
+  mocks.app.isPackaged = false
   mocks.contextBridge.exposeInMainWorld.mockClear()
   mocks.createOplog.mockClear()
   mocks.createShadowGit.mockClear()
@@ -967,6 +969,25 @@ describe('IPC bridge', () => {
         sandbox: true,
       }),
     }))
+  })
+
+  it('never loads or trusts a development renderer URL in a packaged app', async () => {
+    const previousUrl = process.env.ELECTRON_RENDERER_URL
+    process.env.ELECTRON_RENDERER_URL = 'https://attacker.example'
+    mocks.app.isPackaged = true
+    try {
+      const main = await loadMain()
+      main.createWindow()
+      expect(mocks.window.loadFile).toHaveBeenCalled()
+      expect(mocks.window.loadURL).not.toHaveBeenCalled()
+      expect(main.isTrustedIpcSender({
+        sender: mocks.window.webContents,
+        senderFrame: { url: 'https://attacker.example/renderer' },
+      } as never)).toBe(false)
+    } finally {
+      if (previousUrl === undefined) delete process.env.ELECTRON_RENDERER_URL
+      else process.env.ELECTRON_RENDERER_URL = previousUrl
+    }
   })
 
   it('regression: navigation, popup, and web permissions are denied by default', async () => {
