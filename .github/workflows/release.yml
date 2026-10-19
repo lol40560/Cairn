@@ -85,13 +85,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --mac --${{ matrix.arch }}
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # This release intentionally ships unsigned. Do not pass empty signing
+      # secrets: electron-builder interprets an empty CSC_LINK as a file path.
+      - run: npx electron-builder --mac --${{ matrix.arch }} --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.arch }}-artifacts
@@ -112,10 +108,9 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run dist:win
-        env:
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+      # Keep release publication in the final release job, rather than letting
+      # electron-builder infer publication from the git tag.
+      - run: npm run native:electron && npm run build && npx electron-builder --win --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: win-artifacts
