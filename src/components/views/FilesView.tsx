@@ -16,8 +16,9 @@ import { getConflictRisk, remoteAuthorForRisk } from '@/lib/conflictIntelligence
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { CAIRN_MONACO_THEME } from '@/lib/monaco-theme'
 import { useMonacoReady } from '@/lib/useMonacoReady'
+import { useProfile } from '@/lib/profile'
 import { useAppStore } from '@/store/appStore'
-import type { IpcResult, Op, ProjectFileContent, ProjectFileEntry } from '@/types/cairn'
+import type { CollaborationMessage, EditClaim, IpcResult, Op, ProjectFileContent, ProjectFileEntry } from '@/types/cairn'
 
 function getIpcData<T>(result: IpcResult<T>): T {
   if (!result.ok) throw result.error
@@ -28,6 +29,20 @@ function formatRecentTime(timestamp: number, t: ReturnType<typeof useTranslation
   const minutes = Math.floor(Math.max(0, Date.now() - timestamp) / 60_000)
   if (minutes < 1) return t('justNow')
   return minutes === 1 ? t('minuteAgo') : t('minutesAgo').replace('{n}', String(minutes))
+}
+
+const CLAIM_ACTOR_STORAGE_KEY = 'cairn.edit-claim-actor.v1'
+
+function localActorId(): string {
+  try {
+    const existing = window.localStorage.getItem(CLAIM_ACTOR_STORAGE_KEY)
+    if (existing) return existing
+    const id = globalThis.crypto?.randomUUID?.() ?? `editor-${Date.now()}`
+    window.localStorage.setItem(CLAIM_ACTOR_STORAGE_KEY, id)
+    return id
+  } catch {
+    return 'cairn-local-editor'
+  }
 }
 
 interface FilesViewProps {
@@ -52,6 +67,7 @@ export function detectMisleadingContent(filePath: string, content: string): 'rtf
 /** 项目文本文件浏览与编辑器；所有读取和保存均经受限 IPC。 */
 export function FilesView({ files: filesOverride, selectedPath: selectedPathOverride }: FilesViewProps) {
   const { t } = useTranslation()
+  const { profile } = useProfile()
   const folder = useAppStore((state) => state.folder)
   const fileFilter = useAppStore((state) => state.fileFilter)
   const storedProjectFiles = useAppStore((state) => state.projectFiles)
@@ -79,6 +95,9 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
   const [contextMenu, setContextMenu] = useState<{ items: ContextMenuItem[]; x: number; y: number } | undefined>()
   const [presenceClock, setPresenceClock] = useState(() => Date.now())
   const [reviewOp, setReviewOp] = useState<Op | undefined>()
+  const [editClaims, setEditClaims] = useState<EditClaim[]>([])
+  const [collaborationMessages, setCollaborationMessages] = useState<CollaborationMessage[]>([])
+  const [actorId] = useState(() => localActorId())
   const monacoReady = useMonacoReady(Boolean(selectedFile))
   const loadRequestId = useRef(0)
   const initialFolder = useRef(folder)
@@ -99,6 +118,15 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
   const selectedRisk = selectedFilePath
     ? getConflictRisk({ filePath: selectedFilePath, ops, conflicts, dirty: isDirty, now: presenceClock })
     : undefined
+  const selectedActiveClaim = useMemo(
+    () => editClaims.find((claim) => claim.status === 'active' && claim.path === selectedFilePath),
+    [editClaims, selectedFilePath],
+  )
+  const mySelectedClaim = selectedActiveClaim?.owner.id === actorId ? selectedActiveClaim : undefined
+  const otherSelectedClaim = selectedActiveClaim?.owner.id !== actorId ? selectedActiveClaim : undefined
+  const editClaimOwners = useMemo(() => Object.fromEntries(
+    editClaims.filter((claim) => claim.status === 'active').map((claim) => [claim.path, claim.owner.name]),
+  ), [editClaims])
   const reviewRemoteOp = selectedFilePath
     ? ops.filter((op) => op.filePath === selectedFilePath && op.source === 'remote').sort((a, b) => b.timestamp - a.timestamp)[0]
     : undefined
@@ -107,6 +135,33 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
     const timer = window.setInterval(() => setPresenceClock(Date.now()), 30_000)
     return () => window.clearInterval(timer)
   }, [])
+
+  const refreshEditClaims = useCallback(async (): Promise<void> => {
+    try {
+      const [claims, messages] = await Promise.all([
+        window.cairn.listEditClaims(),
+        window.cairn.listCollaborationMessages(),
+      ])
+      setEditClaims(getIpcData(claims))
+      setCollaborationMessages(getIpcData(messages))
+    } catch (error) {
+      console.error('[cairn:claims] unable to load edit claims', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshEditClaims(), 0)
+    const unsubscribe = window.cairn.onEditClaimsChanged((claims) => {
+      setEditClaims(claims)
+      void window.cairn.listCollaborationMessages().then((result) => {
+        if (result.ok) setCollaborationMessages(result.data)
+      })
+    })
+    return () => {
+      window.clearTimeout(timer)
+      unsubscribe()
+    }
+  }, [refreshEditClaims])
 
   const loadFiles = useCallback(async (): Promise<void> => {
     try {
@@ -206,7 +261,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
     setSaving(true)
     setLastSaveError(undefined)
     try {
-      getIpcData(await window.cairn.saveProjectFile(selectedFilePath, editorContent))
+      getIpcData(await window.cairn.saveProjectFile(selectedFilePath, editorContent, actorId))
       setSavedContent(editorContent)
       setSelectedFile((file) => file ? { ...file, content: editorContent } : file)
       setIsDirty(false)
@@ -219,7 +274,47 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
     } finally {
       setSaving(false)
     }
-  }, [editorContent, isDirty, saving, selectedFilePath, t])
+  }, [actorId, editorContent, isDirty, saving, selectedFilePath, t])
+
+  const startEditClaim = useCallback(async (): Promise<void> => {
+    if (!selectedFilePath || !selectedFile || mySelectedClaim) return
+    const conflicting = editClaims.find((claim) => claim.status === 'active' && claim.path === selectedFilePath && claim.owner.id !== actorId)
+    if (conflicting) {
+      setToast({ message: t('editClaimConflict').replace('{owner}', conflicting.owner.name), tone: 'error' })
+      return
+    }
+    try {
+      const claim = getIpcData(await window.cairn.createEditClaim({
+        path: selectedFilePath,
+        owner: { id: actorId, kind: 'human', name: profile.displayName },
+        summary: 'Editing in Cairn',
+        baseContent: selectedFile.content,
+      }))
+      setEditClaims((claims) => [...claims.filter((item) => item.id !== claim.id), claim])
+    } catch (error) {
+      console.error('[cairn:claims] unable to create edit claim', error)
+      setToast(normalizeError(error, t))
+    }
+  }, [actorId, editClaims, mySelectedClaim, profile.displayName, selectedFile, selectedFilePath, t])
+
+  const finishEditClaim = useCallback(async (): Promise<void> => {
+    if (!mySelectedClaim) return
+    try {
+      getIpcData(await window.cairn.completeEditClaim(mySelectedClaim.id, actorId))
+      await refreshEditClaims()
+    } catch (error) {
+      setToast(normalizeError(error, t))
+    }
+  }, [actorId, mySelectedClaim, refreshEditClaims, t])
+
+  useEffect(() => {
+    if (!mySelectedClaim) return undefined
+    const timer = window.setInterval(() => {
+      void window.cairn.heartbeatEditClaim(mySelectedClaim.id, actorId)
+        .then((result) => { if (!result.ok) console.warn('[cairn:claims] heartbeat failed', result.error) })
+    }, 120_000)
+    return () => window.clearInterval(timer)
+  }, [actorId, mySelectedClaim])
 
   useEffect(() => {
     if (!justSaved) return undefined
@@ -288,6 +383,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
             {!saving && !isDirty && lastSaveError ? <span className="files-status-error">{lastSaveError}</span> : null}
             {!saving && !isDirty && !lastSaveError && selectedFilePath ? <span className={`files-status-saved${justSaved ? ' is-fresh' : ''}`}>{justSaved ? `✓ ${t('filesSaved')}` : t('filesSaved')}</span> : null}
           </div>
+          {mySelectedClaim ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void finishEditClaim()}>{t('editClaimFinish')}</button> : null}
           {selectedFilePath ? (
             <button
               className={`btn btn-sm ${isDirty ? 'btn-primary' : ''}`}
@@ -320,6 +416,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
             filter={fileFilter}
             selectedPath={selectedFilePath}
             conflictRisks={risksByPath}
+            editClaimOwners={editClaimOwners}
             onContextMenu={(event, path) => setContextMenu({
               x: event.clientX,
               y: event.clientY,
@@ -359,6 +456,20 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
               {selectedRisk.level === 'potential-overlap' && reviewRemoteOp ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setReviewOp(reviewRemoteOp)}>{t('reviewChanges')}</button> : null}
             </div>
           ) : null}
+          {selectedFilePath && (mySelectedClaim || otherSelectedClaim) ? (
+            <div className={`file-edit-claim${otherSelectedClaim ? ' blocked' : ''}`} role="status">
+              {otherSelectedClaim
+                ? t('editClaimConflict').replace('{owner}', otherSelectedClaim.owner.name)
+                : t('editClaimMine')}
+            </div>
+          ) : null}
+          {collaborationMessages.length > 0 ? (
+            <section aria-label="Collaboration messages" className="collaboration-feed">
+              {collaborationMessages.slice(0, 3).map((message) => (
+                <p key={message.id}>{message.body}</p>
+              ))}
+            </section>
+          ) : null}
           {selectedFile ? (
             <div className="files-editor">
               {contentMismatch ? (
@@ -382,6 +493,7 @@ export function FilesView({ files: filesOverride, selectedPath: selectedPathOver
                   }}
                   onChange={(value) => {
                     const content = value ?? ''
+                    if (!mySelectedClaim) void startEditClaim()
                     setEditorContent(content)
                     setIsDirty(content !== savedContent)
                   }}

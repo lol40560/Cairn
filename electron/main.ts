@@ -9,6 +9,8 @@ import { createShadowGit, exportPR } from './core/git'
 import type { ExportPRInput, PRExportResult, ShadowGit } from './core/git'
 import { ConflictsManager } from './core/conflicts'
 import type { ConflictRecord, ConflictResolution } from './core/conflicts'
+import { EditClaimsManager } from './core/edit-claims'
+import type { CollaborationMessage, CreateEditClaimInput, EditClaim } from './core/edit-claims'
 import { BlobStore } from './core/blobs'
 import { CheckpointManager } from './core/checkpoints'
 import type { Checkpoint, CheckpointComparison, CheckpointFileContents, CheckpointSource } from './core/checkpoints'
@@ -47,6 +49,7 @@ interface ActiveProject {
   watcher: ProjectWatcher
   trash: TrashManager
   conflicts: ConflictsManager
+  editClaims: EditClaimsManager
 }
 
 export interface LastSession {
@@ -59,6 +62,7 @@ export interface AppSettings {
   autoStartWatching: boolean
   rememberLastFolder: boolean
   trashRetentionDays: number
+  strictEditClaims: boolean
 }
 
 export interface OnboardingState {
@@ -363,7 +367,7 @@ function getProjectsManager(): ProjectsManager {
 }
 
 const defaultLastSession: LastSession = { folder: '', updatedAt: 0, watching: false }
-const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 }
+const defaultSettings: AppSettings = { autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30, strictEditClaims: false }
 const defaultOnboardingState: OnboardingState = { completed: false }
 
 function normalizeTrashRetentionDays(value: unknown): number {
@@ -474,6 +478,7 @@ export async function getSettings(): Promise<AppSettings> {
           ? raw.rememberLastFolder
           : defaultSettings.rememberLastFolder,
       trashRetentionDays: normalizeTrashRetentionDays(raw.trashRetentionDays),
+      strictEditClaims: typeof raw.strictEditClaims === 'boolean' ? raw.strictEditClaims : defaultSettings.strictEditClaims,
     }
   } catch {
     return defaultSettings
@@ -495,6 +500,10 @@ export async function updateSettings(partial: Partial<AppSettings>): Promise<voi
       partial.trashRetentionDays === undefined
         ? current.trashRetentionDays
         : normalizeTrashRetentionDays(partial.trashRetentionDays),
+    strictEditClaims:
+      typeof partial.strictEditClaims === 'boolean'
+        ? partial.strictEditClaims
+        : current.strictEditClaims,
   }
   await mkdir(app.getPath('userData'), { recursive: true })
   await writeFile(settingsPath(), JSON.stringify(next), 'utf8')
@@ -728,10 +737,20 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   sync.on('conflictRecord', (conflict: ConflictRecord) =>
     sendToWindow('cairn:conflict', conflict),
   )
-  sync.on('peerJoined', broadcastPeers)
+  sync.on('peerJoined', (peer) => {
+    broadcastPeers()
+    void project.editClaims.list().then((claims) => {
+      for (const claim of claims) {
+        if (claim.status === 'active') sync.send(peer.peerId, { type: 'edit-claim', claim })
+      }
+    })
+  })
   sync.on('peerLeft', broadcastPeers)
   sync.on('identityMismatch', (info) => sendToWindow('cairn:identity-mismatch', info))
   sync.on('peerStatusChanged', (state) => sendToWindow('cairn:peer-status-changed', state))
+  sync.on('editClaim', (claim: EditClaim) => {
+    void project.editClaims.receiveRemote(claim).catch((error) => console.error(`[cairn:claims] unable to accept remote claim: ${error.message}`))
+  })
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 
   try {
@@ -970,6 +989,7 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
     const oplog = createOplog(folder)
     const trash = new TrashManager(folder)
     const conflicts = new ConflictsManager(folder)
+    const editClaims = new EditClaimsManager(folder)
     const watcher = new ProjectWatcher(folder, oplog, {}, trash)
     const shadow = createShadowGit(folder)
 
@@ -989,7 +1009,11 @@ export async function startWatching(folder: string, fileLimit = MAX_WATCHED_FILE
       if (cleaned > 0) {
         console.info(`[cairn:trash] 已自动清理 ${cleaned} 个过期条目`)
       }
-      activeProject = { root: folder, oplog, watcher, trash, conflicts }
+      editClaims.on('changed', (claim: EditClaim, local: boolean) => {
+        void editClaims.list().then((claims) => sendToWindow('cairn:edit-claims-changed', claims))
+        if (local) activeRoom?.sync.announceEditClaim(claim)
+      })
+      activeProject = { root: folder, oplog, watcher, trash, conflicts, editClaims }
       activeCheckpointManager = new CheckpointManager(folder)
       activeShadow = shadow
       await writeLastSession({ folder, updatedAt: Date.now(), watching: true })
@@ -1142,6 +1166,7 @@ export async function readProjectFile(filePath: string): Promise<ProjectFileCont
 export async function saveProjectFile(
   filePath: string,
   content: string,
+  actorId = 'cairn-local-editor',
 ): Promise<{ saved: true; mtime: number }> {
   if (typeof content !== 'string') {
     throw new AppError('Invalid arguments', 'config')
@@ -1156,9 +1181,43 @@ export async function saveProjectFile(
     throw new AppError('该文件不能在 Cairn 中保存', 'permission')
   }
 
+  if (!activeProject) throw new AppError('请先选择项目', 'config')
+  await activeProject.editClaims.assertWritable(filePath, actorId, (await getSettings()).strictEditClaims)
+
   await writeFile(absolutePath, content, 'utf8')
   const metadata = await stat(absolutePath)
   return { saved: true, mtime: metadata.mtimeMs }
+}
+
+/** 列出当前项目的协作编辑宣告与系统讯息。 */
+export async function listEditClaims(): Promise<EditClaim[]> {
+  return activeProject ? activeProject.editClaims.list() : []
+}
+
+export async function listCollaborationMessages(): Promise<CollaborationMessage[]> {
+  return activeProject ? activeProject.editClaims.listMessages() : []
+}
+
+export async function createEditClaim(input: CreateEditClaimInput): Promise<EditClaim> {
+  if (!activeProject) throw new AppError('请先选择项目', 'config')
+  await safeActiveProjectFilePath(input.path)
+  const claim = await activeProject.editClaims.create(input)
+  return claim
+}
+
+export async function heartbeatEditClaim(id: string, actorId: string): Promise<EditClaim> {
+  if (!activeProject) throw new AppError('请先选择项目', 'config')
+  return activeProject.editClaims.heartbeat(id, actorId)
+}
+
+export async function completeEditClaim(id: string, actorId: string): Promise<void> {
+  if (!activeProject) throw new AppError('请先选择项目', 'config')
+  await activeProject.editClaims.complete(id, actorId)
+}
+
+export async function cancelEditClaim(id: string, actorId: string): Promise<void> {
+  if (!activeProject) throw new AppError('请先选择项目', 'config')
+  await activeProject.editClaims.cancel(id, actorId)
 }
 
 /** 返回当前项目中可恢复的已删除文件。 */
@@ -1257,8 +1316,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:readProjectFile', wrapIpcHandler(guardRealWorkspaceAction((filePath: string) => readProjectFile(filePath))))
   ipcMain.handle(
     'cairn:saveProjectFile',
-    wrapIpcHandler(guardRealWorkspaceAction((filePath: string, content: string) => saveProjectFile(filePath, content))),
+    wrapIpcHandler(guardRealWorkspaceAction((filePath: string, content: string, actorId?: string) => saveProjectFile(filePath, content, actorId))),
   )
+  ipcMain.handle('cairn:listEditClaims', wrapIpcHandler(listEditClaims))
+  ipcMain.handle('cairn:listCollaborationMessages', wrapIpcHandler(listCollaborationMessages))
+  ipcMain.handle('cairn:createEditClaim', wrapIpcHandler(guardRealWorkspaceAction((input: CreateEditClaimInput) => createEditClaim(input))))
+  ipcMain.handle('cairn:heartbeatEditClaim', wrapIpcHandler(guardRealWorkspaceAction((id: string, actorId: string) => heartbeatEditClaim(id, actorId))))
+  ipcMain.handle('cairn:completeEditClaim', wrapIpcHandler(guardRealWorkspaceAction((id: string, actorId: string) => completeEditClaim(id, actorId))))
+  ipcMain.handle('cairn:cancelEditClaim', wrapIpcHandler(guardRealWorkspaceAction((id: string, actorId: string) => cancelEditClaim(id, actorId))))
   ipcMain.handle('cairn:createRoom', wrapIpcHandler(guardRealWorkspaceAction(createRoom)))
   ipcMain.handle('cairn:joinRoom', wrapIpcHandler(guardRealWorkspaceAction((roomCode: string) => joinRoom(roomCode))))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(guardRealWorkspaceAction(leaveRoom)))

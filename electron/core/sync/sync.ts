@@ -259,6 +259,11 @@ export class Sync extends EventEmitter {
     }
   }
 
+  /** Broadcast a small collaboration claim over the existing authenticated transport. */
+  announceEditClaim(claim: Extract<SyncMessage, { type: 'edit-claim' }>['claim']): void {
+    if (this.started) this.broadcast({ type: 'edit-claim', claim })
+  }
+
   private bindEvents(): void {
     this.discovery.on('peer', this.handlePeer)
     this.discovery.on('peerLeft', this.handlePeerLeft)
@@ -498,6 +503,11 @@ export class Sync extends EventEmitter {
 
     if (message.type === 'identity-ok') {
       console.info(`[cairn:sync] identity 验证通过：${peerId}`)
+      return
+    }
+
+    if (message.type === 'edit-claim') {
+      this.emit('editClaim', message.claim, peerId)
       return
     }
 

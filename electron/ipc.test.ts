@@ -299,6 +299,7 @@ describe('IPC bridge', () => {
     expect(await main.getSettings()).toEqual({
       autoStartWatching: false,
       rememberLastFolder: true,
+      strictEditClaims: false,
       trashRetentionDays: 30,
     })
 
@@ -306,7 +307,7 @@ describe('IPC bridge', () => {
     await writeFile(join(root, 'settings.json'), '{invalid json', 'utf8')
 
     expect(await main.readLastSession()).toEqual({ folder: '', updatedAt: 0, watching: false })
-    expect(await main.getSettings()).toEqual({ autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30 })
+    expect(await main.getSettings()).toEqual({ autoStartWatching: true, rememberLastFolder: true, trashRetentionDays: 30, strictEditClaims: false })
   })
 
   it('首次引导状态缺失时未完成，完成后可读回并可重新开启', async () => {
@@ -518,15 +519,18 @@ describe('IPC bridge', () => {
     expect([...mocks.handlers.keys()].sort()).toEqual([
       'cairn:addProject',
       'cairn:cancelDownload',
+      'cairn:cancelEditClaim',
       'cairn:checkFolder',
       'cairn:checkProjectAvailability',
       'cairn:clearGithubConfig',
       'cairn:clearLastSession',
       'cairn:compareCheckpoint',
+      'cairn:completeEditClaim',
       'cairn:completeOnboarding',
       'cairn:connectToAddress',
       'cairn:copyToClipboard',
       'cairn:createCheckpoint',
+      'cairn:createEditClaim',
       'cairn:createRoom',
       'cairn:deleteCheckpoint',
       'cairn:deleteConflict',
@@ -545,10 +549,13 @@ describe('IPC bridge', () => {
       'cairn:getProjectIdentity',
       'cairn:getSettings',
       'cairn:getTrashRetentionDays',
+      'cairn:heartbeatEditClaim',
       'cairn:joinRoom',
       'cairn:leaveRoom',
       'cairn:listCheckpoints',
+      'cairn:listCollaborationMessages',
       'cairn:listConflicts',
+      'cairn:listEditClaims',
       'cairn:listPeers',
       'cairn:listProjectFiles',
       'cairn:listProjects',
@@ -1016,15 +1023,18 @@ describe('IPC bridge', () => {
     expect(Object.keys(exposed?.[1] as object).sort()).toEqual([
       'addProject',
       'cancelDownload',
+      'cancelEditClaim',
       'checkFolder',
       'checkProjectAvailability',
       'clearGithubConfig',
       'clearLastSession',
       'compareCheckpoint',
+      'completeEditClaim',
       'completeOnboarding',
       'connectToAddress',
       'copyToClipboard',
       'createCheckpoint',
+      'createEditClaim',
       'createRoom',
       'deleteCheckpoint',
       'deleteConflict',
@@ -1043,10 +1053,13 @@ describe('IPC bridge', () => {
       'getProjectIdentity',
       'getSettings',
       'getTrashRetentionDays',
+      'heartbeatEditClaim',
       'joinRoom',
       'leaveRoom',
       'listCheckpoints',
+      'listCollaborationMessages',
       'listConflicts',
+      'listEditClaims',
       'listPeers',
       'listProjectFiles',
       'listProjects',
@@ -1055,6 +1068,7 @@ describe('IPC bridge', () => {
       'listTrash',
       'onConflict',
       'onDownloadProgress',
+      'onEditClaimsChanged',
       'onIdentityMismatch',
       'onOp',
       'onPeerStatusChanged',

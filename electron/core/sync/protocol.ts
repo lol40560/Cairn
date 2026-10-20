@@ -263,6 +263,7 @@ export type SyncMessage =
   | { type: 'blob-chunk'; hash: string; index: number; data: string }
   | { type: 'identity-mismatch'; reason: string; hostIdentity: ProjectIdentity; yourIdentity: ProjectIdentity }
   | { type: 'identity-ok' }
+  | { type: 'edit-claim'; claim: { id: string; path: string; owner: { id: string; name: string; kind: 'human' | 'agent' }; summary: string; status: 'active' | 'completed' | 'cancelled' | 'expired'; baseHash: string; createdAt: number; updatedAt: number; expiresAt: number; releasedAt?: number } }
   | { type: 'ping' }
   | { type: 'pong' }
 
@@ -329,6 +330,8 @@ export function isSyncMessage(message: unknown): message is SyncMessage {
       )
     case 'identity-ok':
       return true
+    case 'edit-claim':
+      return isEditClaimMessage(candidate.claim)
     case 'auth-request':
       return candidate.authVersion === AUTH_PROTOCOL_VERSION && typeof candidate.peerId === 'string' && typeof candidate.roomHash === 'string' && typeof candidate.clientNonce === 'string'
     case 'auth-challenge':
@@ -407,4 +410,17 @@ function isNonNegativeNumber(value: unknown): value is number {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return isNonNegativeNumber(value)
+}
+
+function isEditClaimMessage(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const claim = value as Record<string, unknown>
+  const owner = claim.owner
+  return typeof claim.id === 'string' && typeof claim.path === 'string' && typeof claim.summary === 'string'
+    && typeof claim.baseHash === 'string' && typeof claim.createdAt === 'number' && typeof claim.updatedAt === 'number'
+    && typeof claim.expiresAt === 'number' && ['active', 'completed', 'cancelled', 'expired'].includes(String(claim.status))
+    && typeof owner === 'object' && owner !== null
+    && typeof (owner as Record<string, unknown>).id === 'string' && typeof (owner as Record<string, unknown>).name === 'string'
+    && ['human', 'agent'].includes(String((owner as Record<string, unknown>).kind))
+    && (claim.releasedAt === undefined || typeof claim.releasedAt === 'number')
 }

@@ -120,6 +120,36 @@ export interface AppSettings {
   autoStartWatching: boolean
   rememberLastFolder: boolean
   trashRetentionDays: number
+  strictEditClaims: boolean
+}
+
+export type EditClaimStatus = 'active' | 'completed' | 'cancelled' | 'expired'
+
+export interface ClaimOwner {
+  id: string
+  name: string
+  kind: 'human' | 'agent'
+}
+
+export interface EditClaim {
+  id: string
+  path: string
+  owner: ClaimOwner
+  summary: string
+  status: EditClaimStatus
+  baseHash: string
+  createdAt: number
+  updatedAt: number
+  expiresAt: number
+  releasedAt?: number
+}
+
+export interface CollaborationMessage {
+  id: string
+  claimId?: string
+  type: 'claim-created' | 'claim-completed' | 'claim-cancelled' | 'claim-expired' | 'conflict'
+  body: string
+  createdAt: number
 }
 
 export interface TrashEntry {
@@ -217,7 +247,14 @@ export interface CairnApi {
   deleteCheckpoint(id: string): Promise<IpcResult<void>>
   listProjectFiles(): Promise<IpcResult<{ files: ProjectFileEntry[]; truncated: boolean }>>
   readProjectFile(path: string): Promise<IpcResult<ProjectFileContent>>
-  saveProjectFile(path: string, content: string): Promise<IpcResult<{ saved: boolean; mtime: number }>>
+  saveProjectFile(path: string, content: string, actorId?: string): Promise<IpcResult<{ saved: boolean; mtime: number }>>
+  listEditClaims(): Promise<IpcResult<EditClaim[]>>
+  listCollaborationMessages(): Promise<IpcResult<CollaborationMessage[]>>
+  createEditClaim(input: { path: string; owner: ClaimOwner; summary: string; baseContent: string }): Promise<IpcResult<EditClaim>>
+  heartbeatEditClaim(id: string, actorId: string): Promise<IpcResult<EditClaim>>
+  completeEditClaim(id: string, actorId: string): Promise<IpcResult<void>>
+  cancelEditClaim(id: string, actorId: string): Promise<IpcResult<void>>
+  onEditClaimsChanged(callback: (claims: EditClaim[]) => void): () => void
   onOp(callback: (op: Op) => void): () => void
   createRoom(): Promise<IpcResult<string>>
   joinRoom(roomCode: string): Promise<IpcResult<void>>

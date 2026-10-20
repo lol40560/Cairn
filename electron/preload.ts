@@ -13,6 +13,7 @@ import type { ProjectIdentity } from './core/identity'
 import type { PeerState } from './core/sync/reconnect'
 import type { ProjectFileContent, ProjectFileEntry } from './main'
 import type { Checkpoint, CheckpointComparison, CheckpointFileContents } from './core/checkpoints'
+import type { ClaimOwner, CollaborationMessage, EditClaim } from './core/edit-claims'
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<IpcResult<T>> {
   return ipcRenderer.invoke(channel, ...args)
@@ -36,8 +37,20 @@ const cairn = {
     invoke('cairn:listProjectFiles'),
   readProjectFile: (filePath: string): Promise<IpcResult<ProjectFileContent>> =>
     invoke('cairn:readProjectFile', filePath),
-  saveProjectFile: (filePath: string, content: string): Promise<IpcResult<{ saved: boolean; mtime: number }>> =>
-    invoke('cairn:saveProjectFile', filePath, content),
+  saveProjectFile: (filePath: string, content: string, actorId?: string): Promise<IpcResult<{ saved: boolean; mtime: number }>> =>
+    invoke('cairn:saveProjectFile', filePath, content, actorId),
+  listEditClaims: (): Promise<IpcResult<EditClaim[]>> => invoke('cairn:listEditClaims'),
+  listCollaborationMessages: (): Promise<IpcResult<CollaborationMessage[]>> => invoke('cairn:listCollaborationMessages'),
+  createEditClaim: (input: { path: string; owner: ClaimOwner; summary: string; baseContent: string }): Promise<IpcResult<EditClaim>> =>
+    invoke('cairn:createEditClaim', input),
+  heartbeatEditClaim: (id: string, actorId: string): Promise<IpcResult<EditClaim>> => invoke('cairn:heartbeatEditClaim', id, actorId),
+  completeEditClaim: (id: string, actorId: string): Promise<IpcResult<void>> => invoke('cairn:completeEditClaim', id, actorId),
+  cancelEditClaim: (id: string, actorId: string): Promise<IpcResult<void>> => invoke('cairn:cancelEditClaim', id, actorId),
+  onEditClaimsChanged: (callback: (claims: EditClaim[]) => void): (() => void) => {
+    const listener = (_event: IpcRendererEvent, claims: EditClaim[]): void => callback(claims)
+    ipcRenderer.on('cairn:edit-claims-changed', listener)
+    return () => ipcRenderer.removeListener('cairn:edit-claims-changed', listener)
+  },
   onOp: (callback: (op: Op) => void): (() => void) => {
     const listener = (_event: IpcRendererEvent, op: Op): void => callback(op)
     ipcRenderer.on('cairn:op', listener)
@@ -138,8 +151,8 @@ const cairn = {
   getOnboardingState: (): Promise<IpcResult<{ completed: boolean; completedAt?: number }>> => invoke('cairn:getOnboardingState'),
   completeOnboarding: (): Promise<IpcResult<void>> => invoke('cairn:completeOnboarding'),
   resetOnboarding: (): Promise<IpcResult<void>> => invoke('cairn:resetOnboarding'),
-  getSettings: (): Promise<IpcResult<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number }>> => invoke('cairn:getSettings'),
-  updateSettings: (partial: Partial<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number }>): Promise<IpcResult<void>> => invoke('cairn:updateSettings', partial),
+  getSettings: (): Promise<IpcResult<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number; strictEditClaims: boolean }>> => invoke('cairn:getSettings'),
+  updateSettings: (partial: Partial<{ autoStartWatching: boolean; rememberLastFolder: boolean; trashRetentionDays: number; strictEditClaims: boolean }>): Promise<IpcResult<void>> => invoke('cairn:updateSettings', partial),
   listTrash: (): Promise<IpcResult<TrashEntry[]>> => invoke('cairn:listTrash'),
   restoreFromTrash: (trashId: string): Promise<IpcResult<void>> => invoke('cairn:restoreFromTrash', trashId),
   purgeFromTrash: (trashId: string): Promise<IpcResult<void>> => invoke('cairn:purgeFromTrash', trashId),

@@ -33,6 +33,7 @@ export function SettingsView({
   const [repo, setRepo] = useState('')
   const [hasToken, setHasToken] = useState(false)
   const [trashRetentionDays, setTrashRetentionDays] = useState(30)
+  const [strictEditClaims, setStrictEditClaims] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<NormalizedError | null>(null)
   const [licensesOpen, setLicensesOpen] = useState(false)
@@ -49,6 +50,7 @@ export function SettingsView({
         setRepo(config.repo)
         setHasToken(config.hasToken)
         setTrashRetentionDays(settings.trashRetentionDays)
+        setStrictEditClaims(settings.strictEditClaims)
       })
       .catch((cause) => {
         console.error('[cairn] 无法读取设置', cause)
@@ -85,6 +87,16 @@ export function SettingsView({
     })
   }
 
+  const changeStrictEditClaims = (value: boolean): void => {
+    setStrictEditClaims(value)
+    void window.cairn.updateSettings({ strictEditClaims: value }).then((result) => {
+      if (!result.ok) {
+        setStrictEditClaims(!value)
+        setError(normalizeError(result.error, t))
+      }
+    })
+  }
+
   const openExternal = async (url: string): Promise<void> => {
     const result = await window.cairn.openExternal(url)
     if (!result.ok) {
@@ -104,6 +116,17 @@ export function SettingsView({
         <div className="settings-view-body">
           <section className="modal-section settings-general-section">
             <h3 className="modal-section-title">{t('settingsGeneral')}</h3>
+            <label className="checkbox-row">
+              <input
+                checked={strictEditClaims}
+                type="checkbox"
+                onChange={(event) => changeStrictEditClaims(event.target.checked)}
+              />
+              <span>
+                <strong>{t('strictEditClaims')}</strong>
+                <small>{t('strictEditClaimsHint')}</small>
+              </span>
+            </label>
             <button
               className="btn btn-ghost"
               type="button"

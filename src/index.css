@@ -3213,6 +3213,45 @@
   .peer-dot.dot-reconnecting { animation: none !important; opacity: .7; }
 }
 
+/* Collaborative edit claims: quiet enough for normal work, clear enough to prevent accidental overlap. */
+.file-edit-claim {
+  margin: 0 16px 10px;
+  padding: 9px 12px;
+  border: 1px solid rgb(122 196 113 / 36%);
+  border-radius: var(--r-sm);
+  background: rgb(122 196 113 / 10%);
+  color: var(--text-1);
+  font-size: 12px;
+}
+
+.file-edit-claim.blocked {
+  border-color: rgb(255 183 77 / 46%);
+  background: rgb(255 183 77 / 10%);
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.checkbox-row input { margin-top: 3px; }
+.checkbox-row strong, .checkbox-row small { display: block; }
+.checkbox-row small { margin-top: 3px; color: var(--text-2); font-size: 12px; line-height: 1.4; }
+
+.file-tree-presence.edit-claimed { background: #9bdc76; box-shadow: 0 0 0 3px rgb(155 220 118 / 12%); }
+
+.collaboration-feed {
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--line-soft);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.collaboration-feed p { margin: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Reference UI — dimensions and relationships mirror cairn_logo_slightly_smaller.html. */
 :root {
   --bg-0: #0c0c0e;

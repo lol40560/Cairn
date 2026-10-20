@@ -12,6 +12,7 @@ interface FileTreeProps {
   selectedPath: string | undefined
   recentActivity?: Record<string, string>
   conflictRisks?: Record<string, { level: Exclude<ConflictRiskLevel, 'none'>; label: string }>
+  editClaimOwners?: Record<string, string>
   onSelect(path: string): void
   filter: string
   onContextMenu?(event: MouseEvent<HTMLButtonElement>, path: string): void
@@ -41,11 +42,12 @@ interface TreeRowsProps {
   onContextMenu?(event: MouseEvent<HTMLButtonElement>, path: string): void
   recentActivity?: Record<string, string>
   conflictRisks?: Record<string, { level: Exclude<ConflictRiskLevel, 'none'>; label: string }>
+  editClaimOwners?: Record<string, string>
   onToggle(path: string): void
   selectedPath: string | undefined
 }
 
-function TreeRows({ collapsedPaths, nodes, onContextMenu, onSelect, onToggle, recentActivity, conflictRisks, selectedPath }: TreeRowsProps) {
+function TreeRows({ collapsedPaths, nodes, onContextMenu, onSelect, onToggle, recentActivity, conflictRisks, editClaimOwners, selectedPath }: TreeRowsProps) {
   return nodes.map((node) => {
     const collapsed = collapsedPaths.has(node.path)
     const selected = node.type === 'file' && selectedPath === node.path
@@ -72,6 +74,7 @@ function TreeRows({ collapsedPaths, nodes, onContextMenu, onSelect, onToggle, re
                 onContextMenu={onContextMenu}
                 recentActivity={recentActivity}
                 conflictRisks={conflictRisks}
+                editClaimOwners={editClaimOwners}
                 selectedPath={selectedPath}
                 onSelect={onSelect}
                 onToggle={onToggle}
@@ -103,14 +106,15 @@ function TreeRows({ collapsedPaths, nodes, onContextMenu, onSelect, onToggle, re
         <span className="file-tree-name">{node.name}</span>
         {conflictRisks?.[node.path]
           ? <span aria-label={conflictRisks[node.path].label} className={`file-tree-presence ${conflictRisks[node.path].level}`} title={conflictRisks[node.path].label} />
-          : recentActivity?.[node.path] ? <span aria-label={recentActivity[node.path]} className="file-tree-presence shared-recent" title={recentActivity[node.path]} /> : null}
+          : editClaimOwners?.[node.path] ? <span aria-label={`${editClaimOwners[node.path]} is editing this file`} className="file-tree-presence edit-claimed" title={`${editClaimOwners[node.path]} is editing this file`} />
+            : recentActivity?.[node.path] ? <span aria-label={recentActivity[node.path]} className="file-tree-presence shared-recent" title={recentActivity[node.path]} /> : null}
       </button>
     )
   })
 }
 
 /** 只读项目文件树；筛选仅影响可见节点，不改变选择状态。 */
-export function FileTree({ files, selectedPath, onContextMenu, onSelect, filter, recentActivity, conflictRisks }: FileTreeProps) {
+export function FileTree({ files, selectedPath, onContextMenu, onSelect, filter, recentActivity, conflictRisks, editClaimOwners }: FileTreeProps) {
   const { t } = useTranslation()
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set())
   const tree = useMemo(() => {
@@ -218,6 +222,7 @@ export function FileTree({ files, selectedPath, onContextMenu, onSelect, filter,
           onContextMenu={onContextMenu}
           recentActivity={recentActivity}
           conflictRisks={conflictRisks}
+          editClaimOwners={editClaimOwners}
           onSelect={onSelect}
           onToggle={togglePath}
         />
