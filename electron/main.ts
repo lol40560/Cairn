@@ -748,8 +748,8 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
   sync.on('peerLeft', broadcastPeers)
   sync.on('identityMismatch', (info) => sendToWindow('cairn:identity-mismatch', info))
   sync.on('peerStatusChanged', (state) => sendToWindow('cairn:peer-status-changed', state))
-  sync.on('editClaim', (claim: EditClaim) => {
-    void project.editClaims.receiveRemote(claim).catch((error) => console.error(`[cairn:claims] unable to accept remote claim: ${error.message}`))
+  sync.on('editClaim', (claim: EditClaim, peerId: string) => {
+    void project.editClaims.receiveRemote(claim, peerId).catch((error) => console.error(`[cairn:claims] unable to accept remote claim: ${error.message}`))
   })
   sync.on('error', (error: Error) => console.error(`[cairn:sync] ${error.message}`))
 

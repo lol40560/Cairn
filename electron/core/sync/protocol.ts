@@ -416,11 +416,15 @@ function isEditClaimMessage(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false
   const claim = value as Record<string, unknown>
   const owner = claim.owner
-  return typeof claim.id === 'string' && typeof claim.path === 'string' && typeof claim.summary === 'string'
-    && typeof claim.baseHash === 'string' && typeof claim.createdAt === 'number' && typeof claim.updatedAt === 'number'
+  return isBoundedString(claim.id, 200) && isBoundedString(claim.path, 1_024) && isBoundedString(claim.summary, 500)
+    && isBoundedString(claim.baseHash, 128) && typeof claim.createdAt === 'number' && typeof claim.updatedAt === 'number'
     && typeof claim.expiresAt === 'number' && ['active', 'completed', 'cancelled', 'expired'].includes(String(claim.status))
     && typeof owner === 'object' && owner !== null
-    && typeof (owner as Record<string, unknown>).id === 'string' && typeof (owner as Record<string, unknown>).name === 'string'
+    && isBoundedString((owner as Record<string, unknown>).id, 200) && isBoundedString((owner as Record<string, unknown>).name, 120)
     && ['human', 'agent'].includes(String((owner as Record<string, unknown>).kind))
     && (claim.releasedAt === undefined || typeof claim.releasedAt === 'number')
+}
+
+function isBoundedString(value: unknown, maximum: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= maximum
 }

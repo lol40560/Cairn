@@ -1864,6 +1864,19 @@
   margin-top: 2px;
 }
 
+.github-token-help {
+  display: block;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+  margin-top: 8px;
+}
+
+.github-token-link {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
 .modal-error {
   color: var(--red);
   font-size: 12px;

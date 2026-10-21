@@ -65,9 +65,21 @@ describe('EditClaimsManager', () => {
       status: 'active',
       summary: 'Protect transport edits',
       updatedAt: 1,
-    })
+    }, 'peer-b')
 
     expect((await claims.list())[0]?.owner.name).toBe('Agent B')
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'remote-claim' }), false)
+  })
+
+  it('binds remote ownership to its authenticated peer and rejects a takeover', async () => {
+    const claims = await manager()
+    const remoteClaim = {
+      baseHash: 'abc', createdAt: 1, expiresAt: Date.now() + 60_000, id: 'claim-a',
+      owner: { id: 'spoofed-owner', kind: 'agent' as const, name: 'Agent A' }, path: 'src/sync.ts',
+      status: 'active' as const, summary: 'Protect transport edits', updatedAt: 1,
+    }
+    await claims.receiveRemote(remoteClaim, 'peer-a')
+    expect((await claims.list())[0]?.owner.id).toBe('peer-a')
+    await expect(claims.receiveRemote({ ...remoteClaim, updatedAt: 9 }, 'peer-b')).rejects.toThrow('cannot replace')
   })
 })

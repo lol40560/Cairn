@@ -2,6 +2,14 @@
 
 All notable changes to Cairn.
 
+## [2.0.2] - 2026-10-21
+
+### Security
+
+- Ignore the project-local `.cairn/` directory so operation history, recovery copies, collaboration data, and edit claims cannot be accidentally committed.
+- Bind received edit claims to the authenticated room peer instead of trusting sender-supplied owner IDs or timestamps.
+- Bound remote claim fields and cap stored claims to reduce memory and disk pressure from a compromised room peer.
+
 ## [2.0.1] - 2026-10-19
 
 ### Security

@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.1"><img alt="Release v2.0.1" src="https://img.shields.io/badge/release-v2.0.1-222222?style=flat-square" /></a>
+  <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.2"><img alt="Release v2.0.2" src="https://img.shields.io/badge/release-v2.0.2-222222?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-222222?style=flat-square" /></a>
   <img alt="macOS and Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-222222?style=flat-square" />
 </p>
@@ -29,7 +29,7 @@
   <img src="./docs/screenshots/overview.png" width="100%" alt="Cairn's dark desktop dashboard with project activity and recent changes" />
 </p>
 
-> **Release status:** Cairn v2.0.1 installers are not code-signed. See [known limitations](#known-limitations) before relying on it for critical work.
+> **Release status:** Cairn v2.0.2 installers are not code-signed. See [known limitations](#known-limitations) before relying on it for critical work.
 
 ## Why Cairn?
 

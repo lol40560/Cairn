@@ -4,6 +4,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { ensureCairnDataDir } from '../data-dir'
+import { assertSafeProjectRelativePath } from '../fs/project-path'
 
 export type EditClaimStatus = 'active' | 'completed' | 'cancelled' | 'expired'
 
@@ -49,6 +50,8 @@ interface StoredClaims {
 
 const LEASE_MS = 10 * 60 * 1000
 const MAX_MESSAGES = 200
+const MAX_CLAIMS = 500
+const MAX_OWNER_NAME_LENGTH = 120
 
 /**
  * Local-first, advisory edit claims. The file is intentionally stored inside
@@ -87,6 +90,8 @@ export class EditClaimsManager extends EventEmitter {
       return existing
     }
 
+    if (data.claims.length >= MAX_CLAIMS) this.pruneCompletedClaims(data)
+    if (data.claims.length >= MAX_CLAIMS) throw new Error('Too many edit claims in this project')
     const now = Date.now()
     const claim: EditClaim = {
       id: randomUUID(),
@@ -146,21 +151,39 @@ export class EditClaimsManager extends EventEmitter {
   }
 
   /** Stores a claim received from an authenticated room peer without echoing it back. */
-  async receiveRemote(claim: EditClaim): Promise<void> {
+  async receiveRemote(claim: EditClaim, peerId: string): Promise<void> {
     if (!isEditClaim(claim)) throw new Error('Invalid remote edit claim')
+    assertSafeProjectRelativePath(claim.path)
+    if (typeof peerId !== 'string' || peerId.length === 0 || peerId.length > 200) throw new Error('Invalid remote peer')
     const data = await this.expireStale(await this.read())
+    const now = Date.now()
     const index = data.claims.findIndex((item) => item.id === claim.id)
-    if (index >= 0 && data.claims[index].updatedAt >= claim.updatedAt) return
-    if (index >= 0) data.claims[index] = claim
-    else data.claims.push(claim)
-    const action = claim.status === 'active' ? 'is editing' : claim.status === 'completed' ? 'finished editing' : 'released editing rights for'
+    // The encrypted room authenticates a peer, not the owner fields supplied in
+    // its payload. Bind remote ownership to that authenticated peer ID and use
+    // local receipt time so a forged timestamp cannot win an update race.
+    if (index >= 0 && data.claims[index].owner.id !== peerId) {
+      throw new Error('Remote peer cannot replace another owner\'s edit claim')
+    }
+    if (index < 0 && data.claims.length >= MAX_CLAIMS) this.pruneCompletedClaims(data)
+    if (index < 0 && data.claims.length >= MAX_CLAIMS) throw new Error('Too many edit claims in this project')
+    const sanitized: EditClaim = {
+      ...claim,
+      owner: { id: peerId, kind: claim.owner.kind, name: claim.owner.name.trim().slice(0, MAX_OWNER_NAME_LENGTH) || 'Remote peer' },
+      createdAt: index >= 0 ? data.claims[index].createdAt : now,
+      updatedAt: now,
+      expiresAt: claim.status === 'active' ? now + LEASE_MS : now,
+      releasedAt: claim.status === 'active' ? undefined : now,
+    }
+    if (index >= 0) data.claims[index] = sanitized
+    else data.claims.push(sanitized)
+    const action = sanitized.status === 'active' ? 'is editing' : sanitized.status === 'completed' ? 'finished editing' : 'released editing rights for'
     this.addMessage(data, {
-      claimId: claim.id,
-      type: claim.status === 'active' ? 'claim-created' : 'claim-completed',
-      body: `${claim.owner.name} ${action} ${claim.path}.`,
+      claimId: sanitized.id,
+      type: sanitized.status === 'active' ? 'claim-created' : 'claim-completed',
+      body: `${sanitized.owner.name} ${action} ${sanitized.path}.`,
     })
     await this.write(data)
-    this.emit('changed', claim, false)
+    this.emit('changed', sanitized, false)
   }
 
   private async release(id: string, actorId: string, status: 'completed' | 'cancelled'): Promise<void> {
@@ -211,6 +234,15 @@ export class EditClaimsManager extends EventEmitter {
     if (data.messages.length > MAX_MESSAGES) data.messages.splice(0, data.messages.length - MAX_MESSAGES)
   }
 
+  private pruneCompletedClaims(data: StoredClaims): void {
+    const removable = data.claims
+      .filter((claim) => claim.status !== 'active')
+      .sort((left, right) => left.updatedAt - right.updatedAt)
+    const removeCount = Math.max(0, data.claims.length - MAX_CLAIMS + 1)
+    const removeIds = new Set(removable.slice(0, removeCount).map((claim) => claim.id))
+    data.claims = data.claims.filter((claim) => !removeIds.has(claim.id))
+  }
+
   private async read(): Promise<StoredClaims> {
     try {
       const parsed: unknown = JSON.parse(await readFile(this.storagePath, 'utf8'))
@@ -240,7 +272,8 @@ function contentHash(value: string): string {
 
 function validateCreateInput(input: CreateEditClaimInput): void {
   if (!input || typeof input.path !== 'string' || !input.path || input.path.length > 1_024) throw new Error('Invalid claim path')
-  if (!input.owner || typeof input.owner.id !== 'string' || !input.owner.id || typeof input.owner.name !== 'string' || !input.owner.name) throw new Error('Invalid claim owner')
+  assertSafeProjectRelativePath(input.path)
+  if (!input.owner || typeof input.owner.id !== 'string' || !input.owner.id || input.owner.id.length > 200 || typeof input.owner.name !== 'string' || !input.owner.name || input.owner.name.length > MAX_OWNER_NAME_LENGTH) throw new Error('Invalid claim owner')
   if (input.owner.kind !== 'human' && input.owner.kind !== 'agent') throw new Error('Invalid claim owner type')
   if (typeof input.summary !== 'string' || !input.summary.trim() || input.summary.length > 500) throw new Error('A claim summary is required')
   if (typeof input.baseContent !== 'string') throw new Error('Invalid claim base content')
@@ -249,10 +282,13 @@ function validateCreateInput(input: CreateEditClaimInput): void {
 function isEditClaim(value: unknown): value is EditClaim {
   if (!value || typeof value !== 'object') return false
   const claim = value as Partial<EditClaim>
-  return typeof claim.id === 'string' && typeof claim.path === 'string' && typeof claim.summary === 'string'
+  return typeof claim.id === 'string' && claim.id.length > 0 && claim.id.length <= 200
+    && typeof claim.path === 'string' && claim.path.length > 0 && claim.path.length <= 1_024
+    && typeof claim.summary === 'string' && claim.summary.length > 0 && claim.summary.length <= 500
     && typeof claim.baseHash === 'string' && typeof claim.createdAt === 'number' && typeof claim.updatedAt === 'number'
     && typeof claim.expiresAt === 'number' && ['active', 'completed', 'cancelled', 'expired'].includes(String(claim.status))
-    && Boolean(claim.owner) && typeof claim.owner?.id === 'string' && typeof claim.owner.name === 'string'
+    && Boolean(claim.owner) && typeof claim.owner?.id === 'string' && claim.owner.id.length > 0 && claim.owner.id.length <= 200
+    && typeof claim.owner.name === 'string' && claim.owner.name.length > 0 && claim.owner.name.length <= MAX_OWNER_NAME_LENGTH
     && (claim.owner.kind === 'human' || claim.owner.kind === 'agent')
 }
 

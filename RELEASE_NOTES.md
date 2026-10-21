@@ -1,25 +1,21 @@
-# Cairn v2.0.1
+# Cairn v2.0.2
 
 ## Highlights
 
-- Publishes the redesigned project launcher, dashboard, activity views, editor workspace, and updated product documentation.
-- P2P collaboration uses protocol v4 with encrypted peer transport and mutual room authentication.
-- Adds security hardening for packaged renderer loading, sensitive-file exclusion, inbound peer connections, and release automation.
+- Hardens collaboration edit claims so a received claim is bound to the authenticated room peer that delivered it.
+- Adds claim field and storage limits to reduce denial-of-service risk from a compromised collaboration peer.
+- Prevents project-local Cairn history, recovery content, and collaboration metadata from being accidentally committed to Git.
 
 ## Security & distribution
 
-- Packaged Cairn builds now ignore development renderer URLs and keep privileged IPC bound to the bundled main frame.
-- Sync and snapshot operations exclude additional credential formats, including PKCS#12, PFX, JKS, and keystores.
-- Incoming peer connections have global and per-address limits before authentication.
+- Claims still expire after ten minutes without a heartbeat, and only their authenticated owner can update a received claim.
 - CI scans reachable Git history for secrets and checks production dependency advisories.
-- Release jobs use least-privilege GitHub token permissions; release signing and notarization are supported when credentials are configured.
-- v2.0.1 artifacts are intentionally unsigned. macOS Gatekeeper and Windows SmartScreen warnings are expected.
+- v2.0.2 artifacts are intentionally unsigned. macOS Gatekeeper and Windows SmartScreen warnings are expected.
 
-## Interface & workflow
+## Collaboration & workflow
 
-- Cairn opens to a dedicated project launcher; use the project menu to return Home or move between recent projects.
-- Activity, files, collaboration, checkpoints, and recovery views receive refined motion, layout, keyboard focus, and responsive behavior.
-- Dashboard activity reflects watched-folder changes, while empty conflict, checkpoint, and deleted-file states avoid misleading zero labels.
+- Files, activity, collaboration, checkpoints, and recovery remain local-first; sharing stays peer-to-peer with invited room members.
+- Edit claims remain advisory by default. Teams may enable strict edit protection to block writes through Cairn's editor when another active claim exists.
 
 ## Known limitations
 

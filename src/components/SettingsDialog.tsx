@@ -182,6 +182,14 @@ export function SettingsView({
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
               />
+              <span className="github-token-help">{t('githubTokenHelp')}</span>
+              <button
+                className="btn btn-ghost btn-sm github-token-link"
+                type="button"
+                onClick={() => void openExternal('https://github.com/settings/personal-access-tokens/new')}
+              >
+                {t('githubTokenCreate')}
+              </button>
             </label>
             <label className="field">
               <span className="field-label">{t('githubOwner')}</span>
