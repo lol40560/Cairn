@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cairn — Keep every change in view.</title>
+    <meta
+      name="description"
+      content="Cairn is a local-first desktop workspace that tracks file changes, coordinates edits between humans and AI agents, and lets you recover work."
+    />
+    <style>
+      :root {
+        --ink: #111;
+        --muted: #555;
+        --bg: #fafafa;
+        --panel-dark: #1a1a1a;
+        --panel-dark-soft: #222;
+        --border: #e0e0e0;
+        --border-dark: #333;
+        --lime: #c2ee85;
+        --white: #fff;
+        --radius: 12px;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      h1, h2, h3, p {
+        margin-top: 0;
+      }
+
+      .shell {
+        width: min(1000px, calc(100% - 40px));
+        margin-inline: auto;
+      }
+
+      /* Typography */
+      h1 {
+        font-size: clamp(2.5rem, 5vw, 4rem);
+        font-weight: 600;
+        letter-spacing: -0.04em;
+        line-height: 1.1;
+        margin-bottom: 20px;
+      }
+
+      h2 {
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.2;
+      }
+
+      h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      p {
+        color: var(--muted);
+        font-size: 1rem;
+      }
+
+      /* Header */
+      .site-header {
+        padding: 24px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .header-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 1.2rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      /* Image Logo Styling */
+      .brand img {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        object-fit: cover;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .nav-links a:hover {
+        color: var(--muted);
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 40px;
+        padding: 0 20px;
+        border-radius: 8px;
+        font-weight: 500;
+        font-size: 0.9rem;
+        transition: opacity 0.2s ease;
+      }
+
+      .button:hover {
+        opacity: 0.8;
+      }
+
+      .button-dark {
+        background: var(--ink);
+        color: var(--white);
+      }
+
+      /* Hero */
+      .hero {
+        padding: 80px 0 60px;
+        text-align: center;
+      }
+
+      .hero p {
+        max-width: 600px;
+        margin: 0 auto 32px;
+        font-size: 1.15rem;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+      }
+
+      /* App Mockup */
+      .mockup-wrapper {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      .app-shot {
+        border: 1px solid var(--border-dark);
+        border-radius: var(--radius);
+        background: var(--panel-dark);
+        overflow: hidden;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+      }
+
+      .window-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 40px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border-dark);
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #444;
+      }
+
+      .window-title {
+        margin-left: 8px;
+        color: #eee;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+
+      .window-badge {
+        margin-left: auto;
+        padding: 2px 8px;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #888;
+        font-size: 0.7rem;
+      }
+
+      .app-layout {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        min-height: 400px;
+      }
+
+      .sidebar {
+        padding: 20px 12px;
+        border-right: 1px solid var(--border-dark);
+        color: #aaa;
+        font-size: 0.85rem;
+      }
+
+      .project-name {
+        padding: 0 8px 20px;
+        color: #fff;
+        font-size: 0.9rem;
+        font-weight: 500;
+      }
+
+      .sidebar-label {
+        margin: 16px 8px 6px;
+        color: #666;
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-transform: uppercase;
+      }
+
+      .nav-item {
+        display: block;
+        padding: 6px 8px;
+        border-radius: 6px;
+      }
+
+      .nav-item.active {
+        background: #333;
+        color: var(--lime);
+      }
+
+      .workspace {
+        padding: 24px;
+      }
+
+      .workspace-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 24px;
+      }
+
+      .workspace h3 {
+        margin: 0;
+        color: #fff;
+        font-size: 1.3rem;
+      }
+
+      .workspace small {
+        color: #888;
+        font-size: 0.85rem;
+      }
+
+      .tracking {
+        padding: 4px 10px;
+        border: 1px solid #444;
+        border-radius: 20px;
+        color: var(--lime);
+        font-size: 0.75rem;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+
+      .stat {
+        padding: 16px;
+        background: var(--panel-dark-soft);
+        border: 1px solid var(--border-dark);
+        border-radius: 8px;
+      }
+
+      .stat strong {
+        display: block;
+        color: #fff;
+        font-size: 1.4rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+
+      .stat span {
+        color: #888;
+        font-size: 0.75rem;
+      }
+
+      .change-list {
+        border: 1px solid var(--border-dark);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 16px;
+      }
+
+      .change {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-dark);
+        color: #ddd;
+        font-size: 0.85rem;
+      }
+
+      .change:last-child {
+        border-bottom: none;
+      }
+
+      .change small {
+        display: block;
+        color: #777;
+        margin-top: 2px;
+      }
+
+      .delta {
+        color: var(--lime);
+        font-family: monospace;
+      }
+
+      .claim-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: rgba(194, 238, 133, 0.05);
+        border: 1px solid rgba(194, 238, 133, 0.2);
+        border-radius: 8px;
+        color: #aed581;
+        font-size: 0.8rem;
+      }
+
+      .claim-row span {
+        margin-left: auto;
+        color: #777;
+        font-family: monospace;
+      }
+
+      /* Sections */
+      .section {
+        padding: 80px 0;
+        border-top: 1px solid var(--border);
+      }
+
+      .section-header {
+        margin-bottom: 40px;
+        max-width: 600px;
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+      }
+
+      .feature {
+        padding: 24px;
+        background: var(--white);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+      }
+
+      .feature h3 {
+        margin-bottom: 12px;
+      }
+
+      .feature p {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      /* Privacy */
+      .privacy-box {
+        background: var(--white);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 32px;
+      }
+
+      .privacy-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 32px;
+        margin-top: 24px;
+      }
+
+      .privacy-item h3 {
+        font-size: 1rem;
+        margin-bottom: 8px;
+      }
+
+      .privacy-item p {
+        font-size: 0.9rem;
+        margin: 0;
+      }
+
+      /* FAQ */
+      .faq-list details {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .faq-list details:first-child {
+        border-top: 1px solid var(--border);
+      }
+
+      .faq-list summary {
+        padding: 20px 0;
+        font-weight: 500;
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .faq-list summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq-list summary::after {
+        content: "+";
+        color: var(--muted);
+        font-size: 1.2rem;
+      }
+
+      .faq-list details[open] summary::after {
+        content: "−";
+      }
+
+      .faq-list p {
+        margin: 0 0 20px;
+        font-size: 0.95rem;
+      }
+
+      /* Download */
+      .download-section {
+        text-align: center;
+        padding: 80px 0;
+      }
+
+      .download-section h2 {
+        margin-bottom: 16px;
+      }
+
+      .download-section p {
+        max-width: 500px;
+        margin: 0 auto 32px;
+      }
+
+      .warn-note {
+        margin: 32px auto 0;
+        max-width: 600px;
+        padding: 16px;
+        background: #fff8e1;
+        border: 1px solid #ffe082;
+        border-radius: 8px;
+        color: #795548;
+        font-size: 0.9rem;
+        text-align: left;
+      }
+
+      /* Footer */
+      .site-footer {
+        padding: 40px 0;
+        border-top: 1px solid var(--border);
+        font-size: 0.9rem;
+      }
+
+      .footer-inner {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .footer-links {
+        display: flex;
+        gap: 24px;
+      }
+
+      .footer-links a:hover {
+        color: var(--muted);
+      }
+
+      @media (max-width: 768px) {
+        .nav-links a:not(.button) {
+          display: none;
+        }
+        .app-layout {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          display: none;
+        }
+        .grid-3,
+        .privacy-grid {
+          grid-template-columns: 1fr;
+        }
+        .footer-inner {
+          flex-direction: column;
+          gap: 20px;
+          text-align: center;
+        }
+        .footer-links {
+          flex-wrap: wrap;
+          justify-content: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="#top">
+          <img src="https://raw.githubusercontent.com/lol40560/Cairn/main/src/assets/cairn-app-icon.png" alt="Cairn Logo">
+          Cairn
+        </a>
+        <nav class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#privacy">Privacy</a>
+          <a href="#faq">FAQ</a>
+          <a class="button button-dark" href="https://github.com/lol40560/Cairn/releases">Download</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- Hero -->
+      <section class="shell hero">
+        <h1>Keep every change in view.</h1>
+        <p>Cairn is a local-first desktop workspace that tracks file changes, coordinates edits between humans and AI agents, and lets you recover work.</p>
+        <div class="actions">
+          <a class="button button-dark" href="https://github.com/lol40560/Cairn/releases">Download Cairn</a>
+          <a class="button" style="border: 1px solid var(--border);" href="https://github.com/lol40560/Cairn">Read the source</a>
+        </div>
+      </section>
+
+      <!-- App Mockup (Centered) -->
+      <div class="mockup-wrapper">
+        <div class="app-shot">
+          <div class="window-bar">
+            <i class="dot"></i><i class="dot"></i><i class="dot"></i>
+            <span class="window-title">Cairn</span>
+            <span class="window-badge">cairn-app</span>
+          </div>
+          <div class="app-layout">
+            <aside class="sidebar">
+              <div class="project-name">cairn-app</div>
+              <div class="sidebar-label">Project</div>
+              <span class="nav-item">Home</span>
+              <span class="nav-item active">Changes</span>
+              <span class="nav-item">Files</span>
+              <div class="sidebar-label">Collaboration</div>
+              <span class="nav-item">Team</span>
+              <span class="nav-item">Same-file edits</span>
+              <div class="sidebar-label">Recovery</div>
+              <span class="nav-item">Checkpoints</span>
+              <span class="nav-item">Deleted files</span>
+            </aside>
+            <div class="workspace">
+              <div class="workspace-head">
+                <div>
+                  <h3>Changes</h3>
+                  <small>Everything your project has been doing.</small>
+                </div>
+                <span class="tracking">Tracking</span>
+              </div>
+              <div class="stat-grid">
+                <div class="stat"><strong>57</strong><span>changes today</span></div>
+                <div class="stat"><strong>12</strong><span>files touched</span></div>
+                <div class="stat"><strong>0</strong><span>unresolved edits</span></div>
+              </div>
+              <div class="change-list">
+                <div class="change">
+                  <span><b>src/components/FilesView.tsx</b><small>Edited just now · you</small></span>
+                  <span class="delta">+24 −8</span>
+                </div>
+                <div class="change">
+                  <span><b>README.md</b><small>Edited 8 min ago · teammate</small></span>
+                  <span class="delta">+12 −2</span>
+                </div>
+                <div class="change">
+                  <span><b>electron/main.ts</b><small>Edited 18 min ago · you</small></span>
+                  <span class="delta">+7 −1</span>
+                </div>
+              </div>
+              <div class="claim-row">
+                <b>src/components/FilesView.tsx</b> claimed by you
+                <span>lease 08:42</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Features -->
+      <section id="features" class="section shell">
+        <div class="section-header">
+          <h2>Context that stays local.</h2>
+        </div>
+        <div class="grid-3">
+          <div class="feature">
+            <h3>See project activity</h3>
+            <p>Review grouped file changes, inspect diffs, and filter by All, Mine, or Team without leaving your workspace.</p>
+          </div>
+          <div class="feature">
+            <h3>Coordinate before overlap</h3>
+            <p>File-level edit claims signal where a teammate or AI agent is working before the same file becomes a conflict.</p>
+          </div>
+          <div class="feature">
+            <h3>Recover with confidence</h3>
+            <p>Create checkpoints before big changes and restore deleted files from a local retention window when you need a safe path back.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy -->
+      <section id="privacy" class="section shell">
+        <div class="privacy-box">
+          <h2>Your files stay on your disk.</h2>
+          <p style="margin-top: 12px; max-width: 600px;">Cairn runs entirely on your machine. There is no account system, no cloud backend, and no telemetry.</p>
+          <div class="privacy-grid">
+            <div class="privacy-item">
+              <h3>Joining a room</h3>
+              <p>Project content and claim events go directly to the peers you invited, over an encrypted connection.</p>
+            </div>
+            <div class="privacy-item">
+              <h3>Local discovery</h3>
+              <p>mDNS advertises service metadata on your network. The room invite code is never broadcast.</p>
+            </div>
+            <div class="privacy-item">
+              <h3>GitHub export</h3>
+              <p>Only the repository details and content needed for the pull request you confirm are sent.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section id="faq" class="section shell">
+        <div class="section-header">
+          <h2>Questions, answered.</h2>
+        </div>
+        <div class="faq-list">
+          <details>
+            <summary>Does Cairn upload my code?</summary>
+            <p>No. Files leave your machine only when you join a room (shared with authorized peers), when local discovery advertises network metadata, or when you confirm a GitHub export.</p>
+          </details>
+          <details>
+            <summary>Can Cairn stop an AI agent from overwriting my file?</summary>
+            <p>Only if the agent follows the claim protocol. Strict edit protection enforces this for writes made through Cairn's editor. External tools that ignore the protocol cannot be constrained.</p>
+          </details>
+          <details>
+            <summary>What happens if someone disappears mid-edit?</summary>
+            <p>Claims have a 10-minute lease renewed by a 2-minute heartbeat. An abandoned claim expires on its own, and the project owner can release it earlier.</p>
+          </details>
+          <details>
+            <summary>Why does my OS warn me about the installer?</summary>
+            <p>Current installers are unsigned. Download only from GitHub Releases and verify the SHA-256 checksum before installing.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- Download -->
+      <section class="download-section shell">
+        <h2>Download Cairn</h2>
+        <p>Free and open source for macOS and Windows. Bring a small project first — Cairn is happiest watching a few thousand files.</p>
+        <a class="button button-dark" href="https://github.com/lol40560/Cairn/releases">Latest release</a>
+
+        <div class="warn-note">
+          <strong>Installers are currently unsigned.</strong> macOS Gatekeeper and Windows SmartScreen may warn you. Verify the file name and checksum from GitHub Releases before installing.
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <div>© 2026 Cairn. Built local-first.</div>
+        <div class="footer-links">
+          <a href="https://github.com/lol40560/Cairn#readme">Documentation</a>
+          <a href="https://github.com/lol40560/Cairn/blob/main/PRIVACY.md">Privacy</a>
+          <a href="https://github.com/lol40560/Cairn/blob/main/LICENSE">MIT License</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
