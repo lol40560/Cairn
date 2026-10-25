@@ -36,6 +36,11 @@
     "dist:win": "npm run native:electron && npm run build && electron-builder --win",
     "dist:all": "npm run native:electron && npm run build && electron-builder --mac --win"
   },
+  "overrides": {
+    "monaco-editor": {
+      "dompurify": "3.4.17"
+    }
+  },
   "allowScripts": [
     "better-sqlite3"
   ],

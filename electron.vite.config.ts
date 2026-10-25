@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
+import { monacoDompurifyPlugin } from './scripts/monaco-dompurify.mjs'
 
 export default defineConfig({
   main: {
@@ -35,7 +36,7 @@ export default defineConfig({
         '@': resolve(__dirname, 'src'),
       },
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [monacoDompurifyPlugin(__dirname), react(), tailwindcss()],
     optimizeDeps: {
       exclude: ['monaco-editor'],
     },

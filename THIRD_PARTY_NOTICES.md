@@ -66,7 +66,7 @@ This inventory covers runtime packages in the current production dependency tree
 - **diff@8.0.4** — BSD-3-Clause; repository: https://github.com/kpdecker/jsdiff.git
 - **diff3@0.0.3** — MIT; attribution: Tyler Wanek; repository: git+https://github.com/axosoft/diff3.git
 - **dns-packet@5.6.1** — MIT; attribution: Mathias Buus; repository: mafintosh/dns-packet
-- **dompurify@3.4.15** — (MPL-2.0 OR Apache-2.0); attribution: Dr.-Ing. Mario Heiderich, Cure53 <mario@cure53.de> (https://cure53.de/); repository: git://github.com/cure53/DOMPurify.git
+- **dompurify@3.4.17** — (MPL-2.0 OR Apache-2.0); attribution: Dr.-Ing. Mario Heiderich, Cure53 <mario@cure53.de> (https://cure53.de/); repository: git://github.com/cure53/DOMPurify.git
 - **dunder-proto@1.0.1** — MIT; attribution: Jordan Harband <ljharb@gmail.com>; repository: git+https://github.com/es-shims/dunder-proto.git
 - **es-define-property@1.0.1** — MIT; attribution: Jordan Harband <ljharb@gmail.com>; repository: git+https://github.com/ljharb/es-define-property.git
 - **es-errors@1.3.0** — MIT; attribution: Jordan Harband <ljharb@gmail.com>; repository: git+https://github.com/ljharb/es-errors.git
@@ -237,7 +237,7 @@ THE SOFTWARE.
 
 ### (MPL-2.0 OR Apache-2.0)
 
-Applies to: dompurify@3.4.15
+Applies to: dompurify@3.4.17
 
 ```text
 Apache License
