@@ -73,11 +73,13 @@ describe('Monaco uses the patched sanitizer', () => {
   })
 
   it('builds Monaco’s actual HTML sanitizer with the patched module and no vendored copy', async () => {
+    const { default: electronConfig } = await import('../electron.vite.config.ts')
     const result = await build({
       configFile: false,
       root: projectRoot,
       logLevel: 'silent',
-      plugins: [monacoDompurifyPlugin(projectRoot)],
+      // Use the application's configuration so removing its plugin registration also fails this regression.
+      plugins: electronConfig.renderer.plugins,
       build: {
         write: false,
         minify: false,
