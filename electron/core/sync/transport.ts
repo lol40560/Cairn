@@ -165,6 +165,11 @@ export class Transport extends EventEmitter {
   }
 
   async connect(host: string, port: number, attemptId?: string): Promise<void> {
+    const connectedPeer = this.getConnectedPeerAtEndpoint(host, port)
+    if (connectedPeer) {
+      if (attemptId) this.emit('connect', connectedPeer, { host, port }, attemptId)
+      return
+    }
     const socket = new Socket()
     this.attachSocket(socket, { host, port })
     if (attemptId) this.socketAttemptIds.set(socket, attemptId)
@@ -172,17 +177,42 @@ export class Transport extends EventEmitter {
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
         socket.off('connect', onConnect)
+        socket.off('close', onClose)
         reject(error)
+      }
+      const onClose = (): void => {
+        socket.off('connect', onConnect)
+        socket.off('error', onError)
+        reject(new Error('Connection closed before TCP connection completed'))
       }
       const onConnect = (): void => {
         socket.off('error', onError)
+        socket.off('close', onClose)
         this.beginClientAuthentication(socket)
         resolve()
       }
       socket.once('error', onError)
+      socket.once('close', onClose)
       socket.once('connect', onConnect)
       socket.connect(port, host)
     })
+  }
+
+  /** Only authenticated live sockets count; discovery alone is not a connection. */
+  getConnectedPeerAtEndpoint(host: string, port: number): string | undefined {
+    for (const [peerId, socket] of this.connections) {
+      const endpoint = this.socketEndpoints.get(socket)
+      if (!socket.destroyed && this.authenticatedSockets.has(socket)
+        && endpoint?.host === host && endpoint.port === port) return peerId
+    }
+    return undefined
+  }
+
+  /** A timed-out coordinator attempt must not authenticate later in the background. */
+  cancelConnectionAttempt(attemptId: string): void {
+    for (const [socket, pendingAttemptId] of this.socketAttemptIds) {
+      if (pendingAttemptId === attemptId && !this.socketPeerIds.has(socket)) socket.destroy()
+    }
   }
 
   send(peerId: string, message: SyncMessage): void {
@@ -355,8 +385,9 @@ export class Transport extends EventEmitter {
         this.rejectProtocolVersion(socket, message.version)
         return
       }
-      this.registerPeer(socket, message.peerId)
-      this.emit('hello', message.peerId, message.identity)
+      if (this.registerPeer(socket, message.peerId)) {
+        this.emit('hello', message.peerId, message.identity)
+      }
       return
     }
 
@@ -545,26 +576,41 @@ export class Transport extends EventEmitter {
     }
   }
 
-  private registerPeer(socket: Socket, remotePeerId: string): void {
+  private registerPeer(socket: Socket, remotePeerId: string): boolean {
     if (!remotePeerId || remotePeerId === this.peerId) {
       socket.destroy()
-      return
+      return false
     }
 
     const existingSocket = this.connections.get(remotePeerId)
     if (existingSocket && existingSocket !== socket) {
-      socket.destroy()
-      return
+      // Both ends must choose the same TCP socket when discovery dials in both
+      // directions. The lexicographically smaller peer owns the outbound side.
+      const preferOutbound = this.peerId < remotePeerId
+      const candidatePreferred = this.socketEndpoints.has(socket) === preferOutbound
+      const existingPreferred = this.socketEndpoints.has(existingSocket) === preferOutbound
+      if (!existingSocket.destroyed && (!candidatePreferred || existingPreferred)) {
+        const attemptId = this.socketAttemptIds.get(socket)
+        if (attemptId) {
+          this.emit('connect', remotePeerId, this.socketEndpoints.get(socket), attemptId)
+        }
+        socket.destroy()
+        return false
+      }
     }
 
     if (this.socketPeerIds.get(socket) === remotePeerId) {
-      return
+      return false
     }
 
     this.socketPeerIds.set(socket, remotePeerId)
     this.connections.set(remotePeerId, socket)
+    // Install the replacement before closing the loser, so its close event
+    // cannot mark this peer disconnected or cancel an active download.
+    if (existingSocket && existingSocket !== socket) existingSocket.destroy()
     this.startHeartbeat(socket)
     this.emit('connect', remotePeerId, this.socketEndpoints.get(socket), this.socketAttemptIds.get(socket))
+    return true
   }
 
   /** 通过轻量 ping/pong 识别静默失效的 TCP 长连接。 */

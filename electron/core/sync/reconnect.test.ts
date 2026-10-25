@@ -1,17 +1,36 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ReconnectManager, type ReconnectOptions } from './reconnect'
+
+const managers: ReconnectManager[] = []
+
+afterEach(() => {
+  managers.splice(0).forEach((manager) => manager.stop())
+  vi.useRealTimers()
+})
+
+function deferred(): { promise: Promise<void>; resolve(): void; reject(error: Error): void } {
+  let resolve!: () => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
+}
 
 function createManager(
   connect: ReconnectOptions['connect'] = async () => undefined,
   maxAttempts = 20,
 ): ReconnectManager {
-  return new ReconnectManager({
+  const manager = new ReconnectManager({
     baseDelayMs: 1_000,
     connect,
     maxAttempts,
     maxDelayMs: 30_000,
   })
+  managers.push(manager)
+  return manager
 }
 
 describe('ReconnectManager', () => {
@@ -101,5 +120,66 @@ describe('ReconnectManager', () => {
     await vi.advanceTimersByTimeAsync(30_000)
     expect(connect).not.toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  it.each(['success', 'failure'] as const)('ignores pending %s after stop', async (outcome) => {
+    vi.useFakeTimers()
+    const pending = deferred()
+    const connect = vi.fn(() => pending.promise)
+    const manager = createManager(connect)
+    manager.markDisconnected('peer-a', '192.168.1.5', 49500)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    manager.stop()
+    if (outcome === 'success') pending.resolve()
+    else pending.reject(new Error('late failure'))
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(manager.list()).toEqual([])
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each(['success', 'failure'] as const)('keeps a replacement connection after stale %s', async (outcome) => {
+    vi.useFakeTimers()
+    const pending = deferred()
+    const manager = createManager(() => pending.promise)
+    manager.markDisconnected('peer-a', '192.168.1.5', 49500)
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    manager.markConnected('peer-a', '192.168.1.6', 49501)
+    if (outcome === 'success') pending.resolve()
+    else pending.reject(new Error('late failure'))
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(manager.get('peer-a')).toEqual({
+      peerId: 'peer-a', status: 'connected', attempt: 0, host: '192.168.1.6', port: 49501,
+    })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each(['success', 'failure'] as const)('keeps the newer retry active after stale %s', async (outcome) => {
+    vi.useFakeTimers()
+    const previous = deferred()
+    const current = deferred()
+    const connect = vi.fn()
+      .mockImplementationOnce(() => previous.promise)
+      .mockImplementationOnce(() => current.promise)
+    const manager = createManager(connect)
+    manager.markDisconnected('peer-a', '192.168.1.5', 49500)
+    await vi.advanceTimersByTimeAsync(1_000)
+    manager.retryNow('peer-a')
+    await vi.advanceTimersByTimeAsync(0)
+
+    if (outcome === 'success') previous.resolve()
+    else previous.reject(new Error('superseded failure'))
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(manager.get('peer-a')).toMatchObject({ status: 'reconnecting', attempt: 1 })
+    expect(connect).toHaveBeenCalledTimes(2)
+    expect(vi.getTimerCount()).toBe(0)
+
+    current.resolve()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(manager.get('peer-a')).toMatchObject({ status: 'connected', attempt: 0 })
   })
 })

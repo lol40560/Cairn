@@ -8,9 +8,10 @@ import { EmptyState } from '@/components/EmptyState'
 import { Spinner } from '@/components/Spinner'
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { initializeDownloadTarget, parseDirectEndpoint, showDownloadedProject, teamInputError } from '@/lib/teamJoin'
 import { derivePrimaryTeamStatus, deriveTeamHealth, formatDiagnostics } from '@/lib/teamHealth'
 import { useAppStore } from '@/store/appStore'
-import type { IpcResult, PeerInfo, SeederInfo } from '@/types/cairn'
+import type { IpcResult, LocalEndpoint, PeerInfo, SeederInfo } from '@/types/cairn'
 
 interface RoomViewProps {
   hasOps: boolean
@@ -19,7 +20,7 @@ interface RoomViewProps {
   onCreateRoom(): Promise<void>
   onExportSnapshot(): Promise<void>
   onExportPR(): void
-  onJoinRoom(roomCode: string): Promise<void>
+  onJoinRoom(roomCode: string, endpoint?: LocalEndpoint): Promise<void>
   onLeaveRoom(): Promise<void>
 }
 
@@ -93,6 +94,8 @@ export function RoomView({
   const downloadFailureHandled = useRef(false)
   const directAddress = useAppStore((state) => state.directAddress)
   const watchStatus = useAppStore((state) => state.status)
+  const folder = useAppStore((state) => state.folder)
+  const projectReady = folder !== '' && watchStatus === 'watching'
   const conflicts = useAppStore((state) => state.conflicts)
   const ops = useAppStore((state) => state.ops)
   const localEndpoint = useAppStore((state) => state.localEndpoint)
@@ -119,7 +122,6 @@ export function RoomView({
   const setLastDownloadResult = useAppStore((state) => state.setLastDownloadResult)
   const setIsSharing = useAppStore((state) => state.setIsSharing)
   const setDirectAddress = useAppStore((state) => state.setDirectAddress)
-  const setIsHost = useAppStore((state) => state.setIsHost)
   const setLocalEndpoint = useAppStore((state) => state.setLocalEndpoint)
   const setMySnapshotId = useAppStore((state) => state.setMySnapshotId)
   const setPendingAutoDownload = useAppStore((state) => state.setPendingAutoDownload)
@@ -171,19 +173,8 @@ export function RoomView({
         console.error('[cairn] 无法读取项目分享列表', error)
       }
     }
-    const loadDefaultDirectory = async (): Promise<void> => {
-      try {
-        const result = await window.cairn.getDefaultDownloadDir()
-        if (result.ok && !disposed) {
-          setDownloadTargetDir(result.data)
-        }
-      } catch (error) {
-        console.error('[cairn] 无法初始化下载目录', error)
-      }
-    }
-
     void loadSeeders()
-    void loadDefaultDirectory()
+    initializeDownloadTarget()
     const pollTimer = window.setInterval(() => void loadSeeders(), 2_000)
     const unsubscribeProgress = window.cairn.onDownloadProgress((progress) => {
       if (!disposed) {
@@ -249,6 +240,10 @@ export function RoomView({
   }, [downloadStatus, pendingAutoDownload, seeders, setPendingAutoDownload, setShowDownloadPrompt])
 
   const handleJoin = async (): Promise<void> => {
+    if (!projectReady) {
+      setToast(normalizeError(teamInputError('errorProjectRequired', 'Choose a project first.'), t))
+      return
+    }
     const roomCodeInput = joinCode.replace(/[\s-]/g, '').toUpperCase()
     if (!/^[A-Z2-7\s-]{26,32}$/i.test(roomCodeInput) || roomCodeInput.replace(/[\s-]/g, '').length !== 26) {
       setToast({ message: t('wrongRoom'), tone: 'error' })
@@ -257,34 +252,8 @@ export function RoomView({
 
     setJoining(true)
     try {
-      // 先进入房间，确保 mDNS 与直连都使用同一份邀请码认证。
-      await onJoinRoom(roomCodeInput)
-      if (useAppStore.getState().roomCode !== roomCodeInput) {
-        return
-      }
-
-      const directAddressValue = directAddressInput.trim()
-      if (!directAddressValue) {
-        setPendingAutoDownload(true)
-        setJoinCode('')
-        return
-      }
-
-      const address = directAddressValue.match(/^([\d.]+):(\d+)$/)
-      if (!address) {
-        setToast({ message: t('invalidRoomCodeOrAddress'), tone: 'error' })
-        return
-      }
-
-      const host = address[1]
-      const port = Number.parseInt(address[2]!, 10)
-      const result = await window.cairn.connectToAddress({ host, port, roomCode: roomCodeInput })
-      if (!result.ok) {
-        setToast({ message: t('authFailed'), tone: 'error' })
-        return
-      }
-      setDirectAddress(`${host}:${port}`)
-      setIsHost(false)
+      const endpoint = parseDirectEndpoint(directAddressInput)
+      await onJoinRoom(roomCodeInput, endpoint)
       setJoinCode('')
       setDirectAddressInput('')
       setPendingAutoDownload(true)
@@ -363,6 +332,10 @@ export function RoomView({
   }
 
   const handleStartRoom = async (): Promise<void> => {
+    if (!projectReady) {
+      setToast(normalizeError(teamInputError('errorProjectRequired', 'Choose a project first.'), t))
+      return
+    }
     setStartingRoom(true)
     try {
       const result = await createRoomAndStartSharing(onCreateRoom, () => window.cairn.startSharing())
@@ -405,16 +378,11 @@ export function RoomView({
   }
 
   const handleDownload = async (seeder: SeederInfo): Promise<void> => {
-    let targetDir = downloadTargetDir
+    const sourceProject = useAppStore.getState().folder
+    const targetDir = downloadTargetDir || sourceProject
     try {
       if (!targetDir) {
-        const defaultDirectory = await window.cairn.getDefaultDownloadDir()
-        if (!defaultDirectory.ok) {
-          setToast(normalizeError(defaultDirectory.error, t))
-          return
-        }
-        targetDir = defaultDirectory.data
-        setDownloadTargetDir(targetDir)
+        throw teamInputError('errorProjectRequired', 'Choose a project first.')
       }
 
       canceledDownload.current = false
@@ -435,6 +403,7 @@ export function RoomView({
       }
 
       setDownloadStatus('done')
+      setLastDownloadResult(result.data.targetDir, result.data.conflictFiles)
       setToast({
         hint:
           result.data.conflictFiles.length > 0
@@ -445,7 +414,6 @@ export function RoomView({
           .replace('{path}', result.data.targetDir),
         tone: 'success',
       })
-      setLastDownloadResult(result.data.targetDir, result.data.conflictFiles)
       resetDownload()
     } catch (error) {
       if (!canceledDownload.current) {
@@ -500,6 +468,15 @@ export function RoomView({
       }
     } catch (error) {
       console.error('[cairn] 无法打开下载目录', error)
+      setToast(normalizeError(error, t))
+    }
+  }
+
+  const handleShowDownloadedProject = async (): Promise<void> => {
+    if (!lastDownloadPath) return
+    try {
+      await showDownloadedProject(lastDownloadPath, window.cairn)
+    } catch (error) {
       setToast(normalizeError(error, t))
     }
   }
@@ -575,6 +552,10 @@ export function RoomView({
 
       {!joined ? (
         <div className="room-setup">
+          {!projectReady ? <div role="status" className="room-hint" style={{ gridColumn: '1 / -1' }}>
+            <p>{t('errorProjectRequired')}</p>
+            <button className="btn" type="button" onClick={() => useAppStore.getState().setActiveView('projects')}>{t('openProject')}</button>
+          </div> : null}
           <section className="team-action-card team-action-card-primary">
             <div className="team-action-heading">
               <span className="team-action-icon"><Plus aria-hidden="true" size={18} /></span>
@@ -583,7 +564,7 @@ export function RoomView({
                 <p>{t('startTeamDesc')}</p>
               </div>
             </div>
-            <button aria-busy={startingRoom} className="btn btn-primary" disabled={startingRoom} type="button" onClick={() => void handleStartRoom()}>
+            <button aria-busy={startingRoom} className="btn btn-primary" disabled={!projectReady || startingRoom || joining} type="button" onClick={() => void handleStartRoom()}>
               {startingRoom ? <Spinner size={12} /> : null}
               {startingRoom ? t('creating') : t('create')}
             </button>
@@ -604,7 +585,7 @@ export function RoomView({
               value={joinCode}
               onChange={(event) => setJoinCode(event.target.value)}
             />
-            <button aria-busy={joining} className="btn" disabled={joinCode.trim() === '' || joining} type="button" onClick={() => void handleJoin()}>
+            <button aria-busy={joining} className="btn" disabled={!projectReady || joinCode.trim() === '' || joining || startingRoom} type="button" onClick={() => void handleJoin()}>
               {joining ? <Spinner size={12} /> : null}
               {joining ? t('joining') : t('joinRoom')}
             </button>
@@ -741,6 +722,10 @@ export function RoomView({
                     {lastDownloadPath}
                   </button>
                 </div>
+                {lastDownloadPath !== folder ? <div className="room-hint">
+                  <p>{t('downloadSavedSeparately').replace('{folder}', folder || t('chooseProjectHint'))}</p>
+                  <button className="btn" type="button" onClick={() => void handleShowDownloadedProject()}>{t('downloadShowProject')}</button>
+                </div> : null}
                 {lastConflictFiles.length > 0 && (
                   <div className="download-result-conflicts">
                     {t('downloadConflictsMsg').replace('{n}', String(lastConflictFiles.length))}

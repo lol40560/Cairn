@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { AppError, toAppError, wrapIpcHandler } from './errors'
+import { AppError, redactErrorDetails, serializeAppError, toAppError, wrapIpcHandler } from './errors'
 
 describe('toAppError', () => {
   it('保留已分类的 AppError', () => {
@@ -60,5 +60,47 @@ describe('wrapIpcHandler', () => {
       },
       ok: false,
     })
+  })
+})
+
+
+describe('team join error diagnostics', () => {
+  it.each([
+    ['请先选择并开始监控一个项目', 'config', 'errorProjectRequired'],
+    ['邀请码必须是 128-bit Base32 房间密钥', 'config', 'errorInvalidCode'],
+    ['认证超时', 'network', 'errorTimeout'],
+    ['连接 192.168.0.1:1234 在认证完成前关闭', 'network', 'errorConnectionClosed'],
+    ['Connection closed before TCP connection completed', 'network', 'errorConnectionClosed'],
+    ['wrong-room', 'network', 'errorAuthentication'],
+    ['Invalid server proof', 'network', 'errorAuthentication'],
+    ['认证失败', 'network', 'errorAuthentication'],
+    ['Unsupported protocol version: 3', 'network', 'errorVersionMismatch'],
+    ['mDNS publish failed', 'network', 'errorDiscovery'],
+  ])('preserves the actionable reason for %s', (message, category, code) => {
+    expect(serializeAppError(new Error(message))).toMatchObject({ category, code, message })
+  })
+
+  it('retains typed project/address errors from the main process', () => {
+    for (const code of ['errorProjectRequired', 'errorInvalidAddress']) {
+      expect(serializeAppError(new AppError('configuration problem', 'config', { code }))).toMatchObject({ category: 'config', code })
+    }
+  })
+
+  it('redacts credentials from both serialized messages and local details', () => {
+    const secret = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    const message = `roomCode="${secret}" token=not-for-diagnostics https://user:private-pass@example.test/join?invite=private-invite#secret=fragment-secret Authorization: Bearer private.bearer.token`
+    const result = serializeAppError(new Error(message))
+    for (const value of [result.message, result.raw, redactErrorDetails(message)]) {
+      for (const credential of [secret, 'not-for-diagnostics', 'private-pass', 'private-invite', 'fragment-secret', 'private.bearer.token']) {
+        expect(value).not.toContain(credential)
+      }
+      expect(value).toContain('[redacted')
+    }
+  })
+
+  it('keeps endpoint and operating-system failure evidence', () => {
+    const error = Object.assign(new Error('connect ECONNREFUSED 192.168.1.10:59728'), { code: 'ECONNREFUSED' })
+    expect(serializeAppError(error)).toMatchObject({ category: 'network', code: 'errorTeammateClosed', message: error.message })
+    expect(serializeAppError(error).raw).toContain('192.168.1.10:59728')
   })
 })

@@ -60,8 +60,8 @@ const cairn = {
     }
   },
   createRoom: (): Promise<IpcResult<string>> => invoke('cairn:createRoom'),
-  joinRoom: (roomCode: string): Promise<IpcResult<void>> =>
-    invoke('cairn:joinRoom', roomCode),
+  joinRoom: (roomCode: string, endpoint?: { host: string; port: number }): Promise<IpcResult<void>> =>
+    endpoint === undefined ? invoke('cairn:joinRoom', roomCode) : invoke('cairn:joinRoom', roomCode, endpoint),
   leaveRoom: (): Promise<IpcResult<void>> => invoke('cairn:leaveRoom'),
   listPeers: (): Promise<IpcResult<PeerInfo[]>> => invoke('cairn:listPeers'),
   retryPeer: (peerId: string): Promise<IpcResult<void>> => invoke('cairn:retryPeer', peerId),

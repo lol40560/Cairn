@@ -1189,6 +1189,52 @@ describe('IPC bridge', () => {
     expect(main.listPeers()).toEqual([])
   })
 
+  it('direct join skips discovery and is complete before reporting success', async () => {
+    const main = await loadMain()
+    await main.startWatching(await createDirectory())
+    await main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA', { host: '127.0.0.1', port: 49500 })
+    expect(mocks.syncs[0]?.start).toHaveBeenCalledWith({ discovery: false })
+    expect(mocks.syncs[0]?.connectToAddress).toHaveBeenCalledWith('127.0.0.1', 49500, 'AAAAAAAAAAAAAAAAAAAAAAAAAA')
+  })
+
+  it('failed direct join closes its partial room and permits a clean retry', async () => {
+    const main = await loadMain()
+    await main.startWatching(await createDirectory())
+    const makeSync = mocks.makeSync
+    const factory = vi.spyOn(mocks, 'makeSync').mockImplementationOnce(() => {
+      const sync = makeSync()
+      sync.connectToAddress.mockRejectedValueOnce(new Error('ECONNREFUSED'))
+      return sync
+    })
+    const roomCode = 'AAAAAAAAAAAAAAAAAAAAAAAAAA'
+    await expect(main.joinRoom(roomCode, { host: '127.0.0.1', port: 49500 })).rejects.toThrow('ECONNREFUSED')
+    factory.mockRestore()
+    expect(mocks.syncs[0]?.stop).toHaveBeenCalledOnce()
+    expect(main.getLocalEndpoint()).toBeUndefined()
+    await main.joinRoom(roomCode, { host: '127.0.0.1', port: 49500 })
+    expect(mocks.syncs[1]?.start).toHaveBeenCalledWith({ discovery: false })
+  })
+
+  it('invalid endpoints do not replace an existing room and missing folders are actionable', async () => {
+    const main = await loadMain()
+    await expect(main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA')).rejects.toMatchObject({ code: 'errorProjectRequired' })
+    await main.startWatching(await createDirectory())
+    await main.createRoom()
+    await expect(main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA', { host: '999.1.1.1', port: 80 })).rejects.toMatchObject({ code: 'errorInvalidAddress' })
+    expect(mocks.syncs[0]?.stop).not.toHaveBeenCalled()
+    expect(mocks.syncs).toHaveLength(1)
+  })
+
+  it('serializes overlapping room starts and leave so no room is orphaned', async () => {
+    const main = await loadMain()
+    await main.startWatching(await createDirectory())
+    await Promise.all([main.createRoom(), main.joinRoom('AAAAAAAAAAAAAAAAAAAAAAAAAA'), main.leaveRoom()])
+    expect(mocks.syncs).toHaveLength(2)
+    expect(mocks.syncs[0]?.stop).toHaveBeenCalledOnce()
+    expect(mocks.syncs[1]?.stop).toHaveBeenCalledOnce()
+    expect(main.getLocalEndpoint()).toBeUndefined()
+  })
+
   it('peer 变化会通过指定频道发送', async () => {
     const main = await loadMain()
     const root = await createDirectory()

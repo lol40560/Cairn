@@ -2,6 +2,26 @@
 
 All notable changes to Cairn.
 
+## [2.0.3] - 2026-10-25
+
+### Fixed
+
+- Make direct team joins independent of multicast discovery and retain retry controls after a failed connection.
+- Validate project and address requirements before joining, clean up partial sessions, and serialize room changes.
+- Resolve simultaneous connections consistently, retry initial discovery failures across IPv4 addresses, and count only authenticated peers.
+- Cancel timed-out and obsolete attempts, clear stale team state on project changes, and align default downloads with the monitored folder.
+- Identify alternate downloads as separate copies and show actionable connection errors with credential-redacted details.
+
+### Security
+
+- Patch DOMPurify to 3.4.17 while retaining Monaco 0.57.0, and redirect Monaco's vendored sanitizer to the patched module.
+- Add module-graph regression checks for the actual renderer configuration and Windows paths, and refresh third-party notices.
+
+### Distribution
+
+- Publish macOS Apple Silicon and Intel installers and Windows x64 packages with a SHA-256 manifest.
+- Retain the existing unsigned distribution policy and documented platform trust warnings.
+
 ## [2.0.2] - 2026-10-21
 
 ### Security

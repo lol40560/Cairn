@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeError } from './errors'
+import { normalizeError, redactErrorDetails } from './errors'
+import { t as translate } from '@/i18n/locales'
 
 const translations: Record<string, string> = {
   errorConfig: '配置不完整，请打开设置检查',
@@ -66,5 +67,41 @@ describe('normalizeError', () => {
   it('为未知错误显示通用重试文案', () => {
     expect(normalizeError(new Error('unclassified issue'), t).message).toBe('出现问题，请重试。')
     expect(normalizeError({ category: 'unknown', message: 'unclassified issue', raw: 'trace' }, t).message).toBe('出现问题，请重试。')
+  })
+})
+
+
+describe('team join error presentation', () => {
+  it.each([
+    ['请先选择并开始监控一个项目', 'config', 'errorProjectRequired'],
+    ['认证超时', 'network', 'errorTimeout'],
+    ['Connection closed before TCP connection completed', 'network', 'errorConnectionClosed'],
+    ['连接 192.168.0.1:1234 在认证完成前关闭', 'network', 'errorConnectionClosed'],
+    ['wrong-room', 'network', 'errorAuthentication'],
+    ['Invalid server proof', 'network', 'errorAuthentication'],
+    ['Unsupported protocol version: 3', 'network', 'errorVersionMismatch'],
+    ['mDNS publish failed', 'network', 'errorDiscovery'],
+  ] as const)('explains %s instead of showing a generic retry', (message, category, key) => {
+    expect(normalizeError(new Error(message), (key) => translate(key, 'en'))).toMatchObject({ category, message: translate(key, 'en') })
+  })
+
+  it.each(['errorProjectRequired', 'errorInvalidAddress', 'errorAuthentication', 'errorVersionMismatch', 'errorDiscovery', 'errorConnectionClosed'] as const)('honors the serialized %s code', (code) => {
+    const error = { category: 'config' as const, code, message: 'underlying detail', raw: 'local detail' }
+    expect(normalizeError(error, (key) => translate(key, 'en')).message).toBe(translate(code, 'en'))
+  })
+
+  it('redacts raw details from legacy main processes and ordinary exceptions', () => {
+    const secret = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    const raw = `invite=${secret} password="hidden password" https://user:hidden@example.test/?token=private-token`
+    for (const value of [
+      normalizeError({ category: 'unknown', message: 'failed', raw }, t).raw,
+      normalizeError(new Error(raw), t).raw,
+      redactErrorDetails(raw),
+    ]) {
+      expect(value).not.toContain(secret)
+      expect(value).not.toContain('hidden password')
+      expect(value).not.toContain('user:hidden')
+      expect(value).not.toContain('private-token')
+    }
   })
 })

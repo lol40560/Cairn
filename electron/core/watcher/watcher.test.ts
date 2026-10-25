@@ -127,7 +127,7 @@ describe('ProjectWatcher', () => {
       size: Buffer.byteLength(text, 'utf8'),
     })
     expect(op.blobHash).toMatch(/^[a-f0-9]{64}$/)
-    expect(await new BlobStore(projectRoot).get(op.blobHash!)).toEqual(Buffer.from(text, 'utf8'))
+    expect((await new BlobStore(projectRoot).get(op.blobHash!))?.equals(Buffer.from(text, 'utf8'))).toBe(true)
     await new Promise<void>((resolve) => setTimeout(resolve, 150))
     expect(oplog.listRecent(200)).toHaveLength(1)
   }, 45_000)

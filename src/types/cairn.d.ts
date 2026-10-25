@@ -257,7 +257,7 @@ export interface CairnApi {
   onEditClaimsChanged(callback: (claims: EditClaim[]) => void): () => void
   onOp(callback: (op: Op) => void): () => void
   createRoom(): Promise<IpcResult<string>>
-  joinRoom(roomCode: string): Promise<IpcResult<void>>
+  joinRoom(roomCode: string, endpoint?: LocalEndpoint): Promise<IpcResult<void>>
   leaveRoom(): Promise<IpcResult<void>>
   listPeers(): Promise<IpcResult<PeerInfo[]>>
   retryPeer(peerId: string): Promise<IpcResult<void>>
