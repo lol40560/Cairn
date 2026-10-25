@@ -73,6 +73,7 @@ export interface AppState {
   setPendingAutoDownload(value: boolean): void
   setShowDownloadPrompt(value: boolean): void
   resetDownload(): void
+  resetTeamState(): void
   setLastDownloadResult(path: string, conflicts: string[]): void
   clearLastDownloadResult(): void
   setTrash(trash: TrashEntry[]): void
@@ -177,6 +178,11 @@ export const useAppStore = create<AppState>((set) => ({
   setDownloadStatus: (downloadStatus) => set({ downloadStatus }),
   setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
   setDownloadTargetDir: (downloadTargetDir) => set({ downloadTargetDir }),
+  resetTeamState: () => set({
+    roomCode: '', peers: [], isHost: false, directAddress: undefined, localEndpoint: undefined,
+    seeders: [], isSharing: false, mySnapshotId: undefined, identityMismatches: [], peerStatuses: {},
+    downloadProgress: undefined, downloadStatus: 'idle', pendingAutoDownload: false, showDownloadPrompt: false,
+  }),
   setPendingAutoDownload: (pendingAutoDownload) => set({ pendingAutoDownload }),
   setShowDownloadPrompt: (showDownloadPrompt) => set({ showDownloadPrompt }),
   resetDownload: () => set({

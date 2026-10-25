@@ -22,6 +22,8 @@ export interface ReconnectOptions {
 export class ReconnectManager extends EventEmitter {
   private readonly peers = new Map<string, PeerState>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly attemptTokens = new Map<string, symbol>()
+  private generation = 0
 
   constructor(private readonly options: ReconnectOptions) {
     super()
@@ -29,6 +31,7 @@ export class ReconnectManager extends EventEmitter {
 
   markConnected(peerId: string, host?: string, port?: number): void {
     const previous = this.peers.get(peerId)
+    this.attemptTokens.delete(peerId)
     this.clearTimer(peerId)
     const state: PeerState = {
       attempt: 0,
@@ -73,8 +76,10 @@ export class ReconnectManager extends EventEmitter {
   }
 
   stop(): void {
+    this.generation += 1
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
+    this.attemptTokens.clear()
     this.peers.clear()
   }
 
@@ -85,27 +90,37 @@ export class ReconnectManager extends EventEmitter {
     }
 
     const nextRetryAt = Date.now() + delay
+    const generation = this.generation
+    const token = Symbol(peerId)
+    this.clearTimer(peerId)
+    this.attemptTokens.set(peerId, token)
     const state: PeerState = { attempt, host, nextRetryAt, peerId, port, status: 'reconnecting' }
     this.peers.set(peerId, state)
     this.emitStatus(state)
-    this.clearTimer(peerId)
+    // A status listener can synchronously stop or replace this attempt.
+    if (!this.isCurrentAttempt(peerId, generation, token)) return
     const timer = setTimeout(() => {
+      if (!this.isCurrentAttempt(peerId, generation, token)) return
       this.timers.delete(peerId)
-      void this.tryConnect(peerId, host, port, attempt)
+      void this.tryConnect(peerId, host, port, attempt, generation, token)
     }, delay)
     this.timers.set(peerId, timer)
   }
 
-  private async tryConnect(peerId: string, host: string, port: number, attempt: number): Promise<void> {
+  private async tryConnect(peerId: string, host: string, port: number, attempt: number, generation: number, token: symbol): Promise<void> {
+    if (!this.isCurrentAttempt(peerId, generation, token)) return
     try {
       await this.options.connect(peerId, host, port)
+      if (!this.isCurrentAttempt(peerId, generation, token)) return
       this.markConnected(peerId, host, port)
     } catch {
+      if (!this.isCurrentAttempt(peerId, generation, token)) return
       this.schedule(peerId, host, port, attempt + 1)
     }
   }
 
   private setOffline(peerId: string, host: string | undefined, port: number | undefined, attempt: number): void {
+    this.attemptTokens.delete(peerId)
     this.clearTimer(peerId)
     const state: PeerState = { attempt, host, peerId, port, status: 'offline' }
     this.peers.set(peerId, state)
@@ -127,6 +142,10 @@ export class ReconnectManager extends EventEmitter {
     const timer = this.timers.get(peerId)
     if (timer) clearTimeout(timer)
     this.timers.delete(peerId)
+  }
+
+  private isCurrentAttempt(peerId: string, generation: number, token: symbol): boolean {
+    return generation === this.generation && this.attemptTokens.get(peerId) === token
   }
 
   private hasEndpoint(host: string | undefined, port: number | undefined): host is string {

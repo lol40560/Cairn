@@ -1186,7 +1186,8 @@ describe('large text blob fallback', () => {
     expect(sent.every((message) => isSyncMessageWithinLimit(message))).toBe(true)
 
     for (const message of sent) targetTransport.emit('message', 'source', message)
-    await vi.waitFor(async () => expect(await targetStore.get(hash)).toEqual(content), { timeout: 20_000 })
+    // Compare bytes without formatting a multi-megabyte diff while the async write is pending.
+    await vi.waitFor(async () => expect((await targetStore.get(hash))?.equals(content)).toBe(true), { timeout: 20_000 })
 
     await Promise.all([source.stop(), target.stop()])
   }, 30_000)
@@ -1384,7 +1385,7 @@ describe('Sync', () => {
     const second = sync.connectToAddress('10.0.0.6', 41006)
     const secondAttempt = transport.connect.mock.calls[1]?.[2] as string
     await vi.advanceTimersByTimeAsync(1)
-    expect(await first).toEqual(expect.objectContaining({ message: '连接 10.0.0.5:41005 超时' }))
+    expect(await first).toEqual(expect.objectContaining({ code: 'ETIMEDOUT', message: '连接 10.0.0.5:41005 超时' }))
     expect((sync as unknown as { connectionAttempts: Map<string, unknown> }).connectionAttempts.size).toBe(1)
 
     // 已完成 attempt 的迟到成功事件不能完成新的 promise。

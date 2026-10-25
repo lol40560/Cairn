@@ -15,6 +15,7 @@ import { RoomView } from '@/components/views/RoomView'
 import { TrashView } from '@/components/views/TrashView'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
 import { createPRBranchName } from '@/lib/prBranch'
+import { joinTeam } from '@/lib/teamJoin'
 import { hasCompletedProductTour } from '@/lib/productTour'
 import { isEditableTarget, shortcutLabel } from '@/lib/shortcuts'
 import { getDemoScenario, type HackathonExecutionMode, type HackathonSceneId } from '@/lib/hackathonMode'
@@ -22,7 +23,7 @@ import { createDemoWorkspace } from '@/lib/demoWorkspace'
 import { createSimulationCapabilityController, type RealWorkspaceAction } from '@/lib/simulationCapabilities'
 import { useTranslation, type TranslateFn } from '@/i18n'
 import { useAppStore } from '@/store/appStore'
-import type { AvailableProjectEntry, IpcResult } from '@/types/cairn'
+import type { AvailableProjectEntry, IpcResult, LocalEndpoint } from '@/types/cairn'
 
 const ActivityView = lazy(() => import('@/components/views/ActivityView').then((module) => ({ default: module.ActivityView })))
 const CheckpointsView = lazy(() => import('@/components/views/CheckpointsView').then((module) => ({ default: module.CheckpointsView })))
@@ -91,6 +92,7 @@ export function App() {
   const setPeers = useAppStore((state) => state.setPeers)
   const setPeerStatus = useAppStore((state) => state.setPeerStatus)
   const setRoomCode = useAppStore((state) => state.setRoomCode)
+  const resetTeamState = useAppStore((state) => state.resetTeamState)
   const setStatus = useAppStore((state) => state.setStatus)
   const setConflicts = useAppStore((state) => state.setConflicts)
   const projects = useAppStore((state) => state.projects)
@@ -145,11 +147,14 @@ export function App() {
 
   const activateProject = useCallback(async (project: AvailableProjectEntry): Promise<void> => {
     if (!permitRealWorkspaceAction('switch-project')) return
+    if (useAppStore.getState().folder === project.path && useAppStore.getState().status === 'watching') {
+      setActiveView('home')
+      return
+    }
     try {
       getIpcData(await window.cairn.startWatching(project.path))
-      setPeers([])
-      setIsHost(false)
-      setRoomCode('')
+      resetTeamState()
+      useAppStore.getState().setDownloadTargetDir(project.path)
       clearIdentityMismatches()
       clearPeerStatuses()
       setProjectFiles([])
@@ -161,7 +166,7 @@ export function App() {
     } catch (error) {
       setToast(normalizeError(error, t))
     }
-  }, [clearIdentityMismatches, clearPeerStatuses, permitRealWorkspaceAction, replaceOps, setActiveView, setFolder, setIsHost, setPeers, setProjectFiles, setRoomCode, setSelectedFilePath, setStatus, t])
+  }, [clearIdentityMismatches, clearPeerStatuses, permitRealWorkspaceAction, replaceOps, resetTeamState, setActiveView, setFolder, setProjectFiles, setSelectedFilePath, setStatus, t])
 
   const openQuickOpen = useCallback(async (): Promise<void> => {
     if (!permitRealWorkspaceAction('quick-open')) return
@@ -296,13 +301,16 @@ export function App() {
     try {
       const selectedFolder = getIpcData(await window.cairn.selectFolder())
       if (selectedFolder === '') return
+      if (useAppStore.getState().folder === selectedFolder && useAppStore.getState().status === 'watching') {
+        setActiveView('home')
+        return
+      }
 
       setRestoring(true)
       setRestoreError(undefined)
       getIpcData(await window.cairn.startWatching(selectedFolder))
-      setPeers([])
-      setIsHost(false)
-      setRoomCode('')
+      resetTeamState()
+      useAppStore.getState().setDownloadTargetDir(selectedFolder)
       setFolder(selectedFolder)
       setStatus('watching')
       replaceOps(getIpcData(await window.cairn.listRecentOps(200)))
@@ -317,48 +325,32 @@ export function App() {
 
   const handleCreateRoom = async (): Promise<void> => {
     if (!permitRealWorkspaceAction('room-connect')) return
+    resetTeamState()
+    const code = getIpcData(await window.cairn.createRoom())
+    setRoomCode(code)
+    setIsHost(true)
     try {
-      clearIdentityMismatches()
-      clearPeerStatuses()
-      const code = getIpcData(await window.cairn.createRoom())
-      setRoomCode(code)
-      setIsHost(true)
       setPeers(getIpcData(await window.cairn.listPeers()))
     } catch (error) {
-      console.error('[cairn] 无法创建房间', error)
-      setToast(normalizeError(error, t))
+      console.error('[cairn] Unable to refresh teammates after creating a team', error)
     }
   }
 
-  const handleJoinRoom = async (code: string): Promise<void> => {
+  const handleJoinRoom = async (code: string, endpoint?: LocalEndpoint): Promise<void> => {
     if (!permitRealWorkspaceAction('room-connect')) return
-    try {
-      clearIdentityMismatches()
-      clearPeerStatuses()
-      getIpcData(await window.cairn.joinRoom(code))
-      setRoomCode(code)
-      setIsHost(false)
-      setPeers(getIpcData(await window.cairn.listPeers()))
-    } catch (error) {
-      console.error('[cairn] 无法加入房间', error)
-      setToast(normalizeError(error, t))
-    }
+    await joinTeam(code, endpoint, window.cairn)
   }
 
   const handleLeaveRoom = useCallback(async (): Promise<void> => {
     if (!permitRealWorkspaceAction('leave-team')) return
     try {
       getIpcData(await window.cairn.leaveRoom())
-      setPeers([])
-      setIsHost(false)
-      setRoomCode('')
-      clearIdentityMismatches()
-      clearPeerStatuses()
+      resetTeamState()
     } catch (error) {
       console.error('[cairn] 无法离开房间', error)
       setToast(normalizeError(error, t))
     }
-  }, [clearIdentityMismatches, clearPeerStatuses, permitRealWorkspaceAction, setIsHost, setPeers, setRoomCode, t])
+  }, [permitRealWorkspaceAction, resetTeamState, t])
 
   const handleExportSnapshot = useCallback(async (): Promise<void> => {
     if (!permitRealWorkspaceAction('export-snapshot')) return

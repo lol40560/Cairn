@@ -49,8 +49,21 @@ export function selectPeerHost(addresses: string[] | undefined, fallback: string
   )
 }
 
+/** Preserve alternate interface addresses so one stale adapter does not prevent joining. */
+export function selectPeerHosts(addresses: string[] | undefined, fallback: string): string[] {
+  const candidates = addresses ?? []
+  return [...new Set([
+    ...candidates.filter((address) => isIP(address) === 4),
+    fallback,
+  ].filter(Boolean))].slice(0, 8)
+}
+
+export interface DiscoveredPeer extends PeerInfo {
+  hosts: string[]
+}
+
 export class Discovery extends EventEmitter {
-  private readonly bonjour = new Bonjour()
+  private bonjour: Bonjour | undefined
   private browser: BonjourBrowser | undefined
   private publishedService: PublishedService | undefined
   private publishedName: string | undefined
@@ -67,7 +80,7 @@ export class Discovery extends EventEmitter {
     })
 
     try {
-      const service = this.bonjour.publish({
+      const service = this.getBonjour().publish({
         name: publishedName,
         port: options.port,
         protocol: 'tcp',
@@ -116,7 +129,7 @@ export class Discovery extends EventEmitter {
 
     let browser: BonjourBrowser
     try {
-      browser = this.bonjour.find({ protocol: 'tcp', type: 'cairn' }) as BonjourBrowser
+      browser = this.getBonjour().find({ protocol: 'tcp', type: 'cairn' }) as BonjourBrowser
       this.browser = browser
       this.lastError = undefined
       this.updateDiagnosticStatus()
@@ -157,7 +170,12 @@ export class Discovery extends EventEmitter {
   destroy(): void {
     this.stopPublish()
     this.stopBrowse()
-    this.bonjour.destroy()
+    this.bonjour?.destroy()
+    this.bonjour = undefined
+  }
+
+  private getBonjour(): Bonjour {
+    return this.bonjour ??= new Bonjour()
   }
 
   getStatus(): DiscoveryStatus {
@@ -177,7 +195,7 @@ export class Discovery extends EventEmitter {
     service: BonjourService,
     roomCode: string,
     ownPeerId: string,
-  ): PeerInfo | undefined {
+  ): DiscoveredPeer | undefined {
     const peerId = service.txt?.peerId
     if (
       service.txt?.roomHash !== deriveRoomHash(roomCode)
@@ -188,12 +206,13 @@ export class Discovery extends EventEmitter {
       return undefined
     }
 
-    const host = selectPeerHost(service.addresses, service.host)
-    if (!host || !Number.isInteger(service.port) || service.port <= 0) {
+    const hosts = selectPeerHosts(service.addresses, service.host)
+    const host = hosts[0]
+    if (!host || !Number.isInteger(service.port) || service.port <= 0 || service.port > 65_535) {
       this.emit('error', new Error(`发现的 peer 信息不完整：${peerId}`))
       return undefined
     }
 
-    return { host, lastSeen: Date.now(), peerId, port: service.port }
+    return { host, hosts, lastSeen: Date.now(), peerId, port: service.port }
   }
 }

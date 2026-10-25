@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { networkInterfaces } from 'node:os'
+import { isIP } from 'node:net'
 import { basename, dirname, isAbsolute, join, resolve, sep, win32 } from 'node:path'
 
 import Database from 'better-sqlite3'
@@ -98,6 +99,33 @@ let mainWindow: BrowserWindow | undefined
 let hackathonSimulationActive = false
 // 串行化监控启动，避免开发模式初始化与用户操作并发创建多个 watcher。
 let startWatchingPromise: Promise<void> | undefined
+let roomOperation: Promise<unknown> = Promise.resolve()
+
+function withRoomOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = roomOperation.then(operation, operation)
+  roomOperation = pending.catch(() => undefined)
+  return pending
+}
+
+interface RoomEndpoint {
+  host: string
+  port: number
+}
+
+function validateEndpoint(endpoint: RoomEndpoint): RoomEndpoint {
+  if (!endpoint || typeof endpoint.host !== 'string' || isIP(endpoint.host.trim()) !== 4 ||
+      !Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65_535) {
+    throw new AppError('Enter an IPv4 address and port between 1 and 65535.', 'config', { code: 'errorInvalidAddress' })
+  }
+  return { host: endpoint.host.trim(), port: endpoint.port }
+}
+
+function requireActiveProject(): ActiveProject {
+  if (!activeProject) {
+    throw new AppError('Select and start monitoring a project before joining a team.', 'config', { code: 'errorProjectRequired' })
+  }
+  return activeProject
+}
 
 const MAX_WATCHED_FILES = 2_000
 const MAX_PROJECT_FILES = 5_000
@@ -693,11 +721,7 @@ async function projectFilePath(projectRoot: string, relativePath: string): Promi
 }
 
 async function startRoom(roomCode: string, discovery = true): Promise<void> {
-  if (!activeProject) {
-    throw new Error('请先选择并开始监控一个项目')
-  }
-
-  const project = activeProject
+  const project = requireActiveProject()
   const blobStore = new BlobStore(project.root)
   const identity = await computeProjectIdentity(project.root)
   const sync = new Sync(
@@ -765,21 +789,43 @@ async function startRoom(roomCode: string, discovery = true): Promise<void> {
 }
 
 export async function createRoom(): Promise<string> {
-  await leaveRoom()
-  const roomCode = generateRoomCode()
-  console.info('[cairn:sync] createRoom requested')
-  await startRoom(roomCode)
-  return roomCode
+  return withRoomOperation(async () => {
+    requireActiveProject()
+    await leaveRoomInternal()
+    const roomCode = generateRoomCode()
+    console.info('[cairn:sync] createRoom requested')
+    await startRoom(roomCode)
+    return roomCode
+  })
 }
 
-export async function joinRoom(roomCode: string): Promise<void> {
-  roomCode = validateRoomCode(roomCode)
-  await leaveRoom()
-  console.info('[cairn:sync] joinRoom requested')
-  await startRoom(roomCode)
+export async function joinRoom(roomCode: string, endpoint?: RoomEndpoint): Promise<void> {
+  const normalizedCode = validateRoomCode(roomCode)
+  const directEndpoint = endpoint === undefined ? undefined : validateEndpoint(endpoint)
+  return withRoomOperation(async () => {
+    requireActiveProject()
+    if (activeRoom?.roomCode === normalizedCode) {
+      if (directEndpoint) await activeRoom.sync.connectToAddress(directEndpoint.host, directEndpoint.port, normalizedCode)
+      return
+    }
+    await leaveRoomInternal()
+    console.info('[cairn:sync] joinRoom requested')
+    try {
+      await startRoom(normalizedCode, !directEndpoint)
+      if (directEndpoint) await activeRoom!.sync.connectToAddress(directEndpoint.host, directEndpoint.port, normalizedCode)
+      broadcastPeers()
+    } catch (error) {
+      await leaveRoomInternal()
+      throw error
+    }
+  })
 }
 
 export async function leaveRoom(): Promise<void> {
+  return withRoomOperation(leaveRoomInternal)
+}
+
+async function leaveRoomInternal(): Promise<void> {
   const room = activeRoom
   if (!room) {
     return
@@ -839,20 +885,10 @@ export function getLocalEndpoint(): { host: string; port: number } | undefined {
 
 /** 在没有 mDNS 发现结果时，直接建立到队友端点的 TCP 连接。 */
 export async function connectToAddress(input: { host: string; port: number; roomCode: string }): Promise<void> {
-  if (!activeProject) {
-    throw new Error('请先选择并开始监控一个项目')
+  if (!input || typeof input.roomCode !== 'string') {
+    throw new AppError('Enter a valid invitation and direct address.', 'config', { code: 'errorInvalidAddress' })
   }
-  input.roomCode = validateRoomCode(input.roomCode)
-
-  if (!activeRoom) {
-    // 直连会话仅启动 TCP 传输，不发布或浏览 mDNS 服务。
-    await startRoom(input.roomCode, false)
-  } else if (activeRoom.roomCode !== input.roomCode) {
-    throw new Error('直连邀请码与当前房间不一致')
-  }
-
-  await activeRoom!.sync.connectToAddress(input.host, input.port, input.roomCode)
-  broadcastPeers()
+  await joinRoom(input.roomCode, input)
 }
 
 /** 暴露 mDNS 的只读诊断状态，便于定位发布或浏览失败。 */
@@ -900,6 +936,7 @@ export function listSeeders(): SeederInfo[] {
 
 /** 返回并确保用于接收队友项目的默认目录存在。 */
 export async function getDefaultDownloadDir(): Promise<string> {
+  if (activeProject) return activeProject.root
   const directory = join(app.getPath('home'), 'Cairn')
   await mkdir(directory, { recursive: true })
   return directory
@@ -1325,7 +1362,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('cairn:completeEditClaim', wrapIpcHandler(guardRealWorkspaceAction((id: string, actorId: string) => completeEditClaim(id, actorId))))
   ipcMain.handle('cairn:cancelEditClaim', wrapIpcHandler(guardRealWorkspaceAction((id: string, actorId: string) => cancelEditClaim(id, actorId))))
   ipcMain.handle('cairn:createRoom', wrapIpcHandler(guardRealWorkspaceAction(createRoom)))
-  ipcMain.handle('cairn:joinRoom', wrapIpcHandler(guardRealWorkspaceAction((roomCode: string) => joinRoom(roomCode))))
+  ipcMain.handle('cairn:joinRoom', wrapIpcHandler(guardRealWorkspaceAction((roomCode: string, endpoint?: RoomEndpoint) => joinRoom(roomCode, endpoint))))
   ipcMain.handle('cairn:leaveRoom', wrapIpcHandler(guardRealWorkspaceAction(leaveRoom)))
   ipcMain.handle('cairn:listPeers', wrapIpcHandler(listPeers))
   ipcMain.handle('cairn:retryPeer', wrapIpcHandler(guardRealWorkspaceAction((peerId: string) => retryPeer(peerId))))

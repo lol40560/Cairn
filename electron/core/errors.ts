@@ -39,6 +39,17 @@ export type IpcResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: SerializedAppError }
 
+/** Local diagnostics must never expose invitation or authentication credentials. */
+export function redactErrorDetails(value: string): string {
+  return value
+    .replace(/\b[A-Z2-7]{26}\b/gi, '[redacted invite]')
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+|sk-(?:proj-)?[A-Za-z0-9_-]{16,})\b/g, '[redacted token]')
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, '$1[redacted]')
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[redacted]@')
+    .replace(/([?&#](?:code|invite|roomCode|roomSecret|secret|token|access_token|key|password)=)[^\s&#]+/gi, '$1[redacted]')
+    .replace(/((?:["']?(?:roomCode|roomSecret|inviteCode|invite|password|authorization|access_token|api[_-]?key|token|secret)["']?)\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)/gi, '$1[redacted]')
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -57,14 +68,19 @@ function errorRaw(error: unknown): string {
 function presentationCode(normalized: string): string | undefined {
   if (normalized.includes('ehostunreach') || normalized.includes('enetunreach')) return 'errorTeammateUnreachable'
   if (normalized.includes('econnrefused')) return 'errorTeammateClosed'
-  if (normalized.includes('etimedout') || normalized.includes('timeout')) return 'errorTimeout'
-  if (normalized.includes('enoent')) return 'errorFileGone'
+  if (normalized.includes('etimedout') || normalized.includes('timeout') || normalized.includes('超时')) return 'errorTimeout'
   if (normalized.includes('eacces') || normalized.includes('eperm')) return 'errorPermission'
+  if (normalized.includes('eaddrinuse') || normalized.includes('port') && normalized.includes('in use')) return 'errorPortInUse'
+  if (/protocol.*version|version.*mismatch|版本不兼容|协议版本/.test(normalized)) return 'errorVersionMismatch'
+  if (/closed before|认证完成前关闭|连接中断/.test(normalized)) return 'errorConnectionClosed'
+  if (/wrong-room|invalid server proof|认证失败|无效.*认证|auth(?:entication)? failed/.test(normalized)) return 'errorAuthentication'
+  if (/mdns|bonjour/.test(normalized)) return 'errorDiscovery'
+  if (/请先选择并开始监控一个项目|no active project/.test(normalized)) return 'errorProjectRequired'
+  if (normalized.includes('enoent')) return 'errorFileGone'
   if (normalized.includes('bad credentials') || normalized.includes('401')) return 'errorGithubExpired'
   if ((normalized.includes('github') || normalized.includes('octokit') || normalized.includes('httperror')) && normalized.includes('404')) return 'errorGithubRepoNotFound'
   if ((normalized.includes('github') || normalized.includes('octokit') || normalized.includes('httperror')) && normalized.includes('403')) return 'errorGithubDenied'
-  if (normalized.includes('eaddrinuse') || normalized.includes('port') && normalized.includes('in use')) return 'errorPortInUse'
-  if (normalized.includes('invalid room code') || normalized.includes('invalid invite code') || normalized.includes('邀请码格式')) return 'errorInvalidCode'
+  if (normalized.includes('invalid room code') || normalized.includes('invalid invite code') || normalized.includes('邀请码格式') || normalized.includes('邀请码必须')) return 'errorInvalidCode'
   if (normalized.includes('snapshot') && normalized.includes('large') || normalized.includes('项目过大') || normalized.includes('50 mb')) return 'errorSnapshotTooLarge'
   if (normalized.includes('enospc') || normalized.includes('disk full')) return 'errorDiskFull'
   return undefined
@@ -86,7 +102,12 @@ export function toAppError(error: unknown): AppError {
   const isFolderMissing =
     (normalized.includes('folder') || normalized.includes('项目路径')) &&
     (normalized.includes('enoent') || normalized.includes('not found') || normalized.includes('不存在'))
-  const isMdnsOrSocket = normalized.includes('mdns') || normalized.includes('socket')
+  const isMdnsOrSocket = normalized.includes('mdns') || normalized.includes('bonjour') || normalized.includes('socket')
+  const joinNetworkFailure = code !== undefined && ['errorTimeout', 'errorConnectionClosed', 'errorAuthentication', 'errorVersionMismatch', 'errorDiscovery'].includes(code)
+
+  if (code === 'errorProjectRequired' || code === 'errorInvalidCode') {
+    return new AppError(message, 'config', { cause: error, code })
+  }
 
   if (isRepoMissing) {
     return new AppError(message, 'github', { cause: error, code, hint: 'hintCheckRepo' })
@@ -118,6 +139,7 @@ export function toAppError(error: unknown): AppError {
   if (
     normalized.includes('econnrefused') ||
     normalized.includes('timeout') ||
+    joinNetworkFailure ||
     isMdnsOrSocket ||
     normalized.includes('enetunreach') ||
     normalized.includes('ehostunreach')
@@ -145,10 +167,10 @@ export function serializeAppError(error: unknown): SerializedAppError {
   const appError = toAppError(error)
   return {
     category: appError.category,
-    message: appError.message,
+    message: redactErrorDetails(appError.message),
     ...(appError.code ? { code: appError.code } : {}),
     ...(appError.hint ? { hintKey: appError.hint } : {}),
-    raw: errorRaw(error),
+    raw: redactErrorDetails(errorRaw(error)),
   }
 }
 

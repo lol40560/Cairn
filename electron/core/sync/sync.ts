@@ -17,7 +17,7 @@ import type { ProjectIdentity } from '../identity'
 import type { Oplog } from '../oplog'
 import { readSnapshot } from '../watcher/snapshot'
 import { isSensitiveFile } from '../watcher/watcher'
-import { Discovery } from './discovery'
+import { Discovery, type DiscoveredPeer } from './discovery'
 import { PendingOps } from './pending-ops'
 import {
   BLOB_CHUNK_SIZE,
@@ -67,6 +67,7 @@ interface SyncDependencies {
 interface ConnectionAttempt {
   endpoint: PeerEndpoint
   expectedPeerId?: string
+  promise: Promise<void>
   reject(error: Error): void
   resolve(): void
   timer: ReturnType<typeof setTimeout>
@@ -96,6 +97,8 @@ export class Sync extends EventEmitter {
   private readonly discovery: Discovery
   private readonly peerId: string
   private readonly peers = new Map<string, PeerInfo>()
+  private readonly discoveredPeers = new Map<string, PeerInfo & { hosts?: string[] }>()
+  private readonly discoveryAttempts = new Set<string>()
   private readonly seeders = new Map<string, SeederInfo>()
   private readonly transport: Transport
   private readonly afterFilesystemApplyBeforeMarkApplied: ((op: import('../oplog').Op) => Promise<void>) | undefined
@@ -154,11 +157,17 @@ export class Sync extends EventEmitter {
     } catch (error) {
       this.started = false
       this.localPort = undefined
+      this.reconnectManager.stop()
+      this.rejectConnectionAttempts(toError(error))
+      for (const timer of this.directFallbackTimers) clearTimeout(timer)
+      this.directFallbackTimers.clear()
+      this.discoveryAttempts.clear()
       this.unbindEvents()
       this.discovery.stopPublish()
       this.discovery.stopBrowse()
       this.discovery.destroy()
       this.peers.clear()
+      this.discoveredPeers.clear()
       await this.transport.close().catch((closeError: unknown) => this.emitError(closeError))
       throw error
     }
@@ -182,6 +191,8 @@ export class Sync extends EventEmitter {
     this.discovery.stopBrowse()
     this.discovery.destroy()
     this.peers.clear()
+    this.discoveredPeers.clear()
+    this.discoveryAttempts.clear()
     this.seeders.clear()
     try {
       await this.transport.close()
@@ -266,7 +277,7 @@ export class Sync extends EventEmitter {
 
   private bindEvents(): void {
     this.discovery.on('peer', this.handlePeer)
-    this.discovery.on('peerLeft', this.handlePeerLeft)
+    this.discovery.on('peerLeft', this.handleDiscoveryLeft)
     this.discovery.on('error', this.handleError)
     this.transport.on('connect', this.handleConnect)
     this.transport.on('connectionFailed', this.handleConnectionFailed)
@@ -279,7 +290,7 @@ export class Sync extends EventEmitter {
 
   private unbindEvents(): void {
     this.discovery.off('peer', this.handlePeer)
-    this.discovery.off('peerLeft', this.handlePeerLeft)
+    this.discovery.off('peerLeft', this.handleDiscoveryLeft)
     this.discovery.off('error', this.handleError)
     this.transport.off('connect', this.handleConnect)
     this.transport.off('connectionFailed', this.handleConnectionFailed)
@@ -290,24 +301,32 @@ export class Sync extends EventEmitter {
     this.transport.off('error', this.handleError)
   }
 
-  private readonly handlePeer = (info: PeerInfo): void => {
+  private readonly handlePeer = (info: PeerInfo | DiscoveredPeer): void => {
     if (!this.started) {
       return
     }
-    const wasKnown = this.peers.has(info.peerId)
-    this.peers.set(info.peerId, info)
-    if (!wasKnown) {
-      this.emit('peerJoined', info)
+    this.discoveredPeers.set(info.peerId, info)
+    if (this.reconnectManager.get(info.peerId)?.status === 'connected') {
+      // An inbound connection may authenticate before its discovery advertisement arrives.
+      const peer = this.peers.get(info.peerId)
+      if (peer?.host === 'direct') this.peers.set(info.peerId, { ...info })
+      this.reconnectManager.markConnected(info.peerId, info.host, info.port)
+      return
     }
-    if (!wasKnown || this.reconnectManager.get(info.peerId)?.status !== 'connected') {
-      void this.transport.connect(info.host, info.port).catch((error: unknown) => this.emitError(error))
-    }
+    if (this.discoveryAttempts.has(info.peerId)) return
+    this.discoveryAttempts.add(info.peerId)
+    void this.connectDiscoveredPeer(info.peerId, info.host, info.port).catch((error: unknown) => {
+      if (!this.started || this.reconnectManager.get(info.peerId)?.status === 'connected') return
+      this.reconnectManager.markDisconnected(info.peerId, info.host, info.port)
+      this.emitError(error)
+    }).finally(() => this.discoveryAttempts.delete(info.peerId))
   }
 
   private readonly handlePeerLeft = (peerId: string): void => {
     if (!this.peers.has(peerId)) {
       return
     }
+    this.peers.delete(peerId)
     for (const [seederKey, seeder] of this.seeders) {
       if (seeder.peerId === peerId) {
         this.seeders.delete(seederKey)
@@ -317,10 +336,16 @@ export class Sync extends EventEmitter {
     this.emit('peerLeft', peerId)
   }
 
+  private readonly handleDiscoveryLeft = (peerId: string): void => {
+    // A disappearing advertisement does not invalidate an authenticated TCP session.
+    this.discoveredPeers.delete(peerId)
+  }
+
   private readonly handleConnect = (peerId: string, endpoint?: PeerEndpoint, attemptId?: string): void => {
     this.completeConnectionAttempt(attemptId, peerId)
     const knownPeer = this.peers.get(peerId)
-    const reconnectEndpoint = endpoint ?? (knownPeer ? { host: knownPeer.host, port: knownPeer.port } : undefined)
+    const discovered = this.discoveredPeers.get(peerId)
+    const reconnectEndpoint = endpoint ?? (discovered ? { host: discovered.host, port: discovered.port } : knownPeer ? { host: knownPeer.host, port: knownPeer.port } : undefined)
     if (!knownPeer && reconnectEndpoint) {
       this.peers.set(peerId, {
         host: reconnectEndpoint.host,
@@ -333,7 +358,7 @@ export class Sync extends EventEmitter {
       // mDNS 的 peer 事件可能稍晚于 hello；稍候再为纯直连的入站连接补占位信息。
       const timer = setTimeout(() => {
         this.directFallbackTimers.delete(timer)
-        if (this.started && !this.peers.has(peerId)) {
+        if (this.started && !this.peers.has(peerId) && this.reconnectManager.get(peerId)?.status === 'connected') {
           const info: PeerInfo = { host: 'direct', lastSeen: Date.now(), peerId, port: 0 }
           this.peers.set(peerId, info)
           this.emit('peerJoined', info)
@@ -354,15 +379,31 @@ export class Sync extends EventEmitter {
 
   /** 连接意外断开时，停止当前下载，避免界面无限等待分块。 */
   private readonly handleDisconnect = (peerId: string): void => {
-    this.handlePeerLeft(peerId)
     const peer = this.peers.get(peerId)
+    this.handlePeerLeft(peerId)
     this.reconnectManager.markDisconnected(peerId, peer?.host, peer?.port)
     this.downloader?.cancel(new Error('连接中断，请重试。'))
   }
 
   /** 等待完成 hello 握手，避免 TCP 已建立但认证失败时被误判为重连成功。 */
   private async reconnectPeer(peerId: string, host: string, port: number): Promise<void> {
-    await this.createConnectionAttempt({ host, port }, peerId)
+    await this.connectDiscoveredPeer(peerId, host, port)
+  }
+
+  private async connectDiscoveredPeer(peerId: string, host: string, port: number): Promise<void> {
+    const discovery = this.discoveredPeers.get(peerId)
+    const hosts = [...new Set([...(discovery?.hosts ?? []), host])]
+    let lastError: unknown
+    for (const candidate of hosts) {
+      if (!this.started) throw new Error('同步服务已停止')
+      try {
+        await this.createConnectionAttempt({ host: candidate, port: discovery?.port ?? port }, peerId)
+        return
+      } catch (error) {
+        lastError = error
+      }
+    }
+    throw toError(lastError)
   }
 
   private readonly handleAuthFailed = (error: Error, _peerId?: string, _endpoint?: PeerEndpoint, attemptId?: string): void => {
@@ -376,16 +417,27 @@ export class Sync extends EventEmitter {
   }
 
   private createConnectionAttempt(endpoint: PeerEndpoint, expectedPeerId?: string): Promise<void> {
+    const existingPeerId = this.transport.getConnectedPeerAtEndpoint?.(endpoint.host, endpoint.port)
+      ?? [...this.peers.values()].find((peer) => peer.host === endpoint.host && peer.port === endpoint.port && this.reconnectManager.get(peer.peerId)?.status === 'connected')?.peerId
+    if (existingPeerId && (!expectedPeerId || existingPeerId === expectedPeerId)) return Promise.resolve()
+    for (const attempt of this.connectionAttempts.values()) {
+      if (attempt.endpoint.host === endpoint.host && attempt.endpoint.port === endpoint.port && expectedPeerId === attempt.expectedPeerId) return attempt.promise
+    }
     const attemptId = randomUUID()
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.failConnectionAttempt(attemptId, new Error(`连接 ${endpoint.host}:${endpoint.port} 超时`))
-      }, 10_000)
-      this.connectionAttempts.set(attemptId, { endpoint, expectedPeerId, reject, resolve, timer })
-      void this.transport.connect(endpoint.host, endpoint.port, attemptId).catch((error: unknown) => {
-        this.failConnectionAttempt(attemptId, toError(error))
-      })
+    let resolve!: () => void
+    let reject!: (error: Error) => void
+    const promise = new Promise<void>((onResolve, onReject) => {
+      resolve = onResolve
+      reject = onReject
     })
+    const timer = setTimeout(() => {
+      this.failConnectionAttempt(attemptId, Object.assign(new Error(`连接 ${endpoint.host}:${endpoint.port} 超时`), { code: 'ETIMEDOUT' }))
+    }, 10_000)
+    this.connectionAttempts.set(attemptId, { endpoint, expectedPeerId, promise, reject, resolve, timer })
+    void this.transport.connect(endpoint.host, endpoint.port, attemptId).catch((error: unknown) => {
+      this.failConnectionAttempt(attemptId, toError(error))
+    })
+    return promise
   }
 
   private completeConnectionAttempt(attemptId: string | undefined, peerId: string): void {
@@ -407,6 +459,7 @@ export class Sync extends EventEmitter {
     if (!attempt) return
     this.connectionAttempts.delete(attemptId)
     clearTimeout(attempt.timer)
+    this.transport.cancelConnectionAttempt?.(attemptId)
     attempt.reject(error)
   }
 

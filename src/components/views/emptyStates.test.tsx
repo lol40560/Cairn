@@ -176,6 +176,12 @@ describe('引导式空状态', () => {
     expect(html).toContain('Enter an invite from a teammate')
   })
 
+  it('Team explains the project prerequisite and disables creating a team until monitoring starts', () => {
+    const html = renderToStaticMarkup(<RoomView hasOps={false} peers={[]} roomCode="" {...roomHandlers} />)
+    expect(html).toContain('Open project')
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Create<\/button>/)
+  })
+
   it('加入团队发现分享者后显示下载确认内容', () => {
     const html = renderToStaticMarkup(
       <DownloadPromptDialog

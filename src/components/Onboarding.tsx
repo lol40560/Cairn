@@ -2,20 +2,13 @@ import { useState } from 'react'
 
 import { useTranslation } from '@/i18n'
 import { normalizeError, type NormalizedError } from '@/lib/errors'
+import { joinTeam as joinProjectTeam, parseDirectEndpoint } from '@/lib/teamJoin'
 import { useAppStore } from '@/store/appStore'
 
 type OnboardingStep = 'welcome' | 'project' | 'join' | 'done'
 
 function isInviteCode(value: string): boolean {
   return /^[A-Z2-7\s-]{26,32}$/i.test(value) && value.replace(/[\s-]/g, '').length === 26
-}
-
-function parseDirectAddress(value: string): { host: string; port: number } | undefined {
-  const match = value.match(/^([\d.]+):(\d+)$/)
-  if (!match) return undefined
-
-  const port = Number.parseInt(match[2]!, 10)
-  return port >= 1 && port <= 65_535 ? { host: match[1]!, port } : undefined
 }
 
 export function Onboarding({ onComplete }: { onComplete(): void }) {
@@ -65,6 +58,8 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
       return false
     }
 
+    useAppStore.getState().resetTeamState()
+    useAppStore.getState().setDownloadTargetDir(folder)
     setFolder(folder)
     setStatus('watching')
     const opsResult = await window.cairn.listRecentOps(200)
@@ -142,41 +137,16 @@ export function Onboarding({ onComplete }: { onComplete(): void }) {
       setMessage(t('onboardingInvalidCode'))
       return
     }
-    const directAddress = directAddressInput.trim() ? parseDirectAddress(directAddressInput.trim()) : undefined
-    if (directAddressInput.trim() && !directAddress) {
-      setMessage(t('onboardingInvalidCode'))
-      return
-    }
-
     setBusy(true)
     setError(null)
     try {
+      const directAddress = parseDirectEndpoint(directAddressInput)
       // Sync 依赖活动项目，因此必须先启动监控再加入团队。
       if (!await startWatchingFolder()) return
 
       const roomCodeValue = value.replace(/[\s-]/g, '').toUpperCase()
-      const result = await window.cairn.joinRoom(roomCodeValue)
-      if (!result.ok) {
-        setError(normalizeError(result.error, t))
-        return
-      }
-      setRoomCode(roomCodeValue)
-      if (directAddress) {
-        const directResult = await window.cairn.connectToAddress({ ...directAddress, roomCode: roomCodeValue })
-        if (!directResult.ok) {
-          setError({ category: 'network', message: t('authFailed'), raw: directResult.error.raw })
-          return
-        }
-        setDirectAddress(`${directAddress.host}:${directAddress.port}`)
-      } else {
-        setDirectAddress(undefined)
-      }
-
-      setIsHost(false)
-      setIsSharing(false)
+      await joinProjectTeam(roomCodeValue, directAddress, window.cairn)
       setPendingAutoDownload(true)
-      const peersResult = await window.cairn.listPeers()
-      if (peersResult.ok) setPeers(peersResult.data)
       setActiveView('room')
       setStep('done')
     } catch (cause) {
