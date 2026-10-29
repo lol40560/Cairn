@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.exe binary
+*.sqlite binary
+# Retain the original license text, including upstream trailing spaces.
+THIRD_PARTY_NOTICES.md whitespace=-blank-at-eol

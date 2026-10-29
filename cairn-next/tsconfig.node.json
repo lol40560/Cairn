@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node"],
+    "sourceMap": true
+  },
+  "include": [
+    "core/**/*.ts",
+    "electron/**/*.ts",
+    "electron/**/*.cts",
+    "shared/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}
