@@ -23,6 +23,7 @@
   <a href="https://github.com/lol40560/Cairn/releases/tag/v2.0.3"><img alt="Release v2.0.3" src="https://img.shields.io/badge/release-v2.0.3-222222?style=flat-square" /></a>
   <a href="./LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-222222?style=flat-square" /></a>
   <img alt="macOS and Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows-222222?style=flat-square" />
+  <a href="https://hub.xerj.org/contributors/lol40560"><img alt="XERJ Corpus Hub contributor" src="https://hub.xerj.org/contributors/lol40560/badge.svg" /></a>
 </p>
 
 <p align="center">
@@ -120,66 +121,3 @@ Local file watcher ──► Local operation history ──► Activity & diffs
                               │
                               ▼
                       Invited teammates
-```
-
-Cairn watches the selected folder and stores local project history in `.cairn/`. When you start or join a team, it exchanges project changes with participating peers. Deleted files are retained in `.cairn/trash/` for the configured period (30 days by default). GitHub export happens only when you request it.
-
-**Local-first does not mean a guarantee of full synchronization.** Cairn reports observed watcher and peer-connection states, but its protocol does not yet prove full-project convergence through acknowledgements. Checkpoints and deleted-file recovery are additional safeguards, not substitutes for external backups.
-
-For implementation details, see [Architecture](./ARCHITECTURE.md) and [UI design principles](./UI.md).
-
-## Keyboard shortcuts
-
-| Action | Shortcut |
-| :--- | :--- |
-| Quick Open | `Cmd/Ctrl + P` |
-| Command Palette | `Cmd/Ctrl + K` |
-| Save current file | `Cmd/Ctrl + S` |
-| Home, Activity, Files, Team, Conflicts | `Cmd/Ctrl + 1–5` |
-| Settings | `Cmd/Ctrl + ,` |
-
-## Development
-
-Cairn is built with Electron, React, TypeScript, Tailwind CSS, Monaco, SQLite, and local peer-to-peer networking. The UI reaches file and networking services through Electron's preload IPC boundary.
-
-Requires **Node.js 22+** and **npm**.
-
-```bash
-git clone https://github.com/lol40560/Cairn.git
-cd Cairn
-npm install
-npm run dev
-```
-
-Useful development commands:
-
-```bash
-npm test          # run tests
-npm run lint      # run ESLint
-npm run build     # compile the app
-npm run dist:mac  # package for macOS
-npm run dist:win  # package for Windows (on Windows)
-```
-
-See the [architecture overview](./ARCHITECTURE.md), [design system](./UI.md), and [release notes](./RELEASE_NOTES.md) for deeper information.
-
-## Known limitations
-
-- **Unsigned installers:** Current installers are unsigned; macOS Gatekeeper and Windows SmartScreen may display warnings. Review the release before installing.
-- **No convergence proof:** The protocol does not yet acknowledge full-project convergence.
-- **Session rollback:** Session-level rollback is analysis-only; a safe automatic three-way revert has not been implemented.
-- **Binary conflicts:** Binary comparison shows metadata, not a visual content diff.
-- **Recovery scope:** Checkpoints protect against some accidental or conflicting changes but are not a replacement for an external backup.
-
-For support and known issues, visit [GitHub Issues](https://github.com/lol40560/Cairn/issues).
-
-## Privacy, license & acknowledgments
-
-No Cairn-operated account service, telemetry pipeline, or cloud backend is required. When you explicitly collaborate or export to GitHub, selected project data is transmitted to peers or GitHub as needed. Read the [Privacy Policy](./PRIVACY.md) for details.
-
-Cairn is open source under the [MIT License](./LICENSE). See the [Terms of Use](./TERMS.md) and [Third-party Notices](./THIRD_PARTY_NOTICES.md).
-
-<p align="center">
-  <strong>Built for the way code changes now.</strong><br>
-  <sub>Local-first collaboration · Change awareness · Recovery</sub>
-</p>
