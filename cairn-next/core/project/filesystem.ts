@@ -148,8 +148,21 @@ const binaryExtensions = new Set([
 
 /** A portable, conservative Unicode caseless key (including sharp-s and final sigma). */
 const folded = (value: string): string => value.toUpperCase().toLowerCase().normalize('NFC');
-const sameNativePath = (a: string, b: string): boolean =>
-  process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+const sameNativePath = (a: string, b: string): boolean => {
+  if (process.platform === 'win32') return a.toLowerCase() === b.toLowerCase();
+  if (a === b) return true;
+  // macOS volumes may resolve a different spelling of the same name. Only
+  // accept case/normalization differences when both paths identify the same
+  // filesystem object; safeAbsolute separately rejects every symlink ancestor.
+  if (process.platform !== 'darwin' || folded(a) !== folded(b)) return false;
+  try {
+    const first = fs.statSync(a);
+    const second = fs.statSync(b);
+    return first.dev === second.dev && first.ino === second.ino;
+  } catch {
+    return false;
+  }
+};
 
 function unsafe(message: string): never {
   throw new CairnError('UNSAFE_PATH', message);

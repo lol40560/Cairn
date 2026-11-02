@@ -139,7 +139,7 @@ export function CollaborativeEditor({ snapshot, switching, onMemoryPending }: Ed
     );
     const editor = monaco.editor.create(container.current, {
       model,
-      theme: 'cairn',
+      theme: document.documentElement.dataset.theme === 'dark' ? 'vs-dark' : 'cairn',
       automaticLayout: true,
       minimap: { enabled: false },
       fontFamily: 'Cascadia Code, Consolas, monospace',
@@ -152,6 +152,15 @@ export function CollaborativeEditor({ snapshot, switching, onMemoryPending }: Ed
       readOnly: switching || !initial.initialized || initial.role === 'viewer',
       ariaLabel: initial.fileName + ' ' + translate(localeRef.current, 'editorLabel'),
       stickyScroll: { enabled: false },
+    });
+    const themeObserver = new MutationObserver(() => {
+      monaco.editor.setTheme(
+        document.documentElement.dataset.theme === 'dark' ? 'vs-dark' : 'cairn',
+      );
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
     });
     const binding = new MonacoBinding(text, model, new Set([editor]), awareness);
     const undo = new Y.UndoManager(text, {
@@ -291,6 +300,7 @@ export function CollaborativeEditor({ snapshot, switching, onMemoryPending }: Ed
       doc.off('update', localUpdate);
       undo.destroy();
       binding.destroy();
+      themeObserver.disconnect();
       editor.dispose();
       model.dispose();
       awareness.destroy();

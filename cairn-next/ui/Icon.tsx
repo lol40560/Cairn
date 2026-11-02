@@ -18,6 +18,14 @@ const shapes = {
       <path d="M14 3v5h5M9 12h6M9 16h6" />
     </>
   ),
+  overview: (
+    <>
+      <rect x="3" y="3" width="8" height="8" rx="1" />
+      <rect x="13" y="3" width="8" height="8" rx="1" />
+      <rect x="3" y="13" width="8" height="8" rx="1" />
+      <rect x="13" y="13" width="8" height="8" rx="1" />
+    </>
+  ),
   activity: (
     <>
       <path d="M3 12h4l3-7 4 14 3-7h4" />
@@ -89,6 +97,12 @@ const shapes = {
     <>
       <rect x="8" y="8" width="12" height="13" rx="2" />
       <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M20 7v5h-5M4 17v-5h5" />
+      <path d="M5 9a7 7 0 0 1 12-3l3 3M19 15a7 7 0 0 1-12 3l-3-3" />
     </>
   ),
   plus: <path d="M12 5v14M5 12h14" />,

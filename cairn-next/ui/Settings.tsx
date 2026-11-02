@@ -5,36 +5,143 @@ import { sourceKey, useI18n } from './i18n';
 
 export function Onboarding({ onClose }: { onClose(): void }) {
   const { t } = useI18n();
-  const { refresh } = useApp();
+  const { state, refresh, replace, go, memoryPending } = useApp();
   const action = useAction();
+  const [step, setStep] = useState(0);
+  const [owner, setOwner] = useState(state.gitHub.owner);
+  const [repo, setRepo] = useState(state.gitHub.repo);
+  const [branch, setBranch] = useState(state.gitHub.baseBranch || 'main');
+  const [token, setToken] = useState('');
+  const finish = (destination?: 'settings' | 'team') =>
+    action.run(async () => {
+      await window.cairn.savePreferences({ onboardingDone: true });
+      await refresh();
+      onClose();
+      if (destination) go(destination);
+    });
   return (
-    <Dialog title={t('onboarding')} onClose={onClose}>
-      <div className="onboarding-mark" aria-hidden="true">
-        ◒
+    <Dialog title={t('onboarding')} onClose={() => void finish()}>
+      <p className="muted">{step + 1} / 4</p>
+      <div className="guide-step" key={step}>
+        {step === 0 ? (
+          <>
+            <h2>{t('guideLanguage')}</h2>
+            <label>
+              {t('locale')}
+              <select
+                value={state.preferences.locale}
+                onChange={(event) =>
+                  void action.run(async () => {
+                    await window.cairn.savePreferences({ locale: event.target.value as Locale });
+                    await refresh();
+                  })
+                }
+              >
+                <option value="en">English</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="ko">한국어</option>
+              </select>
+            </label>
+          </>
+        ) : step === 1 ? (
+          <>
+            <h2>{t('guideProject')}</h2>
+            <p>{t('guideProjectHelp')}</p>
+            {state.current ? <p className="status-pill">{state.current.name}</p> : null}
+            <button
+              disabled={action.busy || !!memoryPending || state.simulation}
+              onClick={() =>
+                void action.run(async () => {
+                  const path = await window.cairn.chooseFolder();
+                  if (path) await replace(() => window.cairn.openProject({ path }));
+                })
+              }
+            >
+              {t('openProject')}
+            </button>
+          </>
+        ) : step === 2 ? (
+          <>
+            <h2>{t('guideGithub')}</h2>
+            <p>{t('guideGithubHelp')}</p>
+            {state.current ? (
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void action.run(async () => {
+                    await window.cairn.saveGitHub({
+                      owner: owner.trim(),
+                      repo: repo.trim(),
+                      baseBranch: branch.trim(),
+                      ...(token ? { token } : {}),
+                    });
+                    setToken('');
+                    await refresh();
+                    setStep(3);
+                  });
+                }}
+              >
+                <label>
+                  {t('owner')}
+                  <input
+                    required
+                    value={owner}
+                    onChange={(event) => setOwner(event.target.value)}
+                  />
+                </label>
+                <label>
+                  {t('repo')}
+                  <input required value={repo} onChange={(event) => setRepo(event.target.value)} />
+                </label>
+                <label>
+                  {t('baseBranch')}
+                  <input
+                    required
+                    value={branch}
+                    onChange={(event) => setBranch(event.target.value)}
+                  />
+                </label>
+                <label>
+                  {t('token')}
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={token}
+                    onChange={(event) => setToken(event.target.value)}
+                  />
+                </label>
+                <button type="submit" disabled={action.busy}>
+                  {t('save')}
+                </button>
+              </form>
+            ) : (
+              <button onClick={() => setStep(1)}>{t('guideProject')}</button>
+            )}
+          </>
+        ) : (
+          <>
+            <h2>{t('guideTeam')}</h2>
+            <p>{t('guideTeamHelp')}</p>
+            <button onClick={() => void finish('team')}>{t('guideTeamOpen')}</button>
+          </>
+        )}
       </div>
-      <h2>{t('welcome')}</h2>
-      <p>{t('onboarding1')}</p>
-      <p>{t('onboarding2')}</p>
-      <p>{t('onboarding3')}</p>
-      <p className="muted">
-        ⌘ / Ctrl P · {t('quickOpen')}
-        <br />⌘ / Ctrl K · {t('commands')}
-        <br />⌘ / Ctrl S · {t('saveNow')}
-      </p>
       <ErrorBox error={action.error} />
       <div className="dialog-actions">
+        <button disabled={action.busy} onClick={() => void finish()}>
+          {t('guideSkip')}
+        </button>
+        {step > 0 ? (
+          <button disabled={action.busy} onClick={() => setStep(step - 1)}>
+            {t('guideBack')}
+          </button>
+        ) : null}
         <button
           className="primary"
           disabled={action.busy}
-          onClick={() =>
-            void action.run(async () => {
-              await window.cairn.savePreferences({ onboardingDone: true });
-              await refresh();
-              onClose();
-            })
-          }
+          onClick={() => (step === 3 ? void finish() : setStep(step + 1))}
         >
-          {t('start')}
+          {t(step === 3 ? 'guideFinish' : 'guideNext')}
         </button>
       </div>
     </Dialog>
@@ -44,6 +151,9 @@ export function Onboarding({ onClose }: { onClose(): void }) {
 export function SettingsView() {
   const { t } = useI18n();
   const { state, refresh, command, notify, replace, memoryPending } = useApp();
+  const [theme, setTheme] = useState(
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+  );
   const [name, setName] = useState(state.preferences.displayName);
   const [locale, setLocale] = useState<Locale>(state.preferences.locale);
   const [source, setSource] = useState(state.preferences.source.kind);
@@ -117,6 +227,21 @@ export function SettingsView() {
                 <option value="ko">한국어</option>
                 <option value="en">English</option>
                 <option value="zh-TW">繁體中文</option>
+              </select>
+            </label>
+            <label>
+              {t('appearance')}
+              <select
+                value={theme}
+                onChange={(event) => {
+                  const value = event.target.value === 'dark' ? 'dark' : 'light';
+                  setTheme(value);
+                  document.documentElement.dataset.theme = value;
+                  localStorage.setItem('cairn-theme', value);
+                }}
+              >
+                <option value="light">{t('lightMode')}</option>
+                <option value="dark">{t('darkMode')}</option>
               </select>
             </label>
             <label>

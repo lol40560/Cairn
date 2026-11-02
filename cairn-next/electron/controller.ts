@@ -503,10 +503,34 @@ export class DesktopController extends EventEmitter {
       return this.state();
     });
   }
-  copyInvite(input: { role: 'editor' | 'viewer'; address?: string; memberId?: string }): {
+  copyInvite(input: {
+    role: 'editor' | 'viewer';
+    address?: string;
+    memberId?: string;
+    sharePageUrl?: string;
+  }): {
     fingerprint: string;
     expiresAt: number;
   } {
+    let shareUrl: URL | undefined;
+    if (input.sharePageUrl !== undefined) {
+      try {
+        shareUrl = new URL(input.sharePageUrl);
+        if (
+          shareUrl.protocol !== 'https:' ||
+          shareUrl.username ||
+          shareUrl.password ||
+          shareUrl.search ||
+          shareUrl.hash
+        )
+          throw new Error();
+      } catch {
+        throw new CairnError(
+          'INVALID_SHARE_PAGE',
+          'Enter an HTTPS invitation page URL without a query or fragment.',
+        );
+      }
+    }
     const s = this.real();
     if (!s.host?.status().enabled)
       throw new CairnError('NO_TEAM', 'Create a team before copying an invitation.');
@@ -522,7 +546,9 @@ export class DesktopController extends EventEmitter {
         'Connect to the local network and choose its address.',
       );
     const invite = s.host.invite(input.role, address, 86400_000, input.memberId);
-    this.services.copy(JSON.stringify(invite));
+    const code = JSON.stringify(invite);
+    if (shareUrl) shareUrl.hash = `invite=${Buffer.from(code, 'utf8').toString('base64url')}`;
+    this.services.copy(shareUrl ? shareUrl.href : code);
     return { fingerprint: invite.fingerprint, expiresAt: invite.expiresAt };
   }
   async joinTeam(input: Parameters<ReleaseApi['joinTeam']>[0]): Promise<ReleaseState> {

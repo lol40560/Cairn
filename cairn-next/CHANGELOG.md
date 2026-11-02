@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-rc.3 — interface and sharing preview
+
+- Adds a project overview, dark mode, first-run guide, editable display name and project switcher.
+- Reorganizes team collaboration and adds hosted invitation-page links.
+- Adds accessibility and motion refinements.
+- This remains a prerelease; see RELEASE_NOTES.md for platform and security limitations.
+
 ## 0.2.0-rc.2 — bright UI candidate
 
 - 밝은 배경, 시스템 글꼴, 분명한 버튼 대비와 일관된 SVG 아이콘을 적용했습니다.

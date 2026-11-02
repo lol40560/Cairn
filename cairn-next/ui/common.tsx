@@ -6,6 +6,7 @@ import { errorCode, errorText, useI18n } from './i18n';
 export type Page =
   | 'home'
   | 'projects'
+  | 'overview'
   | 'files'
   | 'activity'
   | 'team'

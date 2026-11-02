@@ -104,16 +104,19 @@ async function launch(profile, name, firstRun = false) {
     if (message.type() === 'error')
       errors.push({ profile, kind: 'console', message: redact(message.text()).slice(0, 700) });
   });
-  await page.waitForFunction(() => !!window.cairn && !!document.querySelector('.navigation'));
+  await page.waitForFunction(() => !!window.cairn && !!document.querySelector('.home-page'));
   const target = { app, page, profile, name };
   currentWindow = target;
   if (firstRun) {
-    assert.equal((await state(target)).preferences.locale, 'ko', 'new profile starts in Korean');
+    assert.equal((await state(target)).preferences.locale, 'en', 'new profile starts in English');
     await page.evaluate(
       (name) => window.cairn.savePreferences({ locale: 'en', displayName: name }),
       name,
     );
-    await page.getByRole('button', { name: 'Get started', exact: true }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Next', exact: true }).click();
+    await page.getByRole('button', { name: 'Finish', exact: true }).click();
     await page
       .getByRole('dialog', { name: 'Getting started', exact: true })
       .waitFor({ state: 'detached' });
@@ -122,6 +125,32 @@ async function launch(profile, name, firstRun = false) {
 }
 async function nav(target, name) {
   currentWindow = target;
+  if (name === 'Home') {
+    if (await target.page.locator('.home-page').count()) return;
+    await target.page.locator('.project-switch').click();
+    await target.page
+      .locator('.project-menu-list')
+      .getByRole('button', { name: 'Home', exact: true })
+      .click();
+    await target.page.locator('.home-page').waitFor();
+    return;
+  }
+  if (name === 'Team' && (await target.page.locator('.home-page').count())) {
+    await target.page.getByRole('button', { name: 'Join team', exact: true }).click();
+    return;
+  }
+  if (name === 'Projects') {
+    if (await target.page.locator('.home-page').count()) {
+      await target.page
+        .locator('.home-page')
+        .getByRole('button', { name: 'Projects', exact: true })
+        .click();
+      return;
+    }
+    await target.page.locator('.project-switch').click();
+    await target.page.getByRole('button', { name: 'Manage projects' }).click();
+    return;
+  }
   const label = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s*\\d+)?$`);
   const button = target.page
     .getByRole('navigation', { name: 'Cairn' })
@@ -335,9 +364,10 @@ async function main() {
   let invite, parsed, expected;
 
   await step(
-    'Entry, Korean default, onboarding, renderer isolation and native-folder open',
+    'Entry, English default, onboarding, renderer isolation and native-folder open',
     async () => {
       assert.equal(await host.page.title(), 'Cairn Next');
+      assert.equal(await host.page.locator('.navigation').count(), 0, 'home has no sidebar');
       assert.equal(host.page.url(), 'cairn://app/index.html');
       assert.deepEqual(
         await host.page.evaluate(() => ({
@@ -356,6 +386,52 @@ async function main() {
       await screenshot(host, '01-home.png');
       const opened = await openFolder(host, hostRoot);
       assert.equal(opened.current.path, hostRoot);
+      assert.equal(await host.page.locator('.navigation').count(), 1, 'project shows sidebar');
+      await host.page.locator('.profile-button').click();
+      let nameDialog = host.page.getByRole('dialog', { name: 'Edit display name' });
+      await nameDialog.locator('input').fill('Preview name');
+      await nameDialog.getByRole('button', { name: 'Save', exact: true }).click();
+      await until(
+        () => state(host),
+        (value) => value.preferences.displayName === 'Preview name',
+        'profile name updated',
+      );
+      await host.page.locator('.profile-button').click();
+      nameDialog = host.page.getByRole('dialog', { name: 'Edit display name' });
+      await nameDialog.locator('input').fill('Owner 한글');
+      await nameDialog.getByRole('button', { name: 'Save', exact: true }).click();
+      await until(
+        () => state(host),
+        (value) => value.preferences.displayName === 'Owner 한글',
+        'profile name restored',
+      );
+      await nav(host, 'Overview');
+      await host.page.locator('.activity-grid').waitFor();
+      assert.equal(await host.page.locator('.activity-grid .activity-cell').count(), 91);
+      await screenshot(host, 'overview.png');
+      await nav(host, 'Files');
+      await host.page.getByRole('button', { name: 'Copy diagnostics', exact: true }).click();
+      const toast = host.page.locator('.toast');
+      await toast.waitFor();
+      await host.page.waitForTimeout(300);
+      const bounds = await toast.boundingBox();
+      const viewport = await host.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+      assert.ok(
+        bounds &&
+          viewport &&
+          viewport.width - (bounds.x + bounds.width) <= 30 &&
+          viewport.height - (bounds.y + bounds.height) <= 30,
+        'toast floats at lower right',
+      );
+      await toast.getByRole('button').click();
+      await host.page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(
+        await host.page
+          .locator('.navigation')
+          .evaluate((element) => getComputedStyle(element).animationName),
+        'none',
+      );
+      await host.page.emulateMedia({ reducedMotion: 'no-preference' });
       assert.equal(opened.current.kind, 'local');
       assert.equal(opened.team.enabled, false);
       assert.equal(
@@ -394,6 +470,41 @@ async function main() {
         (value) => value.team?.enabled && value.replica.connection === 'online',
         'team is exposed on LAN',
       );
+      const sectionHeadings = await host.page
+        .locator('.team-page > section.card > h2, .team-page > section.card .section-line h2')
+        .allTextContents();
+      assert.deepEqual(sectionHeadings, [
+        'Current team status',
+        'Manage teammates',
+        'Join a new team',
+        'Nearby teams',
+        'Advanced actions',
+      ]);
+      await host.page.locator('summary[aria-label="Invitation role"]').click();
+      await host.page.getByLabel('Viewer', { exact: true }).check();
+      await host.page.locator('summary[aria-label="Invitation role"]').click();
+      await host.page.getByLabel('Editor', { exact: true }).check();
+      const sharePage = host.page.locator('.team-share-link input');
+      await sharePage.fill('https://example.org/cairn-invite.html');
+      await host.page.getByRole('button', { name: 'Copy share link', exact: true }).click();
+      const shareUrl = new URL(await host.app.evaluate(({ clipboard }) => clipboard.readText()));
+      assert.equal(shareUrl.origin + shareUrl.pathname, 'https://example.org/cairn-invite.html');
+      assert.equal(shareUrl.search, '');
+      const sharedInvite = JSON.parse(
+        Buffer.from(
+          new URLSearchParams(shareUrl.hash.slice(1)).get('invite'),
+          'base64url',
+        ).toString('utf8'),
+      );
+      secrets.add(shareUrl.href);
+      secrets.add(sharedInvite.token);
+      secrets.add(sharedInvite.certificate);
+      assert.equal(sharedInvite.role, 'editor');
+      assert.ok(sharedInvite.token && sharedInvite.expiresAt > Date.now());
+      await sharePage.fill('http://example.org/invite');
+      await host.page.getByRole('button', { name: 'Copy share link', exact: true }).click();
+      await host.page.locator('.team-share-link .error-banner').waitFor();
+      assert.equal(await host.app.evaluate(({ clipboard }) => clipboard.readText()), shareUrl.href);
       await host.page.getByRole('button', { name: 'Copy invitation', exact: true }).click();
       invite = await host.app.evaluate(({ clipboard }) => clipboard.readText());
       parsed = JSON.parse(invite);
@@ -650,8 +761,7 @@ async function main() {
     async () => {
       const labels = {
         en: [
-          'Home',
-          'Projects',
+          'Overview',
           'Files',
           'Activity',
           'Team',
@@ -660,8 +770,8 @@ async function main() {
           'Deleted files',
           'Settings',
         ],
-        ko: ['홈', '프로젝트', '파일', '활동', '팀', '충돌', '체크포인트', '삭제된 파일', '설정'],
-        'zh-TW': ['首頁', '專案', '檔案', '活動', '團隊', '衝突', '檢查點', '已刪除檔案', '設定'],
+        ko: ['개요', '파일', '활동', '팀', '충돌', '체크포인트', '삭제된 파일', '설정'],
+        'zh-TW': ['總覽', '檔案', '活動', '團隊', '衝突', '檢查點', '已刪除檔案', '設定'],
       };
       for (const label of labels.en) {
         await nav(host, label);
@@ -690,6 +800,17 @@ async function main() {
         await screenshot(host, `07-settings-${locale}.png`);
         current = locale;
       }
+      const appearance = host.page
+        .locator('.settings-page section.card')
+        .first()
+        .locator('select')
+        .nth(1);
+      await appearance.selectOption('dark');
+      assert.equal(await host.page.locator('html').getAttribute('data-theme'), 'dark');
+      assert.equal(await host.page.evaluate(() => localStorage.getItem('cairn-theme')), 'dark');
+      await screenshot(host, 'settings-dark.png');
+      await appearance.selectOption('light');
+      assert.equal(await host.page.locator('html').getAttribute('data-theme'), 'light');
       assert.ok(await host.page.getByText('PC server — Coming Soon', { exact: true }).isVisible());
       assert.equal(
         await host.page
@@ -820,7 +941,7 @@ async function main() {
       const relocated = path.join(temporary, 'second-relocated');
       fs.renameSync(other, relocated);
       await host.page.reload();
-      await host.page.waitForFunction(() => !!document.querySelector('.navigation'));
+      await host.page.waitForFunction(() => !!document.querySelector('.home-page'));
       await nav(host, 'Projects');
       let row = host.page.locator('.project-card').filter({ hasText: other });
       await row.getByText('Folder not found', { exact: false }).waitFor();

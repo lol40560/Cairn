@@ -1,10 +1,10 @@
-# Cairn Next · 0.2.0-rc.2
+# Cairn Next · 0.2.0-rc.3
 
-Cairn Next is a desktop app for local project folders and whole-project collaboration over a LAN. This release candidate adds a brighter interface to the existing Monaco/Yjs editor, file operations, activity history, conflicts, checkpoints, and recovery tools. The interface supports Korean, English, and Traditional Chinese.
+Cairn Next is a desktop app for local project folders and whole-project collaboration over a LAN. This release candidate includes a project overview, dark mode, guided setup, project switching, team invitations, and the Monaco/Yjs editor, activity, conflict, checkpoint and recovery tools. The interface supports Korean, English, and Traditional Chinese.
 
 This directory contains a separate application alongside the original Cairn app at the repository root. Their collaboration protocols and internal data formats do **not** interoperate, and existing Cairn or Cairn Next 0.1.x databases are **not** automatically migrated. Preserve the original folder and import a copy of its ordinary files into a new folder.
 
-**This branch publishes source code, not a binary Release.** Installers and packaged apps from earlier local trials are not tracked here and cannot be downloaded from this branch. The app's license marker remains `UNLICENSED`; publishing the source does not change its license.
+**Pre-release installers, when available, are listed on [GitHub Releases](https://github.com/lol40560/Cairn/releases).** The original Cairn downloads are a separate incompatible application. The app's license marker remains `UNLICENSED`; publishing the source does not change its license.
 
 ## Run from source
 

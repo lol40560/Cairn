@@ -118,6 +118,7 @@ function handlers(c: DesktopController): void {
         role: z.enum(['editor', 'viewer']),
         address: z.string().max(512).optional(),
         memberId: id.optional(),
+        sharePageUrl: z.string().max(2048).optional(),
       })
       .strict(),
     (v) => c.copyInvite(v),

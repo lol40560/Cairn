@@ -3,6 +3,108 @@ import type { Locale } from '../shared/release-api';
 
 // Every product string is authored in Korean, English and Traditional Chinese.
 const words: Record<string, readonly [string, string, string]> = {
+  sharePageError: [
+    '쿼리나 프래그먼트가 없는 HTTPS 초대 페이지 주소를 입력하세요.',
+    'Enter an HTTPS invitation page URL without a query or fragment.',
+    '請輸入不含查詢或片段的 HTTPS 邀請頁網址。',
+  ],
+  sharePageUrl: ['초대 페이지 URL', 'Invitation page URL', '邀請頁網址'],
+  copyShareLink: ['공유 링크 복사', 'Copy share link', '複製分享連結'],
+  shareLinkCopied: [
+    '공유 링크를 복사했습니다. 신뢰하는 사람에게만 보내세요.',
+    'Share link copied. Send it only to someone you trust.',
+    '分享連結已複製，請只傳給信任的人。',
+  ],
+  sharePageHelp: [
+    '호스팅한 초대 페이지의 HTTPS 주소를 입력하세요. 링크에는 접근 권한이 포함되며 기존 초대와 동일하게 만료됩니다.',
+    'Enter the HTTPS address of your hosted invitation page. The link grants access and expires like the invitation.',
+    '輸入已託管邀請頁的 HTTPS 網址。連結包含存取權限，並會與邀請一樣到期。',
+  ],
+
+  overview: ['개요', 'Overview', '總覽'],
+  editDisplayName: ['표시 이름 변경', 'Edit display name', '編輯顯示名稱'],
+  displayNameHelp: [
+    '이 이름은 팀원에게 표시됩니다.',
+    'Teammates will see this name.',
+    '團隊成員會看到這個名稱。',
+  ],
+  overviewScope: [
+    '최근 활동 기록을 기준으로 한 프로젝트 개요입니다.',
+    'Project overview based on recent activity records.',
+    '根據最近活動紀錄呈現的專案總覽。',
+  ],
+  overviewSample: ['최근 기록 기준', 'From recent records', '根據最近紀錄'],
+  overviewCurrent: ['현재 프로젝트', 'Current project', '目前專案'],
+  overviewChanges: ['파일 변경 활동', 'File change events', '檔案變更活動'],
+  overviewFiles: ['변경된 경로', 'Changed paths', '變更的路徑'],
+  overviewContributors: ['참여자', 'Contributors', '參與者'],
+  overviewOpenConflicts: ['미해결 충돌', 'Open conflicts', '未解決衝突'],
+  overviewActivity: ['활동 기록', 'Activity history', '活動紀錄'],
+  overviewActivityHelp: [
+    '최근 91일의 파일 변경 활동입니다. 최대 1,000개의 최근 기록을 사용하며 크기 제한으로 더 적을 수 있습니다.',
+    'File change events over the last 91 days, using up to 1,000 recent records; the response size limit may reduce this.',
+    '最近 91 天的檔案變更活動，以最多 1,000 筆近期紀錄計算；資料大小限制可能使筆數更少。',
+  ],
+  overviewEvents: ['건', 'events', '筆'],
+  overviewLess: ['적음', 'Less', '較少'],
+  overviewMore: ['많음', 'More', '較多'],
+  overviewWeek: ['최근 7일', 'Last 7 days', '最近 7 天'],
+
+  currentTeamStatus: ['현재 팀 상태', 'Current team status', '目前團隊狀態'],
+  manageTeammates: ['팀원 관리', 'Manage teammates', '管理團隊成員'],
+  joinNewTeam: ['새 팀 참가', 'Join a new team', '加入新團隊'],
+  invitePlaceholder: [
+    '초대 링크나 코드를 여기에 붙여 넣으세요...',
+    'Paste your invitation link or code here...',
+    '在此貼上邀請連結或代碼…',
+  ],
+  onlyTeammate: [
+    '아직 혼자입니다. 팀원을 초대해 함께 작업하세요!',
+    'You are the only one here. Invite a teammate to start collaborating!',
+    '目前只有你一人。邀請團隊成員一起協作！',
+  ],
+  noTeamYet: [
+    '팀을 만들거나 참가하면 팀원이 여기에 표시됩니다.',
+    'Create or join a team to see teammates here.',
+    '建立或加入團隊後，成員會顯示在這裡。',
+  ],
+  advancedActions: ['고급 작업', 'Advanced actions', '進階操作'],
+  advancedActionsHelp: [
+    '연결을 다시 시작하거나 팀을 나갑니다.',
+    'Reconnect or leave this team.',
+    '重新連線或離開此團隊。',
+  ],
+  appearance: ['화면 모드', 'Appearance', '外觀'],
+  lightMode: ['라이트', 'Light', '淺色'],
+  darkMode: ['다크', 'Dark', '深色'],
+
+  manageProjects: ['프로젝트 관리', 'Manage projects', '管理專案'],
+  guideLanguage: ['언어를 선택하세요', 'Choose your language', '選擇語言'],
+  guideProject: ['프로젝트 폴더를 여세요', 'Open a project folder', '開啟專案資料夾'],
+  guideProjectHelp: [
+    '작업할 폴더를 선택하세요. 나중에 프로젝트 메뉴에서 전환할 수 있습니다.',
+    'Choose the folder you want to work on. You can switch projects from the menu later.',
+    '選擇要使用的資料夾。之後可以從選單切換專案。',
+  ],
+  guideGithub: ['GitHub 연결 (선택 사항)', 'Connect GitHub (optional)', '連接 GitHub（選填）'],
+  guideGithubHelp: [
+    'GitHub에서 저장소에 제한된 fine-grained 토큰을 만드세요. Settings의 GitHub에서 저장소와 토큰을 입력하세요. 로컬 작업에는 필요하지 않습니다.',
+    'Create a fine-grained token on GitHub, restricted to your repository with Contents and Pull requests read/write access. In Settings → GitHub, enter the owner, repository, branch and token. Local work does not require a token.',
+    '在 GitHub 建立限定儲存庫的細微權限 token，授予 Contents 和 Pull requests 讀寫權限。前往設定 → GitHub 輸入擁有者、儲存庫、分支及 token。本機工作不需要 token。',
+  ],
+  guideTeam: ['팀원 초대', 'Invite teammates', '邀請團隊成員'],
+  guideTeamHelp: [
+    '프로젝트를 연 다음 Team에서 팀을 만들고 신뢰하는 사람에게 초대를 보내세요. 참가자는 Team에서 초대와 빈 폴더를 선택합니다. 호스트 앱은 실행 중이어야 합니다.',
+    'Open a project, then use Team to create a team and share an invitation with trusted teammates. They join from Team using the invitation and an empty folder. Keep the host app open.',
+    '開啟專案後，在團隊頁面建立團隊並將邀請傳給信任的成員。成員在團隊頁面使用邀請和空資料夾加入。主機必須保持開啟。',
+  ],
+  guideBack: ['이전', 'Back', '上一步'],
+  guideNext: ['다음', 'Next', '下一步'],
+  guideSkip: ['건너뛰기', 'Skip tutorial', '略過教學'],
+  guideFinish: ['완료', 'Finish', '完成'],
+  guideSettings: ['설정 열기', 'Open Settings', '開啟設定'],
+  guideTeamOpen: ['팀 열기', 'Open Team', '開啟團隊'],
+
   size: ['크기', 'Size', '大小'],
   excludedPrivate: [
     '앱 내부 기록이므로 공유하지 않습니다.',
@@ -333,7 +435,7 @@ const words: Record<string, readonly [string, string, string]> = {
   inviteRole: ['초대 권한', 'Invitation role', '邀請權限'],
   fingerprint: ['팀 인증 지문', 'Team fingerprint', '團隊驗證指紋'],
   expires: ['만료', 'Expires', '到期'],
-  joinDirectory: ['새 작업 사본 폴더', 'Workcopy folder', '工作副本資料夾'],
+  joinDirectory: ['로컬 프로젝트 폴더', 'Local project folder', '本機專案資料夾'],
   choose: ['폴더 선택', 'Choose folder', '選取資料夾'],
   joinExplain: [
     '빈 폴더 또는 이 팀의 기존 작업 사본을 선택하세요. 기존의 다른 파일은 덮어쓰지 않습니다.',
@@ -637,51 +739,55 @@ export function errorCode(error: unknown): string {
 export function errorText(error: unknown, locale: Locale): string {
   const code = errorCode(error);
   const key =
-    code === 'OPERATION_TOO_LARGE'
-      ? 'errorOperationSize'
-      : code === 'MEMORY_PENDING'
-        ? 'memoryGuard'
-        : code === 'DESKTOP_REQUIRED'
-          ? 'desktopRequired'
-          : /VERSION_MISMATCH/.test(code)
-            ? 'errorVersion'
-            : /AUTH/.test(code)
-              ? 'errorAuth'
-              : /BLOB_HASH|INVALID_HASH|INVALID_BARRIER|INVALID_SNAPSHOT|INVALID_DOCUMENT|INVALID_ACK|EVENT_GAP|MISSING_EVENTS/.test(
-                    code,
-                  )
-                ? 'errorIntegrity'
-                : /FILE_NOT_FOUND|FOLDER_MISSING|NOT_INITIALIZED/.test(code)
-                  ? 'errorMissing'
-                  : /EXCLUDED|IGNORED/.test(code)
-                    ? 'ignoredReason'
-                    : /SIMULATION/.test(code)
-                      ? 'errorSimulation'
-                      : /STALE|REVISION|GENERATION|CHANGED|CAS|PREVIEW/.test(code)
-                        ? 'errorStale'
-                        : /INVITE|EXPIRED|REVOKED|IDENTITY|CERTIFICATE/.test(code)
-                          ? 'errorInvite'
-                          : /PERMISSION|FORBIDDEN|READ_ONLY|VIEWER|OWNER/.test(code)
-                            ? 'errorPermission'
-                            : /GITHUB|TOKEN|EXPORT/.test(code)
-                              ? 'errorGitHub'
-                              : /PATH|EXISTS|COLLISION|DESTINATION|DIRECTORY_NOT_EMPTY|WORKCOPY|PROJECT_MISMATCH/.test(
-                                    code,
-                                  )
-                                ? 'errorPath'
-                                : /LIMIT|LARGE|SIZE|QUOTA/.test(code)
-                                  ? 'errorSize'
-                                  : /DISK|SPACE|EACCES|EPERM|ENOSPC|PROJECTION/.test(code)
-                                    ? 'errorDisk'
-                                    : /CLAIM|LOCK|BUSY|OWNED/.test(code)
-                                      ? 'errorLocked'
-                                      : /OFFLINE|CONNECT|NETWORK|TIMEOUT|SOCKET|TRANSFER/.test(code)
-                                        ? 'errorNetwork'
-                                        : /SYMLINK|UNSAFE|BINARY|UTF|ENCODING/.test(code)
-                                          ? 'errorUnsafe'
-                                          : /INVALID|SCHEMA|INPUT/.test(code)
-                                            ? 'errorInput'
-                                            : 'errorGeneric';
+    code === 'INVALID_SHARE_PAGE'
+      ? 'sharePageError'
+      : code === 'OPERATION_TOO_LARGE'
+        ? 'errorOperationSize'
+        : code === 'MEMORY_PENDING'
+          ? 'memoryGuard'
+          : code === 'DESKTOP_REQUIRED'
+            ? 'desktopRequired'
+            : /VERSION_MISMATCH/.test(code)
+              ? 'errorVersion'
+              : /AUTH/.test(code)
+                ? 'errorAuth'
+                : /BLOB_HASH|INVALID_HASH|INVALID_BARRIER|INVALID_SNAPSHOT|INVALID_DOCUMENT|INVALID_ACK|EVENT_GAP|MISSING_EVENTS/.test(
+                      code,
+                    )
+                  ? 'errorIntegrity'
+                  : /FILE_NOT_FOUND|FOLDER_MISSING|NOT_INITIALIZED/.test(code)
+                    ? 'errorMissing'
+                    : /EXCLUDED|IGNORED/.test(code)
+                      ? 'ignoredReason'
+                      : /SIMULATION/.test(code)
+                        ? 'errorSimulation'
+                        : /STALE|REVISION|GENERATION|CHANGED|CAS|PREVIEW/.test(code)
+                          ? 'errorStale'
+                          : /INVITE|EXPIRED|REVOKED|IDENTITY|CERTIFICATE/.test(code)
+                            ? 'errorInvite'
+                            : /PERMISSION|FORBIDDEN|READ_ONLY|VIEWER|OWNER/.test(code)
+                              ? 'errorPermission'
+                              : /GITHUB|TOKEN|EXPORT/.test(code)
+                                ? 'errorGitHub'
+                                : /PATH|EXISTS|COLLISION|DESTINATION|DIRECTORY_NOT_EMPTY|WORKCOPY|PROJECT_MISMATCH/.test(
+                                      code,
+                                    )
+                                  ? 'errorPath'
+                                  : /LIMIT|LARGE|SIZE|QUOTA/.test(code)
+                                    ? 'errorSize'
+                                    : /DISK|SPACE|EACCES|EPERM|ENOSPC|PROJECTION/.test(code)
+                                      ? 'errorDisk'
+                                      : /CLAIM|LOCK|BUSY|OWNED/.test(code)
+                                        ? 'errorLocked'
+                                        : /OFFLINE|CONNECT|NETWORK|TIMEOUT|SOCKET|TRANSFER/.test(
+                                              code,
+                                            )
+                                          ? 'errorNetwork'
+                                          : /SYMLINK|UNSAFE|BINARY|UTF|ENCODING/.test(code)
+                                            ? 'errorUnsafe'
+                                            : /INVALID|SCHEMA|INPUT/.test(code)
+                                              ? 'errorInput'
+                                              : 'errorGeneric';
   return translate(locale, key);
 }
 export function sourceKey(kind: string) {

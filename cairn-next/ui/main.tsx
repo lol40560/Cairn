@@ -18,12 +18,17 @@ import {
 import { FilesView } from './Files';
 import { ActivityView, CheckpointsView, ConflictsView, DeletedView } from './Recovery';
 import { TeamView } from './Team';
+import { Overview } from './Overview';
 import { Onboarding, SettingsView } from './Settings';
 import { Icon } from './Icon';
 import './styles.css';
+
+document.documentElement.dataset.theme =
+  localStorage.getItem('cairn-theme') === 'dark' ? 'dark' : 'light';
 const pages: Page[] = [
   'home',
   'projects',
+  'overview',
   'files',
   'activity',
   'team',
@@ -33,7 +38,7 @@ const pages: Page[] = [
   'settings',
 ];
 const navigationGroups: { label: string; pages: Page[] }[] = [
-  { label: 'navWork', pages: ['home', 'projects', 'files'] },
+  { label: 'navWork', pages: ['overview', 'files'] },
   { label: 'navCollaborate', pages: ['team', 'conflicts'] },
   { label: 'navHistory', pages: ['activity', 'checkpoints', 'deleted'] },
 ];
@@ -320,6 +325,8 @@ function App() {
             <HomeView key={state.current?.id + String(state.replica?.clientId)} />
           ) : page === 'projects' ? (
             <ProjectsView />
+          ) : page === 'overview' ? (
+            <Overview key={state.current?.projectId} />
           ) : page === 'activity' ? (
             <ActivityView key={state.current?.id + String(state.replica?.clientId)} />
           ) : page === 'team' ? (
@@ -365,104 +372,169 @@ function Shell({
   const { t } = useI18n();
   const { state, busy, memoryPending, refresh, notify, replace } = useApp();
   const action = useAction();
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [editName, setEditName] = useState(false);
+  const [name, setName] = useState(state.preferences.displayName);
   const conflicts =
     state.replica?.metadata.conflicts.filter((c) => c.status === 'open').length ?? 0;
   return (
     <div className="app-shell">
-      <aside className="navigation">
-        <div className="brand">
-          <span className="cairn-mark" aria-hidden="true">
-            <i />
-            <i />
-          </span>
-          Cairn <span>Next</span>
-        </div>
-        <button
-          className="project-switch"
-          onClick={() => setPage('projects')}
-          title={state.current?.path}
-        >
-          <span className="eyebrow">{t(state.current ? 'current' : 'projects')}</span>
-          <strong>{state.current?.name ?? t('chooseProject')}</strong>
-          <span aria-hidden="true">
-            <Icon name="chevronDown" />
-          </span>
-        </button>
-        <nav aria-label="Cairn">
-          {navigationGroups.map((group) => (
-            <div
-              className="nav-group"
-              key={group.label}
-              role="group"
-              aria-labelledby={`nav-${group.label}`}
-            >
-              <p className="nav-group-label" id={`nav-${group.label}`}>
-                {t(group.label)}
-              </p>
-              {group.pages.map((p) => (
-                <button
-                  key={p}
-                  className={page === p ? 'active' : ''}
-                  aria-current={page === p ? 'page' : undefined}
-                  onClick={() => setPage(p)}
-                >
-                  <Icon name={p} className="nav-icon" />
-                  {t(p)}
-                  {p === 'conflicts' && conflicts ? <b className="nav-count">{conflicts}</b> : null}
-                </button>
-              ))}
-            </div>
-          ))}
-          <div className="nav-utility">
+      {page !== 'home' ? (
+        <aside className="navigation">
+          <div className="project-menu">
             <button
-              className={page === 'settings' ? 'active' : ''}
-              aria-current={page === 'settings' ? 'page' : undefined}
-              onClick={() => setPage('settings')}
+              className="project-switch"
+              onClick={() => setProjectMenu(!projectMenu)}
+              aria-expanded={projectMenu}
+              aria-controls="project-menu-list"
+              title={state.current?.path}
             >
-              <Icon name="settings" className="nav-icon" />
-              {t('settings')}
+              <span className="eyebrow">{t(state.current ? 'current' : 'projects')}</span>
+              <strong>{state.current?.name ?? t('chooseProject')}</strong>
+              <span aria-hidden="true">
+                <Icon name="chevronDown" />
+              </span>
+            </button>
+            {projectMenu ? (
+              <div className="project-menu-list" id="project-menu-list">
+                <button
+                  onClick={() => {
+                    setProjectMenu(false);
+                    setPage('home');
+                  }}
+                >
+                  {t('home')}
+                </button>
+                {state.projects.map((project) => (
+                  <button
+                    key={project.id}
+                    disabled={busy || action.busy || !!memoryPending || !project.exists}
+                    title={project.path}
+                    onClick={() =>
+                      void action.run(async () => {
+                        await replace(() => window.cairn.switchProject(project.id));
+                        setProjectMenu(false);
+                        setPage('files');
+                      })
+                    }
+                  >
+                    <strong>{project.name}</strong>
+                    <small>{project.exists ? project.path : t('missing')}</small>
+                  </button>
+                ))}
+                <button
+                  disabled={busy || action.busy || !!memoryPending || state.simulation}
+                  onClick={() =>
+                    void action.run(async () => {
+                      const path = await window.cairn.chooseFolder();
+                      if (path) {
+                        await replace(() => window.cairn.openProject({ path }));
+                        setProjectMenu(false);
+                        setPage('files');
+                      }
+                    })
+                  }
+                >
+                  {t('openProject')}
+                </button>
+                <button
+                  onClick={() => {
+                    setProjectMenu(false);
+                    setPage('projects');
+                  }}
+                >
+                  {t('manageProjects')}
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <nav aria-label="Cairn">
+            {navigationGroups.map((group) => (
+              <div
+                className="nav-group"
+                key={group.label}
+                role="group"
+                aria-labelledby={`nav-${group.label}`}
+              >
+                <p className="nav-group-label" id={`nav-${group.label}`}>
+                  {t(group.label)}
+                </p>
+                {group.pages.map((p) => (
+                  <button
+                    key={p}
+                    className={page === p ? 'active' : ''}
+                    aria-current={page === p ? 'page' : undefined}
+                    onClick={() => setPage(p)}
+                  >
+                    <Icon name={p} className="nav-icon" />
+                    {t(p)}
+                    {p === 'conflicts' && conflicts ? (
+                      <b className="nav-count">{conflicts}</b>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            ))}
+            <div className="nav-utility">
+              <button
+                className={page === 'settings' ? 'active' : ''}
+                aria-current={page === 'settings' ? 'page' : undefined}
+                onClick={() => setPage('settings')}
+              >
+                <Icon name="settings" className="nav-icon" />
+                {t('settings')}
+              </button>
+            </div>
+          </nav>
+          <div className="navigation-bottom">
+            <button className="palette-trigger" onClick={palette}>
+              <span className="palette-label">
+                <Icon name="search" />
+                {t('commands')}
+              </span>
+              <kbd>⌘ / Ctrl K</kbd>
+            </button>
+            <button
+              className="profile profile-button"
+              onClick={() => {
+                setName(state.preferences.displayName);
+                setEditName(true);
+              }}
+              aria-label={`${t('editDisplayName')}: ${state.preferences.displayName}`}
+            >
+              <span className="avatar">{state.preferences.displayName.slice(0, 1)}</span>
+              <strong>{state.preferences.displayName}</strong>
             </button>
           </div>
-        </nav>
-        <div className="navigation-bottom">
-          <button className="palette-trigger" onClick={palette}>
-            <span className="palette-label">
-              <Icon name="search" />
-              {t('commands')}
-            </span>
-            <kbd>⌘ / Ctrl K</kbd>
-          </button>
-          <span className="profile">
-            <span className="avatar">{state.preferences.displayName.slice(0, 1)}</span>
-            <strong>{state.preferences.displayName}</strong>
-          </span>
-        </div>
-      </aside>
+        </aside>
+      ) : null}
       <div className="main-column">
-        <header className="topbar">
-          <div>
-            <span className="breadcrumb">{state.current?.name ?? 'Cairn Next'}</span>
-            <span className="separator">/</span>
-            <strong>{t(page)}</strong>
-          </div>
-          <div className="actions">
-            <span className="status-pill">
-              <span
-                className={`status-dot ${state.replica?.connection === 'online' ? 'green' : ''}`}
-              />
-              {state.simulation
-                ? t('simulation')
-                : state.replica
-                  ? t(
-                      state.replica.connection === 'error'
-                        ? 'errorState'
-                        : state.replica.connection,
-                    )
-                  : t('local')}
-            </span>
-            {busy ? <span role="status">{t('working')}</span> : null}
-          </div>
-        </header>
+        {page !== 'home' ? (
+          <header className="topbar">
+            <div>
+              <span className="breadcrumb">{state.current?.name ?? 'Cairn Next'}</span>
+              <span className="separator">/</span>
+              <strong>{t(page)}</strong>
+            </div>
+            <div className="actions">
+              <span className="status-pill">
+                <span
+                  className={`status-dot ${state.replica?.connection === 'online' ? 'green' : ''}`}
+                />
+                {state.simulation
+                  ? t('simulation')
+                  : state.replica
+                    ? t(
+                        state.replica.connection === 'error'
+                          ? 'errorState'
+                          : state.replica.connection,
+                      )
+                    : t('local')}
+              </span>
+              {busy ? <span role="status">{t('working')}</span> : null}
+            </div>
+          </header>
+        ) : null}
         {state.simulation ? (
           <div className="simulation-banner" role="status">
             <span>
@@ -482,42 +554,79 @@ function Shell({
           </div>
         ) : null}
         <main>{children}</main>
-        <footer className="app-footer">
-          <span>
-            {state.simulation
-              ? t('simulation')
-              : state.current
-                ? t(state.current.watching ? 'watching' : 'off')
-                : 'Cairn Next'}
-          </span>
-          <div className="actions">
-            <button
-              className="quiet"
-              disabled={!state.current || action.busy || state.simulation}
-              onClick={() =>
-                void action.run(async () => {
-                  await window.cairn.retryProjection();
-                  await refresh();
-                })
-              }
-            >
-              {t('retryFolder')}
-            </button>
-            <button
-              className="quiet"
-              onClick={() =>
-                void action.run(async () => {
-                  await window.cairn.copyDiagnostics();
-                  notify(t('copied'));
-                })
-              }
-            >
-              {t('diagnostics')}
-            </button>
-          </div>
-        </footer>
+        {page !== 'home' ? (
+          <footer className="app-footer">
+            <span>
+              {state.simulation
+                ? t('simulation')
+                : state.current
+                  ? t(state.current.watching ? 'watching' : 'off')
+                  : 'Cairn Next'}
+            </span>
+            <div className="actions">
+              <button
+                className="quiet"
+                disabled={!state.current || action.busy || state.simulation}
+                onClick={() =>
+                  void action.run(async () => {
+                    await window.cairn.retryProjection();
+                    await refresh();
+                  })
+                }
+              >
+                {t('retryFolder')}
+              </button>
+              <button
+                className="quiet"
+                onClick={() =>
+                  void action.run(async () => {
+                    await window.cairn.copyDiagnostics();
+                    notify(t('copied'));
+                  })
+                }
+              >
+                {t('diagnostics')}
+              </button>
+            </div>
+          </footer>
+        ) : null}
         <ErrorBox error={action.error} />
       </div>
+      {editName ? (
+        <Dialog title={t('editDisplayName')} onClose={() => setEditName(false)}>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void action.run(async () => {
+                await window.cairn.savePreferences({ displayName: name.trim() });
+                await refresh();
+                setEditName(false);
+                notify(t('saved'));
+              });
+            }}
+          >
+            <label>
+              {t('displayName')}
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={80}
+                required
+              />
+            </label>
+            <p className="muted">{t('displayNameHelp')}</p>
+            <ErrorBox error={action.error} />
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setEditName(false)}>
+                {t('cancel')}
+              </button>
+              <button className="primary" disabled={action.busy || !name.trim()}>
+                {t('save')}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
@@ -613,7 +722,6 @@ function HomeView() {
               <Icon name="play" />
               {t('startSimulation')}
             </button>
-            <small className="muted">{t('temporary')}</small>
           </div>
         </div>
       )}

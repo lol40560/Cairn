@@ -114,6 +114,7 @@ export interface ReleaseApi {
     role: 'editor' | 'viewer';
     address?: string;
     memberId?: string;
+    sharePageUrl?: string;
   }): Promise<{ fingerprint: string; expiresAt: number }>;
   joinTeam(input: {
     invite: string;

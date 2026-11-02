@@ -53,7 +53,7 @@ export class ProfileStore {
       version: 1,
       ownerId: typeof stored.ownerId === 'string' ? stored.ownerId : randomUUID(),
       preferences: {
-        locale: 'ko',
+        locale: 'en',
         displayName: 'Me',
         onboardingDone: false,
         source: { kind: 'unknown' },
