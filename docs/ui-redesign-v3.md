@@ -1,6 +1,6 @@
 # Cairn UI Redesign v3
 
-This document records the v3 interface baseline, the completed design decisions, and the release regression scenarios. It complements `UI.md`, which remains the source of truth for product-level design principles.
+This document records the v3 interface baseline, the completed design decisions, and the release regression scenarios. It complements `docs/UI.md`, which remains the source of truth for product-level design principles.
 
 ## Baseline inventory
 

@@ -523,8 +523,8 @@ npm run dist:win         # 在 Windows 打包
 ## 相關文件與支援
 
 - [README](../README.md)
-- [架構文件](../ARCHITECTURE.md)
-- [UI 設計說明](../UI.md)
+- [架構文件](./ARCHITECTURE.md)
+- [UI 設計說明](./UI.md)
 - [Privacy Policy](../PRIVACY.md)
 - [Terms of Use](../TERMS.md)
 - [第三方授權](../THIRD_PARTY_NOTICES.md)
