@@ -5,7 +5,8 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['node_modules', 'out', 'dist', 'coverage'] },
+  // Cairn Next is a standalone package with its own checks and dependencies.
+  { ignores: ['node_modules', 'out', 'dist', 'coverage', 'cairn-next/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

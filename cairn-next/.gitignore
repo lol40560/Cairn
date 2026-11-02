@@ -1,0 +1,10 @@
+node_modules/
+dist/
+web-dist/
+release/
+.test-data/
+.cairn-next/
+.cairn-next-client/
+*.log
+*.invite.json
+qa-output/

@@ -19,6 +19,14 @@ describe('release documentation verification', () => {
     )).toThrow('RELEASE_NOTES.md')
   })
 
+  it('accepts matching documentation checked out with Windows line endings', () => {
+    expect(() => verifyReleaseDocumentation(
+      '2.0.3',
+      '# Cairn v2.0.3\r\n\r\nNotes\r\n',
+      '# Changelog\r\n\r\n## [2.0.3]\r\n',
+    )).not.toThrow()
+  })
+
   it('rejects a changelog without the package version', () => {
     expect(() => verifyReleaseDocumentation(
       '2.0.0-rc.2',

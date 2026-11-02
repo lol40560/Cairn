@@ -1,0 +1,5 @@
+allowBuilds:
+  electron: true
+  electron-winstaller: false
+overrides:
+  dompurify: 3.4.17

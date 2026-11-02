@@ -9,7 +9,7 @@ export function verifyReleaseDocumentation(version, releaseNotes, changelog) {
   const releaseHeading = `# Cairn v${version}`
   const changelogHeading = `## [${version}]`
 
-  if (!releaseNotes.startsWith(`${releaseHeading}\n`)) {
+  if (!releaseNotes.replace(/\r\n/g, '\n').startsWith(`${releaseHeading}\n`)) {
     throw new Error(`RELEASE_NOTES.md must start with ${JSON.stringify(releaseHeading)}`)
   }
   if (!changelog.includes(changelogHeading)) {

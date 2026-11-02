@@ -1,0 +1,39 @@
+# Cairn Next LAN implementation contract
+
+This document describes the project-based implementation introduced in 0.2.0-rc.1 and retained in the 0.2.0-rc.2 UI candidate. It supersedes the single-file phase-one product scope. Paths are relative to `cairn-next/`. The original Cairn app remains a separate application; its protocol and internal data are not interoperable with Cairn Next, and no automatic database migration is provided. Source publication does not constitute a binary release or platform certification; verification boundaries are recorded in [release readiness](release-readiness.md).
+
+## Product and reuse
+
+The project modules reuse SQLite FULL/WAL transaction helpers, process ownership, bounded reads, no-replace file publication, Yjs binary preservation, pinned WSS identity, durable operation ACK, outbox, heartbeat and Monaco/y-monaco/own-undo/EOL handling. The original core tests remain a baseline, with separate coverage for the project modules.
+
+Local projects are normal folders. A local project opens an authority repository and a private loopback team connection for its own editing client. `Create team` exposes the same session on LAN and advertises mDNS. Local editing and team editing have identical commands. The creator's working folder has one writer/watcher: authority repository. Its editing replica cache lives under app data, and UI opens the real selected project root. Joined clients own their chosen workcopy and durable replica database. Full app quit stops connections; there is no tray/headless/always-on/autostart product mode. Settings contains a non-interactive `PC server — Coming Soon` explanation only.
+
+## Bounds and identity
+
+Protocol v2 (new `shared/project.ts`), stable projectId/fileId, generation per document; canonical relative paths use `/`, Unicode NFC and case-fold collision checks. Text <=1 MiB, CRDT state/update <=4 MiB, blob <=16 MiB, project current content <=256 MiB, <=5000 entries. Larger/unsupported files stay on disk with local reasons; large text <=blob limit is transferred as a blob with CAS and cannot masquerade as an editable CRDT. UTF-8 uniform LF/CRLF text is editable; binary/Office/media content is not edited. No symlink/junction traversal, root escape, portable reserved paths. Shared ignore policy applies to scans, operations, initial transfer, incremental sync and exports.
+
+## Project storage / collaboration split
+
+`core/project/store.ts`: ProjectStore canonical SQLite catalog, immutable content/state blobs, global ordered journal, operation dedup, activity, projection intents, file operations, snapshots and catch-up. Mode `authority` imports existing safe files; `replica` initializes only an empty/matching workcopy. Public DB allows feature modules to register command handlers, but EVERY authority mutation runs inside Store.apply's single transaction; handlers never emit ACK or perform disk writes. Stage rows using stageFile; store increments revision, records before/after and metadata, commits, then emits change and schedules projection. This avoids a checkpoint/helper ACK before COMMIT.
+
+`core/project/recovery.ts`: install handlers for claims/conflicts/checkpoints/trash/settings inside Store's transaction; uses immutable blobs, stageFile and DB. Restoration creates a protective checkpoint in the SAME transaction, checks expected project revision, bumps affected generations and records a new event. Deleted files remain tombstones. Conflict resolution checks current target file revision/generation, saves both prior versions and never merges binary text. Metadata/query methods are explicit and permission checked by authority transport.
+
+`core/project/transport.ts`: TeamHost owns WSS session identity/auth/member grants, pins TLS like phase one, serves snapshot manifest at revision R, chunked immutable blobs and events after R, receives commands, checks role/expiry/revocation per message, durable ACK after Store.apply, broadcasts committed events. mDNS advertises only public team identity/name/address; no token/project contents. Direct WSS never awaits discovery. Owner editing uses same transport. No user-facing independent server command is packaged.
+
+`core/project/replica.ts`: ProjectReplica canonical remote catalog plus local document states/outbox in ONE SQLite database, merge Yjs by file ID/generation, project merged local bytes using expected hash. Persist local update and outbox before sending. One in-flight command preserves causal order. On generation/deletion rejection retain pending binary/text as local conflict/recovery; never resurrect. Snapshot download caches verified complete blobs; cancellation/retry has an attempt epoch. Install R only after required blobs/hash manifest verification, then replay journal to a captured barrier and verify its manifest. Report initialized only after this; subsequent changes invalidate confirmation. Replica projection and incoming commands are serialized. Different simultaneous joined workcopy/creator roots never share a writer.
+
+## External saves and claims
+
+Record last external baseline bytes/hash/file revision separately from current projected state. App/remote projection does NOT imply an external unsaved buffer has read that new version. If external save's baseline still equals canonical, apply minimal text diff (`diffChars`, bounded work) to existing Y.Doc or binary CAS. If stale/unknown/offline structure, preserve versions and create a conflict. Explicit external Edit claim snapshots the current baseline and holds that client's remote disk projection until completion/cancel/expiry; release rechecks actual disk before writing. Claims are advisory by default, optional strict server checks, never OS locks. Own watcher events are detected by expected content hash/operation origin, not blanket timing suppression.
+
+## Metadata and recovery
+
+Activity includes file before/after hashes, actor/name/source/time, insert/delete lines, operation and session grouping. Source is app/external Unknown/explicitly declared AI/recovery; no guessed AI from name or watcher. No authenticated AI integration is claimed unless actually implemented. Claims have create/renew/complete/cancel/expiry and descriptions. Conflict versions remain immutable blobs. Trash purge removes trash recovery entries, does not secretly erase independent checkpoints; confirmation describes scope. Checkpoint/project/file restore is a new revision with generation invalidation, not database replacement. Session rollback remains unclaimed.
+
+## UI and application API
+
+`shared/release-api.ts` defines the implemented renderer API. The Electron controller and preload bridge connect it to the project modules, preserving the Editor's small update/awareness contract through an adapter. Screens: Projects, Files, Activity, Team, Conflicts, Checkpoints, Deleted, Settings. Destructive dialogs show scope and require explicit confirmation. Normal UI avoids revision/DB jargon; diagnostics can expose safe technical facts. Visible static strings use ko/en/zh-TW dictionaries.
+
+## Integration / verification
+
+The verification contract compares content/hash/catalog, DB receipts/outbox/projections, recovery copies and restart state. It includes independent-process tests, packaged Electron QA, newline checks and simulated composition input. GitHub export separates preview from explicit execution; automated tests use a local mock of GitHub REST and do not create a live PR. Installer trials use isolated profiles and targets. Historical status B means implementation was verified in the available Windows environment while physical-device and platform checks remained outstanding; it does not establish macOS, physical two-PC LAN, real OS IME or live GitHub compatibility. See [recorded results](release-validation.md) and [manual two-device checks](two-device-check.md).

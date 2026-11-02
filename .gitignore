@@ -7,6 +7,10 @@ coverage/
 .vibeswarm/
 .cairn/
 release/
+/outputs/qa/
+.cairn-next/
+.cairn-next-client/
+*.invite.json
 build/icon.iconset/
 
 # Environment variables and credentials. Keep example templates trackable.

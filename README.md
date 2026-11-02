@@ -4,6 +4,8 @@
 
 <h1 align="center">Cairn</h1>
 
+> **Cairn Next preview:** This branch also includes the independently runnable [Cairn Next app](./cairn-next/README.md), with the bright UI and recoverable project collaboration. The original Cairn app and its root commands remain available. The download links below refer to the original Cairn releases; this branch publishes the Next source, not new installers or a release tag.
+
 <p align="center"><strong>Know what changed. Catch overlap early. Recover with confidence.</strong></p>
 
 <p align="center">
