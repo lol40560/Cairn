@@ -6,7 +6,10 @@ const os = require('node:os');
 const path = require('node:path');
 const project = path.resolve(__dirname, '..');
 const executable = process.env.CAIRN_TEST_EXECUTABLE || require('electron');
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'cairn-startup-close-'));
+const fixture = fs.mkdtempSync(
+  path.join(fs.realpathSync.native(os.tmpdir()), 'cairn-startup-close-'),
+);
+let activeApp;
 const evidence = path.resolve(
   project,
   '../outputs/qa/rc-startup-close',
@@ -38,6 +41,7 @@ async function bounded(promise, label) {
       env,
       timeout: 20000,
     });
+    activeApp = app;
     const child = app.process();
     const page = await app.firstWindow();
     if (mode === 'legacy-rejection-close') {
@@ -60,6 +64,7 @@ async function bounded(promise, label) {
       app.close(),
       'Normal startup close did not exit; owned app and fixture preserved',
     );
+    activeApp = undefined;
     assert.equal(child.exitCode, 0);
     checks.push({ mode, exitCode: child.exitCode, elapsedMs: Date.now() - start });
   }
@@ -72,8 +77,15 @@ async function bounded(promise, label) {
   };
   fs.writeFileSync(path.join(evidence, 'result.json'), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
-})().catch((error) => {
+})().catch(async (error) => {
   process.exitCode = 1;
+  if (activeApp) {
+    try {
+      await bounded(activeApp.close(), 'Cleanup timed out');
+    } catch {
+      activeApp.process().kill();
+    }
+  }
   fs.writeFileSync(
     path.join(evidence, 'result.json'),
     JSON.stringify({ passed: false, checks, error: error.message, fixture }, null, 2),
