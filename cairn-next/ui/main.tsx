@@ -25,6 +25,11 @@ import './styles.css';
 
 document.documentElement.dataset.theme =
   localStorage.getItem('cairn-theme') === 'dark' ? 'dark' : 'light';
+document.documentElement.dataset.accent = ['blue', 'violet', 'green', 'orange', 'rose'].includes(
+  localStorage.getItem('cairn-accent') ?? '',
+)
+  ? localStorage.getItem('cairn-accent')!
+  : 'blue';
 const pages: Page[] = [
   'home',
   'projects',
@@ -51,6 +56,15 @@ function restoredSelection(state: ReleaseState): string | null {
 }
 function App() {
   const [state, setState] = useState<ReleaseState | null>(null);
+  const [reducedMotion] = useState(
+    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  const [showSplash, setShowSplash] = useState(() => !reducedMotion);
+  const [splashSource, setSplashSource] = useState(() =>
+    window.matchMedia('(max-aspect-ratio: 5/4)').matches
+      ? './branding/start-square.mp4'
+      : './branding/start-wide.mp4',
+  );
   const [error, setError] = useState<unknown>(null);
   const [page, setPage] = useState<Page>('home');
   const [busy, setBusy] = useState(false);
@@ -59,6 +73,18 @@ function App() {
   const [notice, setNotice] = useState('');
   const [palette, setPalette] = useState<'files' | 'commands' | null>(null);
   const [onboarding, setOnboarding] = useState(false);
+  useEffect(() => {
+    if (!showSplash) return;
+    const timer = window.setTimeout(() => setShowSplash(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [showSplash]);
+  useEffect(() => {
+    const media = window.matchMedia('(max-aspect-ratio: 5/4)');
+    const update = () =>
+      setSplashSource(media.matches ? './branding/start-square.mp4' : './branding/start-wide.mp4');
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const currentRef = useRef(state);
   currentRef.current = state;
   const pendingRef = useRef(0);
@@ -283,13 +309,43 @@ function App() {
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, []);
+  if (showSplash && !error)
+    return (
+      <div className="startup-screen" role="status" aria-label="Cairn is starting">
+        <video
+          key={splashSource}
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          src={splashSource}
+          onEnded={() => setShowSplash(false)}
+          onError={() => setShowSplash(false)}
+          aria-hidden="true"
+        />
+        <button className="startup-skip" onClick={() => setShowSplash(false)}>
+          Skip
+        </button>
+      </div>
+    );
   if (!state)
     return (
       <I18n value="en">
         <div className="loading-screen">
-          <div className="brand">
-            Cairn <span>Next</span>
-          </div>
+          {!error && !reducedMotion ? (
+            <video
+              className="loading-logo"
+              autoPlay
+              muted
+              playsInline
+              loop
+              src="./branding/start-square.mp4"
+              poster="./branding/icon.png"
+              aria-hidden="true"
+            />
+          ) : (
+            <img className="loading-logo" src="./branding/icon.png" alt="Cairn" />
+          )}
           <ErrorBox error={error} />
           {!error ? <Empty text="loading" /> : null}
         </div>

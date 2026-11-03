@@ -1,6 +1,6 @@
 {
   "name": "cairn-next",
-  "version": "0.2.0-rc.3",
+  "version": "0.2.0-rc.4",
   "private": true,
   "type": "module",
   "description": "Local project collaboration and recovery for teams on the same LAN",
@@ -70,13 +70,15 @@
       "package.json",
       "THIRD_PARTY_NOTICES.md",
       "docs/privacy.md",
-      "docs/user-guide.md"
+      "docs/user-guide.md",
+      "resources/icon.png"
     ],
     "win": {
       "target": [
         "nsis"
       ],
-      "signAndEditExecutable": false
+      "signAndEditExecutable": true,
+      "icon": "resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -88,7 +90,8 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.icns"
     }
   }
 }

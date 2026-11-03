@@ -367,6 +367,45 @@ async function main() {
     'Entry, English default, onboarding, renderer isolation and native-folder open',
     async () => {
       assert.equal(await host.page.title(), 'Cairn Next');
+      for (const [file, width, height] of [
+        ['start-wide.mp4', 1280, 720],
+        ['start-square.mp4', 960, 960],
+      ]) {
+        const result = await host.page.evaluate(async (file) => {
+          const url = `cairn://app/branding/${file}`;
+          const range = await fetch(url, { headers: { Range: 'bytes=0-31' } });
+          const rangeSize = (await range.arrayBuffer()).byteLength;
+          const video = document.createElement('video');
+          video.muted = true;
+          video.style.display = 'none';
+          video.src = url;
+          document.body.append(video);
+          try {
+            await video.play();
+            await new Promise((resolve, reject) => {
+              const timeout = setTimeout(() => reject(new Error('Video did not play')), 4000);
+              video.addEventListener(
+                'timeupdate',
+                () => {
+                  clearTimeout(timeout);
+                  resolve();
+                },
+                { once: true },
+              );
+            });
+            return {
+              status: range.status,
+              rangeSize,
+              width: video.videoWidth,
+              height: video.videoHeight,
+            };
+          } finally {
+            video.remove();
+          }
+        }, file);
+        assert.deepEqual(result, { status: 206, rangeSize: 32, width, height });
+      }
+
       assert.equal(await host.page.locator('.navigation').count(), 0, 'home has no sidebar');
       assert.equal(host.page.url(), 'cairn://app/index.html');
       assert.deepEqual(
@@ -805,8 +844,31 @@ async function main() {
         .first()
         .locator('select')
         .nth(1);
+      for (const color of ['Violet', 'Green', 'Orange', 'Rose', 'Blue']) {
+        await host.page.getByRole('radio', { name: color, exact: true }).check();
+        assert.equal(
+          await host.page.locator('html').getAttribute('data-accent'),
+          color.toLowerCase(),
+        );
+        assert.equal(
+          await host.page.evaluate(() => localStorage.getItem('cairn-accent')),
+          color.toLowerCase(),
+        );
+      }
       await appearance.selectOption('dark');
       assert.equal(await host.page.locator('html').getAttribute('data-theme'), 'dark');
+      await host.page.getByRole('radio', { name: 'Violet', exact: true }).check();
+      assert.equal(await host.page.locator('html').getAttribute('data-accent'), 'violet');
+      await until(
+        () =>
+          host.page
+            .locator('button.primary')
+            .first()
+            .evaluate((el) => getComputedStyle(el).backgroundColor),
+        (value) => value === 'rgb(112, 65, 173)',
+        'dark accent applied',
+      );
+      await host.page.getByRole('radio', { name: 'Blue', exact: true }).check();
       assert.equal(await host.page.evaluate(() => localStorage.getItem('cairn-theme')), 'dark');
       await screenshot(host, 'settings-dark.png');
       await appearance.selectOption('light');

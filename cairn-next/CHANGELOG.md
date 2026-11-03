@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0-rc.4 — branding and appearance
+
+- Adds the Cairn app icon for macOS and Windows, startup animation, and accessible reduced-motion handling.
+- Adds five selectable accent colors in Settings for light and dark modes.
+- Serves startup video with byte-range support and preserves the existing desktop and collaboration workflows.
+
 ## 0.2.0-rc.3 — interface and sharing preview
 
 - Adds a project overview, dark mode, first-run guide, editable display name and project switcher.

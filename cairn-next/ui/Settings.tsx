@@ -154,6 +154,7 @@ export function SettingsView() {
   const [theme, setTheme] = useState(
     document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
   );
+  const [accent, setAccent] = useState(document.documentElement.dataset.accent ?? 'blue');
   const [name, setName] = useState(state.preferences.displayName);
   const [locale, setLocale] = useState<Locale>(state.preferences.locale);
   const [source, setSource] = useState(state.preferences.source.kind);
@@ -244,6 +245,30 @@ export function SettingsView() {
                 <option value="dark">{t('darkMode')}</option>
               </select>
             </label>
+            <fieldset className="accent-picker">
+              <legend>{t('accentColor')}</legend>
+              <div className="accent-options">
+                {['blue', 'violet', 'green', 'orange', 'rose'].map((color) => (
+                  <label className="accent-option" key={color} title={t(`accent_${color}`)}>
+                    <input
+                      type="radio"
+                      name="accent-color"
+                      value={color}
+                      checked={accent === color}
+                      aria-label={t(`accent_${color}`)}
+                      onChange={() => {
+                        setAccent(color);
+                        document.documentElement.dataset.accent = color;
+                        localStorage.setItem('cairn-accent', color);
+                      }}
+                    />
+                    <span className={`accent-swatch accent-swatch-${color}`} aria-hidden="true">
+                      {accent === color ? '✓' : ''}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <label>
               {t('source')}
               <select value={source} onChange={(e) => setSource(e.target.value as typeof source)}>

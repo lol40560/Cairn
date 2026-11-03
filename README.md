@@ -6,7 +6,7 @@ Cairn is a local-first desktop workspace for project collaboration, change histo
 
 | | Cairn Next | Original Cairn |
 | --- | --- | --- |
-| Status | **0.2.0-rc.3 prerelease source**, under development | **v2.0.3**, latest published installers |
+| Status | **0.2.0-rc.4 prerelease source**, under development | **v2.0.3**, latest published installers |
 | Location | [cairn-next/](cairn-next/README.md) | Repository root |
 | Download | [Check prereleases](https://github.com/lol40560/Cairn/releases) | [macOS and Windows releases](https://github.com/lol40560/Cairn/releases/tag/v2.0.3) |
 
@@ -14,7 +14,7 @@ The two apps have different protocols and internal data formats. They cannot col
 
 ## Cairn Next
 
-The preview includes a project file tree and editor, LAN collaboration, activity history, conflict review, checkpoints and recovery. Version 0.2.0-rc.3 adds the project overview, dark mode, guided setup, and hosted invitation links.
+The preview includes a project file tree and editor, LAN collaboration, activity history, conflict review, checkpoints and recovery. Version 0.2.0-rc.4 adds the project overview, dark mode, guided setup, and hosted invitation links.
 
 The host app must remain open for a team to connect. Physical two-device LAN, macOS, real OS input methods and live GitHub export remain unverified. Back up projects independently; sharing rules cannot detect every secret inside ordinary files.
 

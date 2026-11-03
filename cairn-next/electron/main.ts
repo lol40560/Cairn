@@ -234,6 +234,7 @@ void app
       '.json': 'application/json',
       '.svg': 'image/svg+xml',
       '.png': 'image/png',
+      '.mp4': 'video/mp4',
       '.ttf': 'font/ttf',
       '.woff2': 'font/woff2',
     };
@@ -246,14 +247,43 @@ void app
           resolved = path.resolve(webDirectory, relative);
         if (!resolved.startsWith(`${webDirectory}${path.sep}`))
           return new Response('Forbidden', { status: 403 });
-        return new Response(new Uint8Array(await readFile(resolved)), {
-          headers: {
-            'Content-Type': mime[path.extname(resolved)] ?? 'application/octet-stream',
-            'Content-Security-Policy':
-              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'",
-            'X-Content-Type-Options': 'nosniff',
-          },
-        });
+        const bytes = await readFile(resolved);
+        const headers: Record<string, string> = {
+          'Content-Type': mime[path.extname(resolved)] ?? 'application/octet-stream',
+          'Content-Security-Policy':
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-src 'none'",
+          'X-Content-Type-Options': 'nosniff',
+        };
+        if (path.extname(resolved) === '.mp4') {
+          headers['Accept-Ranges'] = 'bytes';
+          const range = request.headers.get('range');
+          if (range) {
+            const match = /^bytes=(\d+)-(\d*)$/.exec(range);
+            const start = match ? Number(match[1]) : -1;
+            const end =
+              match && match[2] ? Math.min(Number(match[2]), bytes.length - 1) : bytes.length - 1;
+            if (
+              !match ||
+              !Number.isSafeInteger(start) ||
+              !Number.isSafeInteger(end) ||
+              start < 0 ||
+              start >= bytes.length ||
+              end < start
+            ) {
+              return new Response(null, {
+                status: 416,
+                headers: { 'Content-Range': `bytes */${bytes.length}` },
+              });
+            }
+            headers['Content-Range'] = `bytes ${start}-${end}/${bytes.length}`;
+            headers['Content-Length'] = String(end - start + 1);
+            return new Response(new Uint8Array(bytes.subarray(start, end + 1)), {
+              status: 206,
+              headers,
+            });
+          }
+        }
+        return new Response(new Uint8Array(bytes), { headers });
       } catch {
         return new Response('Not found', { status: 404 });
       }
@@ -266,6 +296,7 @@ void app
       minWidth: 960,
       minHeight: 680,
       title: 'Cairn Next',
+      icon: path.join(resourceDirectory, 'resources/icon.png'),
       backgroundColor: '#f6f7f9',
       show: false,
       webPreferences: {
@@ -277,6 +308,8 @@ void app
         spellcheck: false,
       },
     });
+    if (process.platform === 'darwin')
+      app.dock?.setIcon(path.join(resourceDirectory, 'resources/icon.png'));
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (e) => e.preventDefault());
     window.webContents.on('will-attach-webview', (e) => e.preventDefault());

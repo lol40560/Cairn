@@ -1,4 +1,4 @@
-# Cairn Next · 0.2.0-rc.3
+# Cairn Next · 0.2.0-rc.4
 
 Cairn Next is a desktop app for local project folders and whole-project collaboration over a LAN. This release candidate includes a project overview, dark mode, guided setup, project switching, team invitations, and the Monaco/Yjs editor, activity, conflict, checkpoint and recovery tools. The interface supports Korean, English, and Traditional Chinese.
 

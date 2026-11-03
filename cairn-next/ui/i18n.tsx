@@ -3,6 +3,13 @@ import type { Locale } from '../shared/release-api';
 
 // Every product string is authored in Korean, English and Traditional Chinese.
 const words: Record<string, readonly [string, string, string]> = {
+  accentColor: ['강조 색상', 'Accent color', '強調色'],
+  accent_blue: ['파란색', 'Blue', '藍色'],
+  accent_violet: ['보라색', 'Violet', '紫色'],
+  accent_green: ['초록색', 'Green', '綠色'],
+  accent_orange: ['주황색', 'Orange', '橙色'],
+  accent_rose: ['장밋빛', 'Rose', '玫瑰色'],
+
   sharePageError: [
     '쿼리나 프래그먼트가 없는 HTTPS 초대 페이지 주소를 입력하세요.',
     'Enter an HTTPS invitation page URL without a query or fragment.',

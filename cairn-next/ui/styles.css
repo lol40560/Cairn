@@ -2625,3 +2625,206 @@ select {
 .team-share-link p {
   margin: 10px 0 0;
 }
+.startup-screen {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #dedee1;
+  overflow: hidden;
+}
+.startup-screen video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.startup-skip {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  border: 1px solid #8792a3;
+  background: #ffffffd9;
+  color: #27374b;
+  padding: 7px 14px;
+  font-weight: 500;
+  opacity: 0.78;
+}
+.startup-skip:hover,
+.startup-skip:focus-visible {
+  opacity: 1;
+}
+.loading-logo {
+  display: block;
+  width: min(240px, 60vw);
+  aspect-ratio: 1;
+  object-fit: contain;
+  margin: 0 auto;
+  border-radius: 28px;
+}
+/* User-selected accent colors; the text colors remain readable in both themes. */
+:root,
+:root[data-accent='blue'] {
+  --accent-main: #0067c9;
+  --accent-hover: #0054a5;
+  --accent-tint: #dfeaff;
+  --accent-ink: #0755a7;
+  --accent-dark-tint: #263f60;
+}
+:root[data-accent='violet'] {
+  --accent-main: #7041ad;
+  --accent-hover: #5b318f;
+  --accent-tint: #eee6fb;
+  --accent-ink: #65369d;
+  --accent-dark-tint: #44345d;
+}
+:root[data-accent='green'] {
+  --accent-main: #16734b;
+  --accent-hover: #105b3a;
+  --accent-tint: #dcf2e7;
+  --accent-ink: #14613f;
+  --accent-dark-tint: #234c3c;
+}
+:root[data-accent='orange'] {
+  --accent-main: #a64d00;
+  --accent-hover: #813b00;
+  --accent-tint: #ffeddc;
+  --accent-ink: #8b4000;
+  --accent-dark-tint: #573b29;
+}
+:root[data-accent='rose'] {
+  --accent-main: #a72f58;
+  --accent-hover: #862344;
+  --accent-tint: #fae5ec;
+  --accent-ink: #91264c;
+  --accent-dark-tint: #5a3043;
+}
+button.primary,
+:root[data-theme='dark'] button.primary {
+  background: var(--accent-main);
+  border-color: var(--accent-main);
+  color: #fff;
+}
+button.primary:hover:not(:disabled),
+:root[data-theme='dark'] button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.navigation nav button.active,
+.nav-utility button.active {
+  background: var(--accent-tint);
+  color: var(--accent-ink);
+}
+.navigation nav button.active:hover:not(:disabled),
+.nav-utility button.active:hover:not(:disabled) {
+  background: var(--accent-tint);
+}
+.active .nav-icon {
+  color: var(--accent-ink);
+}
+:root[data-theme='dark'] .navigation nav button.active,
+:root[data-theme='dark'] .nav-utility button.active {
+  background: var(--accent-dark-tint);
+  color: #f3f5fa;
+}
+:root[data-theme='dark'] .active .nav-icon {
+  color: #f3f5fa;
+}
+input[type='checkbox'],
+input[type='radio'],
+progress {
+  accent-color: var(--accent-main);
+}
+.tree-row.selected {
+  box-shadow: inset 3px 0 var(--accent-main);
+}
+.overview-bar {
+  background: var(--accent-main);
+}
+.accent-picker {
+  border: 0;
+  margin: 0 0 17px;
+  padding: 0;
+  min-width: 0;
+}
+.accent-picker legend {
+  color: #35455a;
+  font-size: 0.93rem;
+  font-weight: 550;
+  padding: 0;
+  margin-bottom: 8px;
+}
+.accent-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.accent-option {
+  margin: 0;
+  position: relative;
+  cursor: pointer;
+}
+.accent-option input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.accent-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px #77869a66;
+}
+.accent-swatch-blue {
+  background: #0067c9;
+}
+.accent-swatch-violet {
+  background: #7041ad;
+}
+.accent-swatch-green {
+  background: #16734b;
+}
+.accent-swatch-orange {
+  background: #a64d00;
+}
+.accent-swatch-rose {
+  background: #a72f58;
+}
+.accent-option input:checked + .accent-swatch {
+  box-shadow:
+    0 0 0 3px var(--surface),
+    0 0 0 5px var(--accent-main);
+}
+.accent-option input:focus-visible + .accent-swatch {
+  outline: 3px solid #4c94ee;
+  outline-offset: 6px;
+}
+:root[data-theme='dark'] .accent-picker legend {
+  color: #cbd8e7;
+}
+:root[data-accent] {
+  --accent: var(--accent-main);
+  --accent-soft: var(--accent-tint);
+}
+.tree-row.selected {
+  background: var(--accent-tint);
+}
+.tree-row.selected .tree-name {
+  color: var(--accent-ink);
+}
+:root[data-theme='dark'] .tree-row.selected {
+  background: var(--accent-dark-tint);
+}
+:root[data-theme='dark'] .tree-row.selected .tree-name {
+  color: #f3f5fa;
+}
